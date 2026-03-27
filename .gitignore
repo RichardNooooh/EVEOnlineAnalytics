@@ -1,0 +1,215 @@
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+*.mo
+*.pot
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+instance/
+.webassets-cache
+.scrapy
+docs/_build/
+.pybuilder/
+target/
+.pdm.toml
+.pdm-python
+.pdm-build/
+__pypackages__/
+celerybeat-schedule
+celerybeat.pid
+*.sage.py
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.spyderproject
+.spyproject
+.ropeproject
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+
+# Ruff
+.ruff_cache/
+
+# UV
+.uv/
+
+# ============================================
+# dbt
+# ============================================
+target/
+dbt_packages/
+logs/
+*.log
+.user.yml
+profiles.yml
+!transform/profiles.yml
+
+# ============================================
+# DuckDB
+# ============================================
+*.duckdb
+*.duckdb.wal
+*.db
+*.db.wal
+
+# ============================================
+# Airflow
+# ============================================
+airflow.db
+airflow.cfg
+unittests.cfg
+logs/
+*.log
+webserver_config.py
+airflow__pycache__/
+airflow_env/
+airflow-webserver.pid
+airflow-scheduler.pid
+standalone_admin_password.txt
+
+# ============================================
+# Terraform
+# ============================================
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# ============================================
+# MLflow
+# ============================================
+mlruns/
+mlartifacts/
+outputs/
+artifacts/
+models/
+
+# ============================================
+# BentoML
+# ============================================
+bentoml/
+.bentos/
+models/
+
+# ============================================
+# Docker
+# ============================================
+.docker/
+docker-compose.override.yml
+.env
+.env.local
+.env.*.local
+
+# ============================================
+# Data Files
+# ============================================
+data/
+*.csv
+*.parquet
+*.json
+!transform/**/*.yml
+!transform/**/*.yaml
+*.xlsx
+*.xls
+
+# ============================================
+# IDE
+# ============================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+*.code-workspace
+
+# ============================================
+# OS
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ============================================
+# Secrets (NEVER commit these)
+# ============================================
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials.json
+service-account*.json
+*secret*
+*password*
+*token*
+.env
