@@ -38,17 +38,17 @@ proxmox_api_token    = "terraform@pve!opentofu=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxx
 proxmox_tls_insecure = false
 proxmox_ssh_user     = "root"
 
-ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+ssh_public_key_path = "/home/USER/.ssh/id_ed25519.pub"
 ansible_user        = "ansible"
 timezone            = "America/New_York" # adjust to your timezone
 
 # VM sizing — tuned for 16 GB Proxmox nodes (~13 GB usable)
 vm_cpu_cores   = 4
-vm_memory_mb   = 10240 # 10 GB per VM
+vm_memory_mb   = 8000 # 8 GB per VM
 vm_disk_size_gb = 40
 
 # Networking — adjust to your VLAN setup
 vm_network_bridge = "vmbr0"
 vm_vlan_id        = 20
 dns_servers       = ["10.218.20.90"]
-dns_search_domain = "normandy.internal"
+dns_search_domain = "internal"
