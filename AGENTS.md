@@ -144,38 +144,63 @@ eve-market-analytics/
 │   │   └── performance_report.py
 │   └── README.md
 │
-├── orchestration/                         # Airflow
+├── orchestration/                         # Airflow (deployed on k3s via Helm)
 │   ├── dags/
 │   │   ├── dag_daily_ingest.py            # Trigger Airbyte sync + everef download
 │   │   ├── dag_transform.py               # Run dbt models + tests
 │   │   ├── dag_train_model.py             # Periodic retraining (weekly or drift-triggered)
 │   │   ├── dag_predict.py                 # Run predictions on latest data
 │   │   └── dag_monitor.py                 # Run Evidently reports, alert on drift
-│   ├── plugins/
-│   └── docker-compose.yml                 # Local Airflow (webserver, scheduler, worker, postgres)
+│   └── plugins/
 │
 ├── dashboards/                            # BI layer
 │   ├── tableau/                           # .twb or .twbx workbook files
 │   └── screenshots/                       # For README and portfolio site
 │
-├── monitoring/                            # Infrastructure monitoring
-│   ├── grafana/
-│   │   └── dashboards/                    # JSON dashboard definitions (provisioned via Grafana API)
-│   ├── victoriametrics/
-│   │   └── config.yml
-│   └── docker-compose.monitoring.yml
+├── monitoring/                            # Infrastructure monitoring (deployed on k3s)
+│   └── grafana/
+│       └── dashboards/                    # JSON dashboard definitions (provisioned via Grafana API)
 │
-├── infra/                                 # Infrastructure as code + local orchestration
-│   ├── docker-compose.yml                 # Full local stack (Airbyte, DuckDB, Airflow, MLflow, etc.)
-│   ├── Makefile                           # Common commands: make setup, make ingest, make transform, etc.
-│   └── terraform/                         # Snowflake cloud deployment (IaC proof, not kept live)
-│       ├── main.tf                        # Provider config, backend
-│       ├── warehouses.tf                  # XS for transforms, S for ML training
-│       ├── databases.tf                   # raw, staging, marts, ml_features schemas
-│       ├── roles.tf                       # loader, transformer, reader roles with least-privilege grants
-│       ├── variables.tf
-│       ├── outputs.tf
-│       └── README.md                      # Instructions: how to terraform plan/apply against trial
+├── infra/                                 # Infrastructure as code
+│   ├── terraform/
+│   │   ├── proxmox/                       # VM provisioning (bpg/proxmox provider)
+│   │   │   ├── main.tf                    # Provider config (bpg/proxmox), backend (local state)
+│   │   │   ├── vms.tf                     # 3 k3s VMs: one per Proxmox node, cloud-init, static IPs
+│   │   │   ├── templates.tf               # Cloud-init template download + configuration
+│   │   │   ├── variables.tf               # VLAN IDs, IP ranges, VM specs, SSH keys
+│   │   │   ├── outputs.tf                 # VM IPs (consumed by Ansible inventory)
+│   │   │   └── README.md                  # Prerequisites: API token, cloud-init template, NFS datastore
+│   │   └── snowflake/                     # Cloud-readiness proof (IaC only, not kept live)
+│   │       ├── main.tf                    # Provider config, backend
+│   │       ├── warehouses.tf              # XS for transforms, S for ML training
+│   │       ├── databases.tf               # raw, staging, marts, ml_features schemas
+│   │       ├── roles.tf                   # loader, transformer, reader roles with least-privilege grants
+│   │       ├── variables.tf
+│   │       ├── outputs.tf
+│   │       └── README.md                  # Instructions: how to terraform plan/apply against trial
+│   ├── ansible/                           # VM configuration + k3s bootstrap
+│   │   ├── inventory/
+│   │   │   └── hosts.yml                  # k3s server nodes (all 3 are server + workload nodes)
+│   │   ├── playbooks/
+│   │   │   ├── k3s-init.yml               # Bootstrap 3-node k3s HA cluster (embedded etcd)
+│   │   │   ├── k3s-upgrade.yml            # Rolling k3s version upgrades
+│   │   │   └── nfs-client.yml             # Install NFS utils, verify TrueNAS mount
+│   │   ├── roles/                         # Ansible roles for k3s setup, prereqs, storage
+│   │   └── README.md                      # Sequencing: terraform apply → ansible k3s-init → helm deploys
+│   ├── helm/                              # Helm values overrides for all k3s-deployed services
+│   │   ├── airbyte-values.yaml            # Airbyte Helm chart V2; resource limits for constrained RAM
+│   │   ├── airflow-values.yaml            # Airflow Helm chart; DAG git-sync, executor config
+│   │   ├── mlflow-values.yaml             # MLflow tracking server; NFS-backed artifact store
+│   │   ├── grafana-values.yaml            # Grafana; dashboard provisioning, VictoriaMetrics datasource
+│   │   ├── victoriametrics-values.yaml    # VictoriaMetrics single-node; retention, scrape configs
+│   │   └── README.md                      # Helm install/upgrade commands for each service
+│   ├── k8s/                               # Raw Kubernetes manifests (non-Helm resources)
+│   │   ├── namespaces.yaml                # Namespace definitions: data, ml, monitoring
+│   │   ├── nfs-pv.yaml                    # PersistentVolume + StorageClass for TrueNAS NFS
+│   │   ├── metallb-config.yaml            # MetalLB IP address pool (outside DHCP range)
+│   │   └── README.md
+│   ├── Makefile                           # Common commands: make vms, make cluster, make deploy-all, etc.
+│   └── README.md                          # Full bootstrap guide: Terraform → Ansible → k8s base → Helm
 │
 ├── pyproject.toml                         # Python project config (dependencies, linting, formatting)
 └── .github/
@@ -186,10 +211,47 @@ eve-market-analytics/
 
 ## Deployment Strategy
 
-- **Everything runs locally / self-hosted** on homelab or a powerful PC. No cloud costs.
-- **Snowflake Terraform** exists to prove cloud-readiness. Run `terraform plan` during the 30-day trial window, record a screencast of the output, then let the trial expire. The code remains valid IaC.
+### Platform
+
+- **Everything runs on a 3-node k3s cluster** deployed across a Proxmox homelab (3 mini PCs, ~13 GB usable RAM each, ~39 GB total).
+- **All 3 nodes are k3s server nodes** with workload scheduling enabled (no dedicated workers). k3s HA uses embedded etcd, which requires an odd number of server nodes.
+- **Shared storage** is provided by TrueNAS NFS, mounted as a Kubernetes PersistentVolume. The DuckDB database file, model artifacts, and Airflow DAGs live on NFS.
+- **Service exposure** uses MetalLB to assign stable LAN IPs from a reserved range (outside DHCP pool). The existing reverse proxy routes to these IPs.
+
+### IaC Layers
+
+Infrastructure is provisioned in three sequential layers:
+
+1. **Terraform (bpg/proxmox provider):** Provisions 3 Ubuntu VMs (one per Proxmox node) from a cloud-init template. Injects SSH keys, static IPs on the appropriate VLAN, and hostnames. State is local. This Terraform project lives in `infra/terraform/proxmox/` and is scoped exclusively to the EVE project VMs — homelab base infrastructure (DNS containers, reverse proxy, Proxmox cluster config) is managed separately and is not in this repo.
+2. **Ansible (k3s-io/k3s-ansible):** Configures the 3 VMs and bootstraps a k3s HA cluster with embedded etcd. Installs NFS client utilities and verifies TrueNAS connectivity. Generates a kubeconfig for `kubectl` and Helm access from the dev workstation.
+3. **Helm + kubectl:** Deploys all application services into the k3s cluster. Airbyte uses Helm chart V2. Airflow, MLflow, Grafana, and VictoriaMetrics each have their own Helm values files in `infra/helm/`. Base Kubernetes resources (namespaces, NFS PersistentVolume, MetalLB config) are applied via raw manifests in `infra/k8s/`.
+
+### Snowflake Cloud-Readiness
+
+- **Snowflake Terraform** (`infra/terraform/snowflake/`) exists to prove cloud-readiness. Run `terraform plan` during the 30-day trial window, record a screencast of the output, then let the trial expire. The code remains valid IaC.
 - **MotherDuck** is an option as a sustainable cloud middle-ground (free tier, DuckDB-compatible). Consider as an alternative to keeping Snowflake live.
-- **Budget constraint:** Ideally $0/month in steady state. Absolute max $5/month.
+
+### Budget
+
+- **Target:** $0/month in steady state (all self-hosted on existing hardware).
+- **Absolute max:** $5/month (only if a cloud component like MotherDuck is added).
+
+### RAM Budget (approximate, ~39 GB total)
+
+| Component              | Estimated Memory | Notes                                       |
+|------------------------|------------------|---------------------------------------------|
+| k3s overhead (×3)      | ~1.5 GB          | ~512 MB per server node                     |
+| Airbyte                | 6–8 GB           | Largest consumer; tune resource limits      |
+| Airflow                | 2–3 GB           | Webserver + scheduler + worker              |
+| MLflow                 | 0.5–1 GB         | Tracking server only                        |
+| Grafana                | 0.5 GB           | Lightweight                                 |
+| VictoriaMetrics        | 0.5–1 GB         | Single-node mode                            |
+| DuckDB (via pods)      | 1–2 GB           | Depends on query workload                   |
+| BentoML                | 0.5–1 GB         | Model serving                               |
+| Evidently              | 0.5 GB           | Runs periodically, not always resident      |
+| **Headroom**           | **~20–24 GB**    | Available for sync jobs, spikes, OS caches  |
+
+Resource requests and limits must be set in every Helm values file. Monitor for OOMKills and pod evictions early.
 
 ## Coding Conventions
 
@@ -198,6 +260,7 @@ eve-market-analytics/
 - **Terraform:** Standard HCL formatting (`terraform fmt`). One resource type per file.
 - **Docker:** Multi-stage builds where applicable. Pin image versions.
 - **Git:** Conventional commits. Feature branches off `main`. PRs required.
+- **Mise:** Use `mise` to handle all tooling.
 
 ## Common Agent Tasks
 
