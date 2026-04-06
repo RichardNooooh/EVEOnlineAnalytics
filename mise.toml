@@ -1,0 +1,29 @@
+[tools]
+# Infrastructure
+opentofu = "latest"
+
+# Python ecosystem
+python = "3.12"
+uv = "latest"
+
+# Kubernetes
+kubectl = "latest"
+helm = "latest"
+
+# Data engineering — dbt-core via pipx (not a standalone binary)
+"pipx:dbt-core" = "latest"
+
+# Ansible — must use pipx (not uvx) with --include-deps
+"pipx:ansible" = { version = "latest", uvx_args = "--with-executables-from ansible-core" }
+
+# Python linting/formatting
+ruff = "latest"
+pre-commit = "latest"
+
+[settings]
+python.uv_venv_auto = "create|source"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+# Pin uv to the exact mise-managed Python interpreter path
+UV_PYTHON = { value = "{{ tools.python.path }}", tools = true }
