@@ -19,6 +19,10 @@ terraform {
       source  = "bpg/proxmox"
       version = ">= 0.100.0"
     }
+    ansible = {
+      source  = "ansible/ansible"
+      version = "~> 1.4.0"
+    }
   }
 }
 
@@ -31,4 +35,13 @@ provider "proxmox" {
     agent    = true
     username = var.proxmox_ssh_user
   }
+}
+
+# -----------------------------------------------------------------------------
+# Local Values — SSH Key Path Resolution
+# -----------------------------------------------------------------------------
+# If ssh_key_path_ansible is not specified, default to ssh_key_path_proxmox
+# -----------------------------------------------------------------------------
+locals {
+  ssh_key_path_ansible = coalesce(var.ssh_key_path_ansible, var.ssh_key_path_proxmox)
 }

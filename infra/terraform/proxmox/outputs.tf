@@ -21,6 +21,21 @@ output "ansible_user" {
   value       = var.ansible_user
 }
 
+output "ssh_key_path_proxmox" {
+  description = "Path to the SSH private key used for Proxmox cloud-init (public key derived from this)"
+  value       = var.ssh_key_path_proxmox
+}
+
+output "ssh_key_path_ansible" {
+  description = "Path to the SSH private key used for Ansible connections to VMs"
+  value       = local.ssh_key_path_ansible
+}
+
+output "ansible_inventory_path" {
+  description = "Path to the generated Ansible inventory file (INI format)"
+  value       = local_file.ansible_inventory.filename
+}
+
 output "ansible_inventory_snippet" {
   description = "Quick-reference for building your k3s-ansible inventory"
   value       = <<-EOF

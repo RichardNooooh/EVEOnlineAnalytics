@@ -69,10 +69,16 @@ variable "proxmox_ssh_user" {
 # SSH & User Configuration
 # -----------------------------------------------------------------------------
 
-variable "ssh_public_key_path" {
-  description = "Path to the SSH public key file for the ansible user"
+variable "ssh_key_path_proxmox" {
+  description = "Path to the SSH private key for Proxmox cloud-init (public key will be derived by appending .pub)"
   type        = string
-  default     = "~/.ssh/id_ed25519.pub"
+  default     = "~/.ssh/id_ed25519"
+}
+
+variable "ssh_key_path_ansible" {
+  description = "Path to the SSH private key for Ansible to use when connecting to VMs. Defaults to the same key as Proxmox."
+  type        = string
+  default     = null  # Will be resolved to ssh_key_path_proxmox in local values
 }
 
 variable "ansible_user" {

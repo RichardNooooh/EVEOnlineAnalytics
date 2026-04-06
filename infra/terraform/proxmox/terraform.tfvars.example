@@ -38,7 +38,11 @@ proxmox_api_token    = "terraform@pve!opentofu=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxx
 proxmox_tls_insecure = false
 proxmox_ssh_user     = "root"
 
-ssh_public_key_path = "/home/USER/.ssh/id_ed25519.pub"
+# SSH Keys — Proxmox key is used for cloud-init public key injection
+# Ansible key defaults to the same as Proxmox if not specified
+ssh_key_path_proxmox = "/home/USER/.ssh/id_ed25519"
+# ssh_key_path_ansible = "/home/USER/.ssh/id_ed25519"  # Optional: defaults to ssh_key_path_proxmox
+
 ansible_user        = "ansible"
 timezone            = "America/New_York" # adjust to your timezone
 
