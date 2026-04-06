@@ -1,0 +1,54 @@
+# =============================================================================
+# terraform.tfvars.example
+# =============================================================================
+# Copy this to terraform.tfvars and fill in your values.
+# terraform.tfvars should be .gitignored.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Node Configuration
+# -----------------------------------------------------------------------------
+
+k3s_nodes = {
+  "k3s-1" = {
+    node_name = "pve1"
+    vm_id     = 201
+    ip_addr   = "10.218.20.201/24"
+  }
+  "k3s-2" = {
+    node_name = "pve2"
+    vm_id     = 202
+    ip_addr   = "10.218.20.202/24"
+  }
+  "k3s-3" = {
+    node_name = "pve3"
+    vm_id     = 203
+    ip_addr   = "10.218.20.203/24"
+  }
+}
+
+gateway = "10.218.20.1"
+
+# -----------------------------------------------------------------------------
+# Proxmox Connection
+# -----------------------------------------------------------------------------
+
+proxmox_api_url      = "https://pve1.cluster.internal:8006/"
+proxmox_api_token    = "terraform@pve!opentofu=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+proxmox_tls_insecure = false
+proxmox_ssh_user     = "root"
+
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+ansible_user        = "ansible"
+timezone            = "America/New_York" # adjust to your timezone
+
+# VM sizing — tuned for 16 GB Proxmox nodes (~13 GB usable)
+vm_cpu_cores   = 4
+vm_memory_mb   = 10240 # 10 GB per VM
+vm_disk_size_gb = 40
+
+# Networking — adjust to your VLAN setup
+vm_network_bridge = "vmbr0"
+vm_vlan_id        = 20
+dns_servers       = ["10.218.20.90"]
+dns_search_domain = "normandy.internal"
