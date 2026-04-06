@@ -49,7 +49,7 @@ Every tool has a distinct, non-overlapping purpose. Do not add tools without jus
 | Transform | **dbt** (dbt-duckdb / dbt-snowflake) | SQL transformations, data quality tests, documentation |
 | Orchestration | **Airflow** | DAG-based scheduling: ingestion, transforms, training, predictions, monitoring |
 | Warehouse | **DuckDB** (local) | Analytical queries, zero-cost local dev |
-| Cloud-readiness | **Snowflake** (Terraform only) | IaC code proves cloud deployment path; not kept live (trial expires in 30 days) |
+| Cloud-readiness | **Snowflake** (OpenTofu/Terraform) | IaC code proves cloud deployment path; not kept live (trial expires in 30 days) |
 | BI / Dashboards | **Tableau** (Tableau Public) | Market analytics visualization for end users |
 | Experiment Tracking | **MLflow** | Training runs, hyperparameters, metrics, model registry |
 | Model Serving | **BentoML** | REST API serving trained models |
@@ -162,7 +162,7 @@ eve-market-analytics/
 │       └── dashboards/                    # JSON dashboard definitions (provisioned via Grafana API)
 │
 ├── infra/                                 # Infrastructure as code
-│   ├── terraform/
+│   ├── terraform/                           # OpenTofu configuration (Terraform-compatible)
 │   │   ├── proxmox/                       # VM provisioning (bpg/proxmox provider)
 │   │   │   ├── main.tf                    # Provider config (bpg/proxmox), backend (local state)
 │   │   │   ├── vms.tf                     # 3 k3s VMs: one per Proxmox node, cloud-init, static IPs
@@ -222,13 +222,13 @@ eve-market-analytics/
 
 Infrastructure is provisioned in three sequential layers:
 
-1. **Terraform (bpg/proxmox provider):** Provisions 3 Ubuntu VMs (one per Proxmox node) from a cloud-init template. Injects SSH keys, static IPs on the appropriate VLAN, and hostnames. State is local. This Terraform project lives in `infra/terraform/proxmox/` and is scoped exclusively to the EVE project VMs — homelab base infrastructure (DNS containers, reverse proxy, Proxmox cluster config) is managed separately and is not in this repo.
+1. **OpenTofu (bpg/proxmox provider):** Provisions 3 Ubuntu VMs (one per Proxmox node) from a cloud-init template. Injects SSH keys, static IPs on the appropriate VLAN, and hostnames. State is local. This OpenTofu project lives in `infra/terraform/proxmox/` and is scoped exclusively to the EVE project VMs — homelab base infrastructure (DNS containers, reverse proxy, Proxmox cluster config) is managed separately and is not in this repo.
 2. **Ansible (k3s-io/k3s-ansible):** Configures the 3 VMs and bootstraps a k3s HA cluster with embedded etcd. Installs NFS client utilities and verifies TrueNAS connectivity. Generates a kubeconfig for `kubectl` and Helm access from the dev workstation.
 3. **Helm + kubectl:** Deploys all application services into the k3s cluster. Airbyte uses Helm chart V2. Airflow, MLflow, Grafana, and VictoriaMetrics each have their own Helm values files in `infra/helm/`. Base Kubernetes resources (namespaces, NFS PersistentVolume, MetalLB config) are applied via raw manifests in `infra/k8s/`.
 
 ### Snowflake Cloud-Readiness
 
-- **Snowflake Terraform** (`infra/terraform/snowflake/`) exists to prove cloud-readiness. Run `terraform plan` during the 30-day trial window, record a screencast of the output, then let the trial expire. The code remains valid IaC.
+- **Snowflake OpenTofu** (`infra/terraform/snowflake/`) exists to prove cloud-readiness. Run `tofu plan` during the 30-day trial window, record a screencast of the output, then let the trial expire. The code remains valid IaC.
 - **MotherDuck** is an option as a sustainable cloud middle-ground (free tier, DuckDB-compatible). Consider as an alternative to keeping Snowflake live.
 
 ### Budget
@@ -257,7 +257,7 @@ Resource requests and limits must be set in every Helm values file. Monitor for 
 
 - **Python:** Use `pyproject.toml` for all config. Format with `ruff`. Type hints encouraged. Utilize `uv`.
 - **SQL (dbt):** Lowercase keywords, CTEs over subqueries, one model per file, descriptive model names with prefix convention (`stg_`, `int_`, `mart_`, `feat_`).
-- **Terraform:** Standard HCL formatting (`terraform fmt`). One resource type per file.
+- **OpenTofu:** Standard HCL formatting (`tofu fmt`). One resource type per file.
 - **Docker:** Multi-stage builds where applicable. Pin image versions.
 - **Git:** Conventional commits. Feature branches off `main`. PRs required.
 - **Mise:** Use `mise` to handle all tooling.
@@ -271,5 +271,5 @@ When asked to work on this project, these are typical requests and where to look
 - **"Write a dbt test"** → `transform/tests/` for custom singular tests, or add to schema YAML in the relevant model directory.
 - **"Add a new Airflow DAG"** → `orchestration/dags/`. Follow existing DAG patterns. Use `@dag` decorator style.
 - **"Set up a new monitoring dashboard"** → `monitoring/grafana/dashboards/` for JSON definitions.
-- **"Write Terraform for Snowflake"** → `infra/terraform/`. Use Snowflake provider v2.x. Follow existing resource-per-file convention.
+- **"Write OpenTofu for Snowflake"** → `infra/terraform/`. Use Snowflake provider v2.x. Follow existing resource-per-file convention.
 - **"Update documentation"** → `docs/` for architecture, data dictionary, model card. `README.md` for setup/overview.
