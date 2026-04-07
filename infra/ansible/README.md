@@ -42,19 +42,70 @@ Once VMs are running and `terraform apply` has generated the inventory:
    ```bash
    ansible-playbook -i inventory/hosts.ini playbooks/k3s-init.yml
    ```
+   This installs k3s `v1.35.3+k3s1` with embedded etcd for HA.
 
 3. **Configure NFS client:**
    ```bash
    ansible-playbook -i inventory/hosts.ini playbooks/nfs-client.yml
    ```
 
+4. **(Optional) Upgrade k3s:**
+   ```bash
+   ansible-playbook -i inventory/hosts.ini playbooks/k3s-upgrade.yml -e "k3s_version=v1.35.3+k3s1"
+   ```
+
 ## Playbooks
 
 | Playbook | Purpose | When to Run |
 |----------|---------|-------------|
-| `k3s-init.yml` | Bootstrap 3-node HA k3s cluster | After VM creation |
-| `nfs-client.yml` | Configure NFS mount for shared storage | After k3s init |
+| `k3s-init.yml` | Bootstrap 3-node HA k3s cluster (embedded etcd) | After VM creation |
+| `nfs-client.yml` | Configure TrueNAS NFS mount (`/mnt/truenas`) | After k3s init |
 | `k3s-upgrade.yml` | Rolling upgrade of k3s version | When upgrading k3s |
+
+### k3s-init.yml
+
+Bootstraps a highly-available k3s cluster with 3 server nodes using embedded etcd:
+- First node (`k3s_first_node` group) initializes the cluster with `--cluster-init`
+- Other nodes (`k3s_other_nodes` group) join using the auto-generated token
+- Saves cluster token locally to `inventory/k3s-token.txt`
+- Optionally copies kubeconfig to `~/.kube/config` (set `k3s_kubeconfig_local: false` to disable)
+- Uses k3s server flags: `--write-kubeconfig-mode 644 --tls-san eve-market.lab.answerisnoh.dev`
+
+**Variables:**
+```yaml
+k3s_version: "v1.35.3+k3s1"           # Target k3s version
+k3s_kubeconfig_local: true            # Copy kubeconfig locally
+k3s_kubeconfig_path: "~/.kube/config"  # Local kubeconfig path
+```
+
+### nfs-client.yml
+
+Configures TrueNAS NFS client on all k3s nodes for PersistentVolume storage:
+- Mounts `10.218.20.30:/mnt/pve/TrueNAS` to `/mnt/truenas`
+- Updates `/etc/fstab` for persistent mount
+- Verifies NFS write access
+
+**Variables:**
+```yaml
+nfs_server: "10.218.20.30"            # TrueNAS IP
+nfs_remote_path: "/mnt/pve/TrueNAS"   # NFS export path
+nfs_local_mount: "/mnt/truenas"       # Local mount point
+nfs_mount_options: "defaults,_netdev"   # Mount options
+```
+
+### k3s-upgrade.yml
+
+Performs rolling upgrade of k3s cluster:
+- Cordon → Drain → Stop → Upgrade → Start → Uncordon
+- Runs serially (one node at a time) for safety
+- Waits for node to be Ready before proceeding to next
+
+**Variables:**
+```yaml
+k3s_version: "v1.35.3+k3s1"           # Target k3s version
+k3s_upgrade_drain_timeout: "300s"     # Drain timeout
+k3s_upgrade_wait_timeout: 300         # Seconds to wait for node ready
+```
 
 ## Directory Structure
 
