@@ -1,0 +1,170 @@
+#!/usr/bin/env ansible-playbook
+# =============================================================================
+# nfs-client.yml — Configure TrueNAS NFS Client on k3s Nodes
+# =============================================================================
+# Configures NFS client mount for TrueNAS shared storage on all k3s nodes.
+# This storage is used for Kubernetes PersistentVolumes.
+#
+# Prerequisites:
+#   - VMs are running and accessible via SSH
+#   - nfs-common package installed (already in cloud-init)
+#   - TrueNAS NFS server accessible from k3s node network
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.ini playbooks/nfs-client.yml
+#
+# Variables:
+#   nfs_server: TrueNAS NFS server IP (default: 10.218.20.30)
+#   nfs_remote_path: Remote NFS export path (default: /mnt/pve/TrueNAS)
+#   nfs_local_mount: Local mount point (default: /mnt/truenas)
+#   nfs_mount_options: Mount options (default: defaults,_netdev)
+# =============================================================================
+
+---
+- name: Configure TrueNAS NFS client
+  hosts: k3s_servers
+  become: true
+  vars:
+    nfs_server: "10.218.20.30"
+    nfs_remote_path: "/mnt/pve/TrueNAS"
+    nfs_local_mount: "/mnt/truenas"
+    nfs_mount_options: "defaults,_netdev"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Verify NFS utilities
+    # -------------------------------------------------------------------------
+    - name: Ensure nfs-common is installed
+      ansible.builtin.apt:
+        name: nfs-common
+        state: present
+        update_cache: true
+      retries: 3
+      delay: 5
+
+    - name: Ensure rpcbind service is running
+      ansible.builtin.systemd:
+        name: rpcbind
+        state: started
+        enabled: true
+
+    # -------------------------------------------------------------------------
+    # Create mount point
+    # -------------------------------------------------------------------------
+    - name: Ensure local mount directory exists
+      ansible.builtin.file:
+        path: "{{ nfs_local_mount }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    # -------------------------------------------------------------------------
+    # Check current mounts
+    # -------------------------------------------------------------------------
+    - name: Check if NFS is already mounted
+      ansible.builtin.shell: |
+        mount | grep "{{ nfs_server }}:{{ nfs_remote_path }} on {{ nfs_local_mount }}"
+      register: nfs_mounted_check
+      changed_when: false
+      failed_when: false
+
+    - name: Set mount status fact
+      ansible.builtin.set_fact:
+        nfs_already_mounted: "{{ nfs_mounted_check.rc == 0 }}"
+
+    # -------------------------------------------------------------------------
+    # Configure /etc/fstab
+    # -------------------------------------------------------------------------
+    - name: Add NFS entry to /etc/fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "{{ nfs_server }}:{{ nfs_remote_path }} {{ nfs_local_mount }} nfs {{ nfs_mount_options }} 0 0"
+        regexp: "^{{ nfs_server }}:{{ nfs_remote_path }}"
+        state: present
+        backup: true
+      notify: reload systemd daemon
+
+    # -------------------------------------------------------------------------
+    # Mount NFS
+    # -------------------------------------------------------------------------
+    - name: Mount NFS share
+      ansible.builtin.mount:
+        path: "{{ nfs_local_mount }}"
+        src: "{{ nfs_server }}:{{ nfs_remote_path }}"
+        fstype: nfs
+        opts: "{{ nfs_mount_options }}"
+        state: mounted
+      when: not nfs_already_mounted | bool
+
+    - name: Ensure NFS is mounted (idempotent)
+      ansible.builtin.command: |
+        mountpoint -q {{ nfs_local_mount }}
+      register: mountpoint_check
+      changed_when: false
+      failed_when: false
+
+    - name: Mount if not already mounted
+      ansible.builtin.command: |
+        mount {{ nfs_local_mount }}
+      when: mountpoint_check.rc != 0
+      register: manual_mount
+      changed_when: manual_mount.rc == 0
+
+    # -------------------------------------------------------------------------
+    # Verify Mount
+    # -------------------------------------------------------------------------
+    - name: Get mount information
+      ansible.builtin.command: |
+        mount | grep "{{ nfs_local_mount }}"
+      register: mount_info
+      changed_when: false
+      failed_when: mount_info.rc != 0
+
+    - name: Display mount information
+      ansible.builtin.debug:
+        msg: "NFS mounted: {{ mount_info.stdout }}"
+
+    - name: Test NFS write access
+      ansible.builtin.tempfile:
+        state: file
+        suffix: nfs_test
+        path: "{{ nfs_local_mount }}"
+        prefix: ansible_test_
+      register: nfs_test_file
+      changed_when: true
+
+    - name: Write test to NFS
+      ansible.builtin.copy:
+        content: "NFS test from {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}\n"
+        dest: "{{ nfs_test_file.path }}"
+        mode: '0644'
+
+    - name: Read test from NFS
+      ansible.builtin.slurp:
+        src: "{{ nfs_test_file.path }}"
+      register: nfs_test_content
+
+    - name: Display NFS test content
+      ansible.builtin.debug:
+        msg: "NFS test file content: {{ nfs_test_content.content | b64decode }}"
+
+    - name: Remove test file
+      ansible.builtin.file:
+        path: "{{ nfs_test_file.path }}"
+        state: absent
+
+    - name: Verify NFS connectivity
+      ansible.builtin.command: |
+        df -h {{ nfs_local_mount }}
+      register: df_output
+      changed_when: false
+
+    - name: Display NFS usage
+      ansible.builtin.debug:
+        msg: "NFS usage on {{ inventory_hostname }}: {{ df_output.stdout_lines[1] | default(df_output.stdout) }}"
+
+  handlers:
+    - name: reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true

@@ -1,0 +1,231 @@
+#!/usr/bin/env ansible-playbook
+# =============================================================================
+# k3s-upgrade.yml — Rolling Upgrade of k3s Cluster
+# =============================================================================
+# Performs a rolling upgrade of the k3s cluster, one node at a time.
+# Each node is drained, upgraded, and uncordoned before moving to the next.
+#
+# Prerequisites:
+#   - k3s cluster is running and healthy
+#   - kubectl access from first node (or local machine with kubeconfig)
+#   - Target version specified in k3s_version variable
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.ini playbooks/k3s-upgrade.yml
+#   ansible-playbook -i inventory/hosts.ini playbooks/k3s-upgrade.yml -e "k3s_version=v1.35.3+k3s1"
+#
+# Variables:
+#   k3s_version: Target k3s version (default: v1.35.3+k3s1)
+#   k3s_upgrade_drain_timeout: Drain timeout in seconds (default: 300)
+#   k3s_upgrade_wait_timeout: Seconds to wait for node ready (default: 300)
+# =============================================================================
+
+---
+- name: Rolling upgrade of k3s cluster
+  hosts: k3s_servers
+  become: true
+  serial: 1
+  vars:
+    k3s_version: "v1.35.3+k3s1"
+    k3s_binary_url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/k3s"
+    k3s_upgrade_drain_timeout: "300s"
+    k3s_upgrade_wait_timeout: 300
+    k3s_server_flags: "--write-kubeconfig-mode 644 --tls-san eve-market.lab.answerisnoh.dev"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Pre-flight Checks
+    # -------------------------------------------------------------------------
+    - name: Check current k3s version
+      ansible.builtin.command: /usr/local/bin/k3s --version
+      register: current_version
+      changed_when: false
+      failed_when: false
+
+    - name: Display current version
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: Current k3s version is {{ current_version.stdout | default('not installed') }}"
+
+    - name: Extract version number
+      ansible.builtin.set_fact:
+        current_version_short: "{{ current_version.stdout | regex_search('v[0-9]+\\.[0-9]+\\.[0-9]+\\+k3s[0-9]+') | default('unknown') }}"
+
+    - name: Check if upgrade is needed
+      ansible.builtin.set_fact:
+        upgrade_needed: "{{ current_version_short != k3s_version }}"
+
+    - name: Skip if already at target version
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: Already at target version {{ k3s_version }}. Skipping."
+      when: not upgrade_needed | bool
+
+    # -------------------------------------------------------------------------
+    # Drain Node
+    # -------------------------------------------------------------------------
+    - name: Get first node for kubectl operations
+      ansible.builtin.set_fact:
+        kubectl_node: "{{ groups['k3s_first_node'][0] }}"
+
+    - name: Cordon node (mark unschedulable)
+      ansible.builtin.command: |
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml cordon {{ inventory_hostname }}
+      register: cordon_result
+      changed_when: "'cordoned' in cordon_result.stdout"
+      failed_when: 
+        - cordon_result.rc != 0
+        - "'already cordoned' not in cordon_result.stderr"
+      delegate_to: "{{ kubectl_node }}"
+      when: upgrade_needed | bool
+
+    - name: Drain node
+      ansible.builtin.command: |
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml drain {{ inventory_hostname }} \
+          --ignore-daemonsets \
+          --delete-emptydir-data \
+          --force \
+          --timeout={{ k3s_upgrade_drain_timeout }}
+      register: drain_result
+      changed_when: drain_result.rc == 0
+      delegate_to: "{{ kubectl_node }}"
+      when: upgrade_needed | bool
+
+    - name: Display drain result
+      ansible.builtin.debug:
+        msg: "Node {{ inventory_hostname }} drained successfully"
+      when: 
+        - upgrade_needed | bool
+        - drain_result.rc == 0
+
+    # -------------------------------------------------------------------------
+    # Upgrade k3s
+    # -------------------------------------------------------------------------
+    - name: Stop k3s service
+      ansible.builtin.systemd:
+        name: k3s
+        state: stopped
+      when: upgrade_needed | bool
+
+    - name: Download new k3s binary
+      ansible.builtin.get_url:
+        url: "{{ k3s_binary_url }}"
+        dest: /usr/local/bin/k3s
+        mode: '0755'
+        force: true
+        timeout: 120
+      register: download_result
+      retries: 3
+      delay: 10
+      until: download_result is succeeded
+      when: upgrade_needed | bool
+
+    - name: Verify k3s binary
+      ansible.builtin.command: /usr/local/bin/k3s --version
+      register: new_version
+      changed_when: false
+      when: upgrade_needed | bool
+
+    - name: Display new version
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: New k3s version: {{ new_version.stdout | default('unknown') }}"
+      when: upgrade_needed | bool
+
+    - name: Start k3s service
+      ansible.builtin.systemd:
+        name: k3s
+        state: started
+      when: upgrade_needed | bool
+
+    # -------------------------------------------------------------------------
+    # Wait for Node Recovery
+    # -------------------------------------------------------------------------
+    - name: Wait for k3s service to be active
+      ansible.builtin.systemd:
+        name: k3s
+      register: k3s_status
+      until: k3s_status.status.ActiveState == "active"
+      retries: 20
+      delay: 5
+      when: upgrade_needed | bool
+
+    - name: Wait for node to be Ready
+      ansible.builtin.command: |
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get node {{ inventory_hostname }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: node_ready
+      changed_when: false
+      until: node_ready.stdout == "True"
+      retries: 30
+      delay: 10
+      delegate_to: "{{ kubectl_node }}"
+      when: upgrade_needed | bool
+
+    - name: Display node status
+      ansible.builtin.debug:
+        msg: "Node {{ inventory_hostname }} is Ready"
+      when: upgrade_needed | bool
+
+    # -------------------------------------------------------------------------
+    # Uncordon Node
+    # -------------------------------------------------------------------------
+    - name: Uncordon node (mark schedulable)
+      ansible.builtin.command: |
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml uncordon {{ inventory_hostname }}
+      register: uncordon_result
+      changed_when: "'uncordoned' in uncordon_result.stdout"
+      failed_when: 
+        - uncordon_result.rc != 0
+        - "'already uncordoned' not in uncordon_result.stderr"
+      delegate_to: "{{ kubectl_node }}"
+      when: upgrade_needed | bool
+
+    - name: Display uncordon result
+      ansible.builtin.debug:
+        msg: "Node {{ inventory_hostname }} uncordoned and ready for workloads"
+      when: upgrade_needed | bool
+
+    # -------------------------------------------------------------------------
+    # Verify Cluster Health Before Proceeding
+    # -------------------------------------------------------------------------
+    - name: Get all node status
+      ansible.builtin.command: |
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes -o wide
+      register: cluster_status
+      changed_when: false
+      delegate_to: "{{ kubectl_node }}"
+      when: upgrade_needed | bool
+
+    - name: Display cluster status
+      ansible.builtin.debug:
+        var: cluster_status.stdout_lines
+      when: upgrade_needed | bool
+
+    - name: Wait for all nodes to be Ready before next node
+      ansible.builtin.command: |
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' | grep -v "True" || true
+      register: not_ready_nodes
+      changed_when: false
+      until: not_ready_nodes.stdout == ""
+      retries: 15
+      delay: 10
+      delegate_to: "{{ kubectl_node }}"
+      when: upgrade_needed | bool
+
+  post_tasks:
+    # -------------------------------------------------------------------------
+    # Final Verification
+    # -------------------------------------------------------------------------
+    - name: Verify all nodes upgraded
+      ansible.builtin.command: |
+        /usr/local/bin/kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.nodeInfo.kubeletVersion}{"\n"}{end}'
+      register: final_versions
+      changed_when: false
+      run_once: true
+      delegate_to: "{{ groups['k3s_first_node'][0] }}"
+
+    - name: Display final cluster versions
+      ansible.builtin.debug:
+        msg: |
+          Cluster upgrade complete!
+          Node versions:
+          {{ final_versions.stdout }}
+      run_once: true
+      delegate_to: "{{ groups['k3s_first_node'][0] }}"
