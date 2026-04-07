@@ -180,7 +180,7 @@ eve-market-analytics/
 │   │       └── README.md                  # Instructions: how to terraform plan/apply against trial
 │   ├── ansible/                           # VM configuration + k3s bootstrap
 │   │   ├── inventory/
-│   │   │   └── hosts.yml                  # k3s server nodes (all 3 are server + workload nodes)
+│   │   │   └── hosts.ini                  # k3s server nodes (all 3 are server + workload nodes)
 │   │   ├── playbooks/
 │   │   │   ├── k3s-init.yml               # Bootstrap 3-node k3s HA cluster (embedded etcd)
 │   │   │   ├── k3s-upgrade.yml            # Rolling k3s version upgrades
@@ -197,7 +197,6 @@ eve-market-analytics/
 │   ├── k8s/                               # Raw Kubernetes manifests (non-Helm resources)
 │   │   ├── namespaces.yaml                # Namespace definitions: data, ml, monitoring
 │   │   ├── nfs-pv.yaml                    # PersistentVolume + StorageClass for TrueNAS NFS
-│   │   ├── metallb-config.yaml            # MetalLB IP address pool (outside DHCP range)
 │   │   └── README.md
 │   ├── Makefile                           # Common commands: make vms, make cluster, make deploy-all, etc.
 │   └── README.md                          # Full bootstrap guide: Terraform → Ansible → k8s base → Helm
