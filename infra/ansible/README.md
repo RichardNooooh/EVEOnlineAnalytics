@@ -107,7 +107,7 @@ kubelet-arg:
 
 ### Kubelet Resource Reservations
 
-Critical for stability on ~13GB nodes running Airbyte (6-8GB) + Airflow (2-3GB):
+Critical for stability on ~13GB nodes running Airflow (2-3GB) + dlt tasks:
 - **System-reserved**: 200m CPU, 512Mi memory (OS daemons)
 - **Kube-reserved**: 200m CPU, 512Mi memory (k8s system pods)
 - **Eviction-hard**: 300Mi (pods evicted when memory drops below this)

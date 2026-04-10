@@ -140,10 +140,9 @@ ansible-lint: ## Run ansible-lint on all Ansible files
 # Deploy (kubectl + Helm)
 # =============================================================================
 
-.PHONY: _helm-repos helm-lint k8s-base deploy-all deploy-airbyte deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
+.PHONY: _helm-repos helm-lint k8s-base deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
 
 _helm-repos: ## Add + update Helm repos (internal use)
-	$(HELM) repo add airbyte https://airbytehq.github.io/helm-charts 2>/dev/null || true
 	$(HELM) repo add apache-airflow https://airflow.apache.org 2>/dev/null || true
 	$(HELM) repo add community-charts https://community-charts.github.io/helm-charts 2>/dev/null || true
 	$(HELM) repo add vm https://victoriametrics.github.io/helm-charts 2>/dev/null || true
@@ -151,7 +150,6 @@ _helm-repos: ## Add + update Helm repos (internal use)
 	$(HELM) repo update
 
 helm-lint: ## Lint all Helm values files
-	$(HELM) lint $(HELM_DIR)/airbyte-values.yaml 2>/dev/null || echo "Warning: airbyte-values.yaml not found"
 	$(HELM) lint $(HELM_DIR)/airflow-values.yaml 2>/dev/null || echo "Warning: airflow-values.yaml not found"
 	$(HELM) lint $(HELM_DIR)/mlflow-values.yaml 2>/dev/null || echo "Warning: mlflow-values.yaml not found"
 	$(HELM) lint $(HELM_DIR)/victoriametrics-values.yaml 2>/dev/null || echo "Warning: victoriametrics-values.yaml not found"
@@ -162,15 +160,9 @@ k8s-base: kube-context ## Apply base k8s manifests (namespaces, storage)
 	$(KUBECTL) apply -f $(K8S_DIR)/nfs-pv.yaml
 
 deploy-all: kube-context _helm-repos k8s-base ## Deploy all services (full chain)
-	@$(MAKE) deploy-airbyte
 	@$(MAKE) deploy-airflow
 	@$(MAKE) deploy-mlflow
 	@$(MAKE) deploy-monitoring
-
-deploy-airbyte: kube-context _helm-repos ## Deploy Airbyte Helm chart
-	$(HELM) upgrade --install airbyte airbyte/airbyte \
-	    --values $(HELM_DIR)/airbyte-values.yaml \
-	    --namespace data --create-namespace
 
 deploy-airflow: kube-context _helm-repos ## Deploy Airflow Helm chart
 	$(HELM) upgrade --install airflow apache-airflow/airflow \
@@ -192,7 +184,6 @@ deploy-monitoring: kube-context _helm-repos ## Deploy VictoriaMetrics + Grafana
 
 plan-helm: kube-context _helm-repos ## Run helm diff upgrade on all charts (drift check)
 	@echo "Checking helm diff for all charts..."
-	@$(HELM) diff upgrade airbyte airbyte/airbyte --values $(HELM_DIR)/airbyte-values.yaml --namespace data 2>/dev/null || echo "airbyte: no diff or not installed"
 	@$(HELM) diff upgrade airflow apache-airflow/airflow --values $(HELM_DIR)/airflow-values.yaml --namespace data 2>/dev/null || echo "airflow: no diff or not installed"
 	@$(HELM) diff upgrade mlflow community-charts/mlflow --values $(HELM_DIR)/mlflow-values.yaml --namespace ml 2>/dev/null || echo "mlflow: no diff or not installed"
 	@$(HELM) diff upgrade victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics-values.yaml --namespace monitoring 2>/dev/null || echo "victoriametrics: no diff or not installed"
@@ -203,7 +194,6 @@ ifneq ($(CONFIRM),yes)
 	@echo "ERROR: Refusing to uninstall. Re-run with CONFIRM=yes"
 	@exit 1
 endif
-	$(HELM) uninstall airbyte --namespace data 2>/dev/null || true
 	$(HELM) uninstall airflow --namespace data 2>/dev/null || true
 	$(HELM) uninstall mlflow --namespace ml 2>/dev/null || true
 	$(HELM) uninstall victoriametrics --namespace monitoring 2>/dev/null || true
