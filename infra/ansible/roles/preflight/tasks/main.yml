@@ -72,9 +72,9 @@
 - name: Validate target OS
   ansible.builtin.assert:
     that:
-      - ansible_distribution in ['Ubuntu', 'Debian']
-    fail_msg: "Unsupported OS: {{ ansible_distribution }}. Only Ubuntu/Debian are supported."
-    success_msg: "OS {{ ansible_distribution }} {{ ansible_distribution_version }} is supported"
+      - ansible_facts['distribution'] in ['Ubuntu', 'Debian']
+    fail_msg: "Unsupported OS: {{ ansible_facts['distribution'] }}. Only Ubuntu/Debian are supported."
+    success_msg: "OS {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }} is supported"
   tags:
     - preflight
     - os
@@ -82,9 +82,9 @@
 - name: Validate Python version on targets
   ansible.builtin.assert:
     that:
-      - ansible_python_version is version(preflight_min_python_version, '>=')
-    fail_msg: "Python {{ ansible_python_version }} is too old. Required: >= {{ preflight_min_python_version }}"
-    success_msg: "Python {{ ansible_python_version }} meets requirements"
+      - ansible_facts['python_version'] is version(preflight_min_python_version, '>=')
+    fail_msg: "Python {{ ansible_facts['python_version'] }} is too old. Required: >= {{ preflight_min_python_version }}"
+    success_msg: "Python {{ ansible_facts['python_version'] }} meets requirements"
   tags:
     - preflight
     - python
@@ -101,6 +101,7 @@
 
 - name: Check disk space
   ansible.builtin.shell: |
+    set -o pipefail
     df -BM / | tail -1 | awk '{print $4}' | sed 's/M//'
   register: disk_space_mb
   changed_when: false
@@ -120,6 +121,7 @@
 
 - name: Check memory
   ansible.builtin.shell: |
+    set -o pipefail
     free -m | grep Mem | awk '{print $7}'
   register: memory_free_mb
   changed_when: false
@@ -141,8 +143,8 @@
   ansible.builtin.debug:
     msg: |
       Preflight checks passed for {{ inventory_hostname }}:
-        - OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
-        - Python: {{ ansible_python_version }}
+        - OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
+        - Python: {{ ansible_facts['python_version'] }}
         - Disk: {{ disk_space_mb.stdout }}MB free
         - Memory: {{ memory_free_mb.stdout }}MB free
   tags:

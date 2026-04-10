@@ -19,7 +19,6 @@ common_packages:
   - curl
   - gnupg
   - lsb-release
-  - software-properties-common
   - nfs-common
   - net-tools
   - iptables
@@ -35,20 +34,23 @@ common_sysctl_params:
   # Bridge netfilter settings (required for CNI)
   net.bridge.bridge-nf-call-iptables: 1
   net.bridge.bridge-nf-call-ip6tables: 1
- 
+
   # Inotify limits (Airbyte + Airflow hit these)
   fs.inotify.max_user_instances: 8192
   fs.inotify.max_user_watches: 524288
- 
+
   # Connection tracking limits
   net.netfilter.nf_conntrack_max: 131072
- 
+
   # TCP keepalive settings
   net.ipv4.tcp_keepalive_time: 600
   net.ipv4.tcp_keepalive_intvl: 30
   net.ipv4.tcp_keepalive_probes: 10
 
 # Kernel modules to load
+# Note: nf_conntrack must be loaded BEFORE net.netfilter.nf_conntrack_max sysctl is set
+# systemd-modules-load.service runs before systemd-sysctl.service, ensuring correct order
 common_kernel_modules:
   - br_netfilter
   - overlay
+  - nf_conntrack
