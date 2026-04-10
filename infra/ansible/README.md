@@ -9,7 +9,7 @@ This layer uses a **role-based architecture** with proper separation of concerns
 - **Preflight role**: Read-only validation checks
 - **Common role**: Base OS configuration (time sync, swap, sysctl, packages)
 - **k3s_server role**: Cluster bootstrap and node joining
-- **k3s_upgrade role**: Rolling upgrades with etcd snapshot
+
 - **nfs_client role**: NFS mount configuration
 
 ## Quick Start
@@ -63,7 +63,7 @@ Key settings:
 # group_vars/all.yml
 k3s_version: "v1.35.3+k3s1"
 k3s_tls_san: "eve-market.lab.answerisnoh.dev"
-k3s_upgrade_force_drain: false  # DANGEROUS: forces deletion of pods with local storage
+
 
 # NFS with performance tuning
 nfs_mount_options: "vers=4.2,hard,intr,timeo=600,retrans=2,rsize=1048576,wsize=1048576,_netdev"
@@ -80,7 +80,7 @@ nfs_mount_options: "vers=4.2,hard,intr,timeo=600,retrans=2,rsize=1048576,wsize=1
 | `playbooks/k3s-init.yml` | Bootstrap k3s cluster | `--tags k3s` |
 | `playbooks/nfs-client.yml` | Configure NFS mounts | `--tags nfs` |
 | `playbooks/verify.yml` | Post-deployment verification | `--tags verify` |
-| `playbooks/k3s-upgrade.yml` | Rolling upgrade | `-e k3s_version=v1.x.x+k3sx` |
+
 | `playbooks/k3s-etcd-snapshot.yml` | On-demand etcd backup | For Airflow scheduling |
 | `playbooks/k3s-uninstall.yml` | **DESTRUCTIVE**: Remove k3s | `-e confirm_uninstall=yes` |
 | `playbooks/reboot.yml` | Rolling node reboots | `--check` first |
@@ -115,7 +115,6 @@ Critical for stability on ~13GB nodes running Airbyte (6-8GB) + Airflow (2-3GB):
 ### Rolling Upgrade Safety
 
 - **etcd snapshot** taken on first node before upgrade starts
-- **Opt-in force drain**: `k3s_upgrade_force_drain: false` by default (prevents accidental data loss)
 - **Serial execution**: One node at a time
 - **Health gates**: Waits for node Ready and cluster health before proceeding
 
@@ -211,7 +210,7 @@ ansible/
     ├── preflight/           # Validation role
     ├── common/              # Base OS role
     ├── k3s_server/          # k3s installation role
-    ├── k3s_upgrade/         # Upgrade role
+
     └── nfs_client/          # NFS mount role
 ```
 

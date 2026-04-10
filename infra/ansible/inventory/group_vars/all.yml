@@ -2,7 +2,7 @@
 # Group Variables — All Hosts
 # =============================================================================
 # Shared variables used across all playbooks and roles.
-# These values are used by multiple roles (k3s_server, k3s_upgrade, nfs_client).
+# These values are used by multiple roles (k3s_server, nfs_client).
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -55,19 +55,6 @@ nfs_mount_options: "vers=4.2,hard,intr,timeo=600,retrans=2,rsize=1048576,wsize=1
 
 # NFS health check subdirectory (test files go here, not root)
 nfs_health_dir: ".ansible-health"
-
-# -----------------------------------------------------------------------------
-# Upgrade Settings
-# -----------------------------------------------------------------------------
-# Timeout for node drain operation (seconds)
-k3s_upgrade_drain_timeout: "300s"
-
-# Seconds to wait for node to become Ready after upgrade
-k3s_upgrade_wait_timeout: 300
-
-# Whether to force delete pods with local storage during drain (DANGEROUS)
-# Set to true only if you understand the risk of data loss
-k3s_upgrade_force_drain: false
 
 # -----------------------------------------------------------------------------
 # Paths
