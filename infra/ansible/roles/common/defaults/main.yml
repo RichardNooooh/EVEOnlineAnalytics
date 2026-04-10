@@ -25,6 +25,8 @@ common_packages:
   - ebtables
   - ethtool
   - ipset
+  - jq
+  - python3-kubernetes
 
 # Sysctl parameters for Kubernetes networking
 common_sysctl_params:

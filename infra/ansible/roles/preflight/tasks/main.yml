@@ -150,3 +150,21 @@
   tags:
     - preflight
     - summary
+
+- name: Validate all expected hosts are reachable
+  ansible.builtin.assert:
+    that:
+      - ansible_play_hosts | length == groups['k3s_servers'] | length
+    fail_msg: |
+      CRITICAL: Not all nodes are reachable!
+        - Expected: {{ groups['k3s_servers'] | length }} hosts in k3s_servers group
+        - Reachable: {{ ansible_play_hosts | length }} hosts
+        - Unreachable: {{ groups['k3s_servers'] | difference(ansible_play_hosts) }}
+      Aborting playbook because all nodes must connect for k3s HA cluster bootstrap
+    success_msg: "All {{ groups['k3s_servers'] | length }} hosts are reachable."
+  tags:
+    - preflight
+    - connectivity
+  run_once: true
+  delegate_to: localhost
+  become: false

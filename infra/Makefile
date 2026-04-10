@@ -94,7 +94,7 @@ ifneq ($(CONFIRM),yes)
 	@echo "ERROR: Refusing to destroy VMs. Re-run with CONFIRM=yes"
 	@exit 1
 endif
-	$(TOFU) -chdir=$(PROXMOX_DIR) destroy
+	$(TOFU) -chdir=$(PROXMOX_DIR) destroy -target proxmox_virtual_environment_vm.k3s
 
 # =============================================================================
 # Configure (Ansible)
