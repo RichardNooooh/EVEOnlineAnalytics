@@ -183,7 +183,6 @@ eve-market-analytics/
 │   │   │   └── hosts.ini                  # k3s server nodes (all 3 are server + workload nodes)
 │   │   ├── playbooks/
 │   │   │   ├── k3s-init.yml               # Bootstrap 3-node k3s HA cluster (embedded etcd)
-│   │   │   ├── k3s-upgrade.yml            # Rolling k3s version upgrades
 │   │   │   └── nfs-client.yml             # Install NFS utils, verify TrueNAS mount
 │   │   ├── roles/                         # Ansible roles for k3s setup, prereqs, storage
 │   │   └── README.md                      # Sequencing: terraform apply → ansible k3s-init → helm deploys
