@@ -80,7 +80,8 @@
 # Verify Mount
 # -----------------------------------------------------------------------------
 - name: Get mount information
-  ansible.builtin.command: |
+  ansible.builtin.shell: |
+    set -o pipefail
     mount | grep "{{ nfs_local_mount }}"
   register: mount_info
   changed_when: false

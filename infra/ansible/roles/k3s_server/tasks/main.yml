@@ -149,10 +149,6 @@
       delegate_to: localhost
       become: false
 
-    - name: Initial k3s token
-      ansible.builtin.debug:
-        msg: "{{ k3s_token_b64.content | b64decode | trim }}"
-
 # -----------------------------------------------------------------------------
 # Other Nodes: Join Cluster
 # -----------------------------------------------------------------------------
@@ -172,10 +168,6 @@
     - name: Set cluster token fact for joining
       ansible.builtin.set_fact:
         k3s_cluster_token: "{{ k3s_token_local_b64.content | b64decode | trim }}"
-
-    - name: Loaded k3s token
-      ansible.builtin.debug:
-        msg: "{{ k3s_cluster_token }}"
 
     - name: Get first node IP
       ansible.builtin.set_fact:

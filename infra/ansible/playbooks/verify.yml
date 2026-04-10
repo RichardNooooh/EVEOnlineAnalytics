@@ -112,7 +112,8 @@
 
   tasks:
     - name: Check NFS mount
-      ansible.builtin.command: |
+      ansible.builtin.shell: |
+        set -o pipefail
         mountpoint -q {{ nfs_local_mount }} && echo "mounted" || echo "not mounted"
       register: mount_check
       changed_when: false
