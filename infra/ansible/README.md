@@ -200,7 +200,6 @@ ansible/
 │   ├── k3s-init.yml         # Bootstrap cluster
 │   ├── nfs-client.yml       # NFS mount configuration
 │   ├── verify.yml           # Post-deployment verification
-│   ├── k3s-upgrade.yml      # Rolling upgrades
 │   ├── k3s-etcd-snapshot.yml # On-demand etcd backup
 │   ├── k3s-uninstall.yml    # Clean teardown
 │   ├── reboot.yml           # Rolling reboots

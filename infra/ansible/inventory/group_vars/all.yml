@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # k3s Configuration
 # -----------------------------------------------------------------------------
-# Target k3s version for installation and upgrades
+# Target k3s version for installation
 # Reference: https://github.com/k3s-io/k3s/releases
 k3s_version: "v1.35.3+k3s1"
 

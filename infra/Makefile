@@ -100,7 +100,7 @@ endif
 # Configure (Ansible)
 # =============================================================================
 
-.PHONY: ping preflight cluster cluster-init cluster-upgrade cluster-reboot snapshot kubeconfig nfs ssh ansible-lint
+.PHONY: ping preflight cluster cluster-init cluster-reboot snapshot kubeconfig nfs ssh ansible-lint
 
 ping: ## Ping all k3s servers to verify connectivity
 	cd $(ANSIBLE_DIR) && ansible -m ping k3s_servers
@@ -113,9 +113,6 @@ cluster: ## Run full site.yml playbook (preflight → common → k3s → nfs →
 
 cluster-init: ## Run k3s-init.yml directly (low-level escape hatch)
 	cd $(ANSIBLE_DIR) && $(ANSIBLE) playbooks/k3s-init.yml
-
-cluster-upgrade: ## Upgrade k3s cluster (set k3s_version var if needed)
-	cd $(ANSIBLE_DIR) && $(ANSIBLE) playbooks/k3s-upgrade.yml
 
 cluster-reboot: ## Rolling reboot of all k3s nodes
 	cd $(ANSIBLE_DIR) && $(ANSIBLE) playbooks/reboot.yml
