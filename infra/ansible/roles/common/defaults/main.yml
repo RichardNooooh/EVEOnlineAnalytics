@@ -37,7 +37,8 @@ common_sysctl_params:
   net.bridge.bridge-nf-call-iptables: 1
   net.bridge.bridge-nf-call-ip6tables: 1
 
-  # Inotify limits (Airbyte + Airflow hit these)
+  # Inotify limits (dlt + Airflow and file-intensive workloads)
+  # TODO: Review these limits - originally set high for AirByte, may be reduced
   fs.inotify.max_user_instances: 8192
   fs.inotify.max_user_watches: 524288
 

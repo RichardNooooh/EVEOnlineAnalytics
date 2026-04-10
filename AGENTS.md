@@ -45,7 +45,7 @@ Every tool has a distinct, non-overlapping purpose. Do not add tools without jus
 
 | Layer | Tool | Purpose |
 |---|---|---|
-| Extract + Load | **Airbyte** (self-hosted) | Custom connector for ESI API; managed connector patterns |
+| Extract + Load | **dlt** (data load tool) | Python-native ESI API ingestion; runs as Airflow tasks |
 | Transform | **dbt** (dbt-duckdb / dbt-snowflake) | SQL transformations, data quality tests, documentation |
 | Orchestration | **Airflow** | DAG-based scheduling: ingestion, transforms, training, predictions, monitoring |
 | Warehouse | **DuckDB** (local) | Analytical queries, zero-cost local dev |
@@ -57,7 +57,7 @@ Every tool has a distinct, non-overlapping purpose. Do not add tools without jus
 | Infra Monitoring | **VictoriaMetrics + Grafana** | Pipeline health, job durations, API error rates, resource usage |
 
 ### Tools Explicitly NOT Used (and Why)
-- **Fivetran:** SaaS dependency, no native ESI connector, would still require custom Python extraction. Airbyte self-hosted is open-source and more resume-appropriate.
+- **Airbyte:** Heavy self-hosted footprint (6-8 GB RAM) and complex to operate. dlt provides equivalent extraction as a lightweight Python library.
 - **Great Expectations:** Overlap with dbt tests. dbt tests cover schema, business logic, and freshness validation sufficiently for this project's scope. Mention GX in docs as a production-scale addition.
 - **DVC:** The warehouse serves as the versioned data store. Training datasets are reconstructed via dbt queries, not materialized files. MLflow artifact store handles model versioning.
 - **PowerBI:** Redundant with Tableau. One BI tool is sufficient.
@@ -100,7 +100,7 @@ eve-market-analytics/
 │   │   ├── download_market_history.py
 │   │   ├── download_market_orders.py
 │   │   └── load_to_duckdb.py
-│   ├── esi_live/                          # Live ESI API ingestion (used by Airbyte custom connector)
+│   ├── esi_live/                          # Live ESI API ingestion (used by dlt pipeline)
 │   │   ├── market_history_scraper.py
 │   │   ├── market_orders_scraper.py
 │   │   └── rate_limiter.py
@@ -146,7 +146,7 @@ eve-market-analytics/
 │
 ├── orchestration/                         # Airflow (deployed on k3s via Helm)
 │   ├── dags/
-│   │   ├── dag_daily_ingest.py            # Trigger Airbyte sync + everef download
+│   │   ├── dag_daily_ingest.py            # Run dlt pipeline + everef download
 │   │   ├── dag_transform.py               # Run dbt models + tests
 │   │   ├── dag_train_model.py             # Periodic retraining (weekly or drift-triggered)
 │   │   ├── dag_predict.py                 # Run predictions on latest data
@@ -187,7 +187,7 @@ eve-market-analytics/
 │   │   ├── roles/                         # Ansible roles for k3s setup, prereqs, storage
 │   │   └── README.md                      # Sequencing: terraform apply → ansible k3s-init → helm deploys
 │   ├── helm/                              # Helm values overrides for all k3s-deployed services
-│   │   ├── airbyte-values.yaml            # Airbyte Helm chart V2; resource limits for constrained RAM
+
 │   │   ├── airflow-values.yaml            # Airflow Helm chart; DAG git-sync, executor config
 │   │   ├── mlflow-values.yaml             # MLflow tracking server; NFS-backed artifact store
 │   │   ├── grafana-values.yaml            # Grafana; dashboard provisioning, VictoriaMetrics datasource
@@ -222,7 +222,7 @@ Infrastructure is provisioned in three sequential layers:
 
 1. **OpenTofu (bpg/proxmox provider):** Provisions 3 Ubuntu VMs (one per Proxmox node) from a cloud-init template. Injects SSH keys, static IPs on the appropriate VLAN, and hostnames. State is local. This OpenTofu project lives in `infra/terraform/proxmox/` and is scoped exclusively to the EVE project VMs — homelab base infrastructure (DNS containers, reverse proxy, Proxmox cluster config) is managed separately and is not in this repo.
 2. **Ansible (k3s-io/k3s-ansible):** Configures the 3 VMs and bootstraps a k3s HA cluster with embedded etcd. Installs NFS client utilities and verifies TrueNAS connectivity. Generates a kubeconfig for `kubectl` and Helm access from the dev workstation.
-3. **Helm + kubectl:** Deploys all application services into the k3s cluster. Airbyte uses Helm chart V2. Airflow, MLflow, Grafana, and VictoriaMetrics each have their own Helm values files in `infra/helm/`. Base Kubernetes resources (namespaces, NFS PersistentVolume) are applied via raw manifests in `infra/k8s/`.
+3. **Helm + kubectl:** Deploys all application services into the k3s cluster. Airflow, MLflow, Grafana, and VictoriaMetrics each have their own Helm values files in `infra/helm/`. Base Kubernetes resources (namespaces, NFS PersistentVolume) are applied via raw manifests in `infra/k8s/`.
 
 ### Snowflake Cloud-Readiness
 
@@ -239,15 +239,14 @@ Infrastructure is provisioned in three sequential layers:
 | Component              | Estimated Memory | Notes                                       |
 |------------------------|------------------|---------------------------------------------|
 | k3s overhead (×3)      | ~1.5 GB          | ~512 MB per server node                     |
-| Airbyte                | 6–8 GB           | Largest consumer; tune resource limits      |
-| Airflow                | 2–3 GB           | Webserver + scheduler + worker              |
+| Airflow                | 2–3 GB           | Webserver + scheduler + worker; largest consumer |
 | MLflow                 | 0.5–1 GB         | Tracking server only                        |
 | Grafana                | 0.5 GB           | Lightweight                                 |
 | VictoriaMetrics        | 0.5–1 GB         | Single-node mode                            |
 | DuckDB (via pods)      | 1–2 GB           | Depends on query workload                   |
 | BentoML                | 0.5–1 GB         | Model serving                               |
 | Evidently              | 0.5 GB           | Runs periodically, not always resident      |
-| **Headroom**           | **~20–24 GB**    | Available for sync jobs, spikes, OS caches  |
+| **Headroom**           | **~26–32 GB**    | Available for sync jobs, spikes, OS caches  |
 
 Resource requests and limits must be set in every Helm values file. Monitor for OOMKills and pod evictions early.
 

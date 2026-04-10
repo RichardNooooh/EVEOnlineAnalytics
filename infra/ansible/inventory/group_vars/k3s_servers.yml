@@ -21,7 +21,7 @@ k3s_additional_tls_sans: []
 # -----------------------------------------------------------------------------
 # Kubelet Resource Reservations
 # -----------------------------------------------------------------------------
-# Critical for stability on ~13GB nodes running Airbyte (6-8GB) + Airflow (2-3GB)
+# Critical for stability on ~13GB nodes running Airflow (2-3GB) + dlt tasks
 # Without these, system processes can be OOM-killed during memory spikes.
 #
 # Reserved resources:
