@@ -1,0 +1,22 @@
+# =============================================================================
+# NFS Client Role — Default Variables
+# =============================================================================
+
+---
+# NFS server configuration
+nfs_server: "10.218.20.30"
+nfs_remote_path: "/mnt/pve/TrueNAS"
+nfs_local_mount: "/mnt/truenas"
+
+# Mount options (NFSv4.2 with performance tuning)
+nfs_mount_options: "vers=4.2,hard,intr,timeo=600,retrans=2,rsize=1048576,wsize=1048576,_netdev"
+
+# Health check directory (keeps test files out of share root)
+nfs_health_dir: ".ansible-health"
+
+# Pre-check timeout (seconds)
+nfs_precheck_timeout: 30
+
+# Required packages
+nfs_packages:
+  - nfs-common

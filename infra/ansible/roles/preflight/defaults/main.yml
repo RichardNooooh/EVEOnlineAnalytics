@@ -1,0 +1,30 @@
+# =============================================================================
+# Preflight Role — Default Variables
+# =============================================================================
+# Read-only validation role. No changes are made to the system.
+# =============================================================================
+
+---
+# Minimum Ansible version required
+preflight_min_ansible_version: "2.15"
+
+# Minimum Python version on target hosts
+preflight_min_python_version: "3.10"
+
+# Required groups in inventory
+preflight_required_groups:
+  - k3s_servers
+
+# Connectivity test timeout (seconds)
+preflight_connectivity_timeout: 5
+
+# Required packages that must be present
+preflight_required_packages:
+  - python3
+  - systemd
+
+# Disk space warning threshold (MB free)
+preflight_min_disk_space_mb: 1024
+
+# Memory warning threshold (MB free)
+preflight_min_memory_mb: 512

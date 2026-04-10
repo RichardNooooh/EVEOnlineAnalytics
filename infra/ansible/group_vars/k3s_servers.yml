@@ -1,0 +1,83 @@
+# =============================================================================
+# Group Variables — k3s Servers
+# =============================================================================
+# Variables specific to k3s server nodes. These configure the k3s cluster
+# behavior, including which components to disable and resource reservations.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# k3s Server Configuration (config.yaml)
+# -----------------------------------------------------------------------------
+# Components to disable (we'll use Helm-managed replacements)
+# All built-in k3s components are enabled:
+# - servicelb: Enabled for LoadBalancer service exposure
+# - traefik: Enabled for ingress handling
+k3s_disable_components: []
+
+# Additional TLS SAN entries for API server certificate
+# The primary SAN is defined in all.yml as k3s_tls_san
+k3s_additional_tls_sans: []
+
+# -----------------------------------------------------------------------------
+# Kubelet Resource Reservations
+# -----------------------------------------------------------------------------
+# Critical for stability on ~13GB nodes running Airbyte (6-8GB) + Airflow (2-3GB)
+# Without these, system processes can be OOM-killed during memory spikes.
+#
+# Reserved resources:
+# - system-reserved: For OS system daemons (ssh, systemd, etc.)
+# - kube-reserved: For Kubernetes system pods (kube-proxy, coredns, etc.)
+# - eviction-hard: When to evict pods due to memory pressure
+
+# System-reserved resources (for OS daemons)
+k3s_system_reserved_cpu: "200m"
+k3s_system_reserved_memory: "512Mi"
+k3s_system_reserved_ephemeral: "1Gi"
+
+# Kube-reserved resources (for Kubernetes system pods)
+k3s_kube_reserved_cpu: "200m"
+k3s_kube_reserved_memory: "512Mi"
+
+# Eviction threshold — pods evicted when available memory drops below this
+k3s_eviction_hard_memory: "300Mi"
+
+# Feature gates (enable experimental features if needed)
+k3s_feature_gates: []
+
+# -----------------------------------------------------------------------------
+# API Server Arguments
+# -----------------------------------------------------------------------------
+# Extra arguments passed to kube-apiserver
+k3s_kube_apiserver_args: []
+
+# -----------------------------------------------------------------------------
+# Controller Manager Arguments
+# -----------------------------------------------------------------------------
+# Extra arguments passed to kube-controller-manager
+k3s_kube_controller_manager_args: []
+
+# -----------------------------------------------------------------------------
+# Scheduler Arguments
+# -----------------------------------------------------------------------------
+# Extra arguments passed to kube-scheduler
+k3s_kube_scheduler_args: []
+
+# -----------------------------------------------------------------------------
+# etcd Configuration
+# -----------------------------------------------------------------------------
+# Snapshot schedule (cron format) — every 6 hours
+k3s_etcd_snapshot_schedule_cron: "0 */6 * * *"
+
+# Number of etcd snapshots to retain
+k3s_etcd_snapshot_retention: 5
+
+# -----------------------------------------------------------------------------
+# Node Labels and Taints
+# -----------------------------------------------------------------------------
+# Labels applied to all server nodes
+k3s_node_labels:
+  - "node-type=server"
+  - "homelab.eve-market/role=server"
+
+# Taints (none by default for this homelab setup)
+k3s_node_taints: []

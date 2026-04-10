@@ -1,0 +1,54 @@
+# =============================================================================
+# Common Role — Default Variables
+# =============================================================================
+# Base OS configuration for k3s nodes.
+# =============================================================================
+
+---
+# Time synchronization
+common_timesync_enabled: true
+common_timesync_service: "systemd-timesyncd"  # or "chrony" for older systems
+
+# Swap configuration
+common_swap_enabled: false  # k3s best practice: disable swap
+
+# Required packages
+common_packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - software-properties-common
+  - nfs-common
+  - net-tools
+  - iptables
+  - ebtables
+  - ethtool
+  - ipset
+
+# Sysctl parameters for Kubernetes networking
+common_sysctl_params:
+  # Enable IPv4 forwarding
+  net.ipv4.ip_forward: 1
+
+  # Bridge netfilter settings (required for CNI)
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+ 
+  # Inotify limits (Airbyte + Airflow hit these)
+  fs.inotify.max_user_instances: 8192
+  fs.inotify.max_user_watches: 524288
+ 
+  # Connection tracking limits
+  net.netfilter.nf_conntrack_max: 131072
+ 
+  # TCP keepalive settings
+  net.ipv4.tcp_keepalive_time: 600
+  net.ipv4.tcp_keepalive_intvl: 30
+  net.ipv4.tcp_keepalive_probes: 10
+
+# Kernel modules to load
+common_kernel_modules:
+  - br_netfilter
+  - overlay

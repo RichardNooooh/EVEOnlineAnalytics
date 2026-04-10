@@ -1,0 +1,23 @@
+#!/usr/bin/env ansible-playbook
+# =============================================================================
+# preflight.yml — Pre-Flight Validation Checks
+# =============================================================================
+# Read-only validation of prerequisites before any changes.
+# Safe to run against production systems.
+#
+# Usage:
+#   ansible-playbook playbooks/preflight.yml
+#   ansible-playbook site.yml --tags preflight
+# =============================================================================
+
+---
+- name: Pre-flight validation checks
+  hosts: k3s_servers
+  become: false
+  gather_facts: false
+
+  roles:
+    - role: preflight
+      tags:
+        - preflight
+        - always

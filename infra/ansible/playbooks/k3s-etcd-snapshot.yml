@@ -1,0 +1,70 @@
+#!/usr/bin/env ansible-playbook
+# =============================================================================
+# k3s-etcd-snapshot.yml — On-Demand etcd Snapshot
+# =============================================================================
+# Takes an etcd snapshot and copies it to the control node.
+# Intended to be scheduled by Airflow once cluster is running workloads.
+#
+# Usage:
+#   ansible-playbook playbooks/k3s-etcd-snapshot.yml
+# =============================================================================
+
+---
+- name: Take etcd snapshot
+  hosts: k3s_first_node
+  become: true
+  gather_facts: false
+
+  vars:
+    k3s_binary_path: "/usr/local/bin/k3s"
+    k3s_etcd_snapshot_dir: "/var/lib/rancher/k3s/server/db/snapshots"
+    etcd_snapshot_local_dir: "{{ inventory_dir }}/etcd-snapshots"
+
+  tasks:
+    - name: Create local snapshot directory
+      ansible.builtin.file:
+        path: "{{ etcd_snapshot_local_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Take etcd snapshot
+      ansible.builtin.command: |
+        {{ k3s_binary_path }} etcd-snapshot save
+      register: snapshot_result
+      changed_when: true
+
+    - name: Find latest snapshot file
+      ansible.builtin.find:
+        paths: "{{ k3s_etcd_snapshot_dir }}"
+        patterns: "*.etcd"
+        age: "-5m"
+      register: snapshot_files
+
+    - name: Verify snapshot was created
+      ansible.builtin.assert:
+        that:
+          - snapshot_files.files | length > 0
+        fail_msg: "No etcd snapshot file found"
+        success_msg: "Found {{ snapshot_files.files | length }} snapshot file(s)"
+
+    - name: Fetch snapshot to control node
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ etcd_snapshot_local_dir }}/{{ item.path | basename }}"
+        flat: true
+      loop: "{{ snapshot_files.files }}"
+
+    - name: Display snapshot summary
+      ansible.builtin.debug:
+        msg: |
+          etcd snapshot complete!
+          {% for snapshot in snapshot_files.files %}
+          - {{ snapshot.path | basename }} ({{ (snapshot.size / 1024 / 1024) | round(2) }} MB)
+          {% endfor %}
+          Local backup: {{ etcd_snapshot_local_dir }}/
+      run_once: true
+      delegate_to: localhost
+      become: false

@@ -1,0 +1,33 @@
+# =============================================================================
+# k3s Upgrade Role — Default Variables
+# =============================================================================
+
+---
+# Installer settings (same as server role)
+k3s_installer_url: "https://get.k3s.io"
+k3s_installer_cache: "/var/cache/k3s"
+k3s_installer_script: "{{ k3s_installer_cache }}/install.sh"
+
+# Binary paths
+k3s_binary_path: "/usr/local/bin/k3s"
+k3s_kubeconfig_node: "/etc/rancher/k3s/k3s.yaml"
+
+# Service name
+k3s_service_name: "k3s"
+
+# Target version (from group_vars)
+k3s_version: "v1.35.3+k3s1"
+
+# Timeout settings
+k3s_upgrade_drain_timeout: "300s"
+k3s_upgrade_wait_timeout: 300
+
+# Drain safety (from group_vars)
+k3s_upgrade_force_drain: false
+
+# First node detection
+k3s_is_first_node: "{{ inventory_hostname in groups['k3s_first_node'] | default([]) }}"
+
+# Wait settings
+k3s_upgrade_retries: 30
+k3s_upgrade_delay: 10

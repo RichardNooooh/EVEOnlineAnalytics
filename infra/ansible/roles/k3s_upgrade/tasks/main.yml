@@ -1,0 +1,309 @@
+# =============================================================================
+# k3s Upgrade Role Tasks
+# =============================================================================
+# Performs rolling upgrade with etcd snapshot, cordon/drain/upgrade/uncordon.
+# Uses unified installer path (same as init) for consistency.
+# =============================================================================
+
+---
+# -----------------------------------------------------------------------------
+# Pre-Flight: Version Check
+# -----------------------------------------------------------------------------
+- name: Check current k3s version
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ k3s_binary_path }} --version 2>/dev/null | grep 'k3s version' | awk '{print $3}' || echo 'none'
+  register: current_version_raw
+  changed_when: false
+  tags:
+    - k3s
+    - upgrade
+    - preflight
+
+- name: Set current version fact
+  ansible.builtin.set_fact:
+    current_version: "{{ current_version_raw.stdout | trim }}"
+
+- name: Display current version
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: Current k3s version is {{ current_version }}"
+
+- name: Determine if upgrade is needed
+  ansible.builtin.set_fact:
+    upgrade_needed: "{{ current_version != k3s_version }}"
+
+- name: Skip if already at target version
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: Already at {{ k3s_version }}. Skipping upgrade."
+  when: not upgrade_needed | bool
+
+- name: Fail if k3s is not installed
+  ansible.builtin.fail:
+    msg: "k3s is not installed on {{ inventory_hostname }}. Run k3s-init first."
+  when:
+    - current_version == 'none'
+    - upgrade_needed | bool
+
+# -----------------------------------------------------------------------------
+# Pre-Flight: etcd Snapshot (First Node Only)
+# -----------------------------------------------------------------------------
+- name: Take etcd snapshot before upgrade
+  when:
+    - k3s_is_first_node | bool
+    - upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - snapshot
+  block:
+    - name: Create local snapshot directory
+      ansible.builtin.file:
+        path: "{{ etcd_snapshot_local_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      run_once: true
+      become: false
+
+    - name: Take etcd snapshot
+      ansible.builtin.command: |
+        {{ k3s_binary_path }} etcd-snapshot save
+      register: etcd_snapshot_result
+      changed_when: true
+
+    - name: Find latest snapshot
+      ansible.builtin.find:
+        paths: "{{ k3s_etcd_snapshot_dir }}"
+        patterns: "*.etcd"
+        age: "-1m"
+      register: snapshot_files
+
+    - name: Fetch snapshot to control node
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ etcd_snapshot_local_dir }}/{{ item.path | basename }}"
+        flat: true
+      loop: "{{ snapshot_files.files }}"
+      when: snapshot_files.files | length > 0
+
+    - name: Display snapshot status
+      ansible.builtin.debug:
+        msg: "etcd snapshot saved to {{ etcd_snapshot_local_dir }}"
+
+# -----------------------------------------------------------------------------
+# Prepare: Set kubectl node reference
+# -----------------------------------------------------------------------------
+- name: Set kubectl node reference
+  ansible.builtin.set_fact:
+    kubectl_node: "{{ groups['k3s_first_node'][0] }}"
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+
+# -----------------------------------------------------------------------------
+# Cordon Node
+# -----------------------------------------------------------------------------
+- name: Cordon node
+  kubernetes.core.k8s_drain:
+    name: "{{ inventory_hostname }}"
+    kubeconfig: "{{ k3s_kubeconfig_node }}"
+    state: cordon
+  delegate_to: "{{ kubectl_node }}"
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - cordon
+
+# -----------------------------------------------------------------------------
+# Drain Node
+# -----------------------------------------------------------------------------
+- name: Drain node (safe mode)
+  kubernetes.core.k8s_drain:
+    name: "{{ inventory_hostname }}"
+    kubeconfig: "{{ k3s_kubeconfig_node }}"
+    state: drain
+    delete_options:
+      ignore_daemonsets: true
+      disable_eviction: false
+    wait_timeout: "{{ k3s_upgrade_wait_timeout }}"
+  delegate_to: "{{ kubectl_node }}"
+  when:
+    - upgrade_needed | bool
+    - not (k3s_upgrade_force_drain | bool)
+  tags:
+    - k3s
+    - upgrade
+    - drain
+
+- name: Drain node (force mode - DANGEROUS)
+  kubernetes.core.k8s_drain:
+    name: "{{ inventory_hostname }}"
+    kubeconfig: "{{ k3s_kubeconfig_node }}"
+    state: drain
+    delete_options:
+      ignore_daemonsets: true
+      delete_emptydir_data: true
+      force: true
+      disable_eviction: false
+    wait_timeout: "{{ k3s_upgrade_wait_timeout }}"
+  delegate_to: "{{ kubectl_node }}"
+  when:
+    - upgrade_needed | bool
+    - k3s_upgrade_force_drain | bool
+  tags:
+    - k3s
+    - upgrade
+    - drain
+
+# -----------------------------------------------------------------------------
+# Stop k3s
+# -----------------------------------------------------------------------------
+- name: Stop k3s service
+  ansible.builtin.systemd:
+    name: "{{ k3s_service_name }}"
+    state: stopped
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - stop
+
+# -----------------------------------------------------------------------------
+# Upgrade k3s (Unified Installer Path)
+# -----------------------------------------------------------------------------
+- name: Download k3s installer script
+  ansible.builtin.get_url:
+    url: "{{ k3s_installer_url }}"
+    dest: "{{ k3s_installer_script }}"
+    mode: '0755'
+    timeout: 120
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - install
+
+- name: Upgrade k3s using installer
+  ansible.builtin.shell: |
+    INSTALL_K3S_VERSION={{ k3s_version }} \
+    INSTALL_K3S_SKIP_START=false \
+    {{ k3s_installer_script }}
+  when: upgrade_needed | bool
+  register: upgrade_result
+  retries: 3
+  delay: 10
+  until: upgrade_result.rc == 0
+  tags:
+    - k3s
+    - upgrade
+    - install
+
+# -----------------------------------------------------------------------------
+# Start k3s
+# -----------------------------------------------------------------------------
+- name: Start k3s service
+  ansible.builtin.systemd:
+    name: "{{ k3s_service_name }}"
+    state: started
+    enabled: true
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - start
+
+# -----------------------------------------------------------------------------
+# Wait for Recovery
+# -----------------------------------------------------------------------------
+- name: Wait for k3s service active
+  ansible.builtin.systemd:
+    name: "{{ k3s_service_name }}"
+  register: k3s_status
+  until: k3s_status.status.ActiveState == "active"
+  retries: 20
+  delay: 5
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - wait
+
+- name: Wait for node Ready status
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+    name: "{{ inventory_hostname }}"
+    kubeconfig: "{{ k3s_kubeconfig_node }}"
+  register: node_status
+  until: >
+    node_status.resources | length > 0 and
+    (node_status.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | list)[0].status == 'True'
+  retries: "{{ k3s_upgrade_retries }}"
+  delay: "{{ k3s_upgrade_delay }}"
+  delegate_to: "{{ kubectl_node }}"
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - wait
+
+# -----------------------------------------------------------------------------
+# Uncordon Node
+# -----------------------------------------------------------------------------
+- name: Uncordon node
+  kubernetes.core.k8s_drain:
+    name: "{{ inventory_hostname }}"
+    kubeconfig: "{{ k3s_kubeconfig_node }}"
+    state: uncordon
+  delegate_to: "{{ kubectl_node }}"
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - uncordon
+
+# -----------------------------------------------------------------------------
+# Verify Cluster Health
+# -----------------------------------------------------------------------------
+- name: Wait for all nodes to be Ready
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig_node }} \
+      get nodes -o json | jq -r '.items[].status.conditions[] | select(.type=="Ready") | .status' | grep -v True || true
+  register: not_ready
+  changed_when: false
+  until: not_ready.stdout == ""
+  retries: 15
+  delay: 10
+  delegate_to: "{{ kubectl_node }}"
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - verify
+
+- name: Get cluster status
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+    kubeconfig: "{{ k3s_kubeconfig_node }}"
+  register: cluster_nodes
+  delegate_to: "{{ kubectl_node }}"
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - verify
+
+- name: Display cluster status
+  ansible.builtin.debug:
+    msg: |
+      Node {{ inventory_hostname }} upgraded to {{ k3s_version }}:
+      Cluster nodes: {{ cluster_nodes.resources | map(attribute='metadata.name') | join(', ') }}
+  when: upgrade_needed | bool
+  tags:
+    - k3s
+    - upgrade
+    - summary

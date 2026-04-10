@@ -1,0 +1,156 @@
+# =============================================================================
+# Common Role Tasks — Base OS Configuration
+# =============================================================================
+# Configures time sync, swap, sysctl, kernel modules, and base packages.
+# =============================================================================
+
+---
+# -----------------------------------------------------------------------------
+# Time Synchronization
+# -----------------------------------------------------------------------------
+- name: Configure time synchronization
+  when: common_timesync_enabled | bool
+  tags:
+    - common
+    - timesync
+  block:
+    - name: Install and enable timesync service
+      ansible.builtin.systemd:
+        name: "{{ common_timesync_service }}"
+        state: started
+        enabled: true
+
+    - name: Ensure time is synchronized
+      ansible.builtin.command: timedatectl status
+      register: timedatectl_status
+      changed_when: false
+
+    - name: Display time sync status
+      ansible.builtin.debug:
+        var: timedatectl_status.stdout_lines
+
+# -----------------------------------------------------------------------------
+# Swap Management
+# -----------------------------------------------------------------------------
+- name: Disable swap
+  when: not common_swap_enabled | bool
+  tags:
+    - common
+    - swap
+  block:
+    - name: Check swap status
+      ansible.builtin.command: swapon --show
+      register: swap_status
+      changed_when: false
+      failed_when: false
+
+    - name: Disable swap immediately
+      ansible.builtin.command: swapoff -a
+      when: swap_status.stdout | length > 0
+      changed_when: true
+
+    - name: Remove swap from /etc/fstab
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^([^#].*\sswap\s.*)$'
+        replace: '# \1'
+        backup: true
+
+    - name: Verify swap is disabled
+      ansible.builtin.command: swapon --show
+      register: swap_final
+      changed_when: false
+      failed_when: swap_final.stdout | length > 0
+
+    - name: Display swap status
+      ansible.builtin.debug:
+        msg: "Swap is disabled"
+
+# -----------------------------------------------------------------------------
+# Kernel Modules
+# -----------------------------------------------------------------------------
+- name: Load required kernel modules
+  ansible.builtin.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ common_kernel_modules }}"
+  tags:
+    - common
+    - kernel
+
+- name: Persist kernel modules
+  ansible.builtin.lineinfile:
+    path: /etc/modules-load.d/k3s.conf
+    line: "{{ item }}"
+    create: true
+    mode: '0644'
+  loop: "{{ common_kernel_modules }}"
+  tags:
+    - common
+    - kernel
+
+# -----------------------------------------------------------------------------
+# Sysctl Configuration
+# -----------------------------------------------------------------------------
+- name: Apply sysctl parameters
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+  loop: "{{ common_sysctl_params | dict2items }}"
+  tags:
+    - common
+    - sysctl
+
+- name: Persist sysctl parameters
+  ansible.builtin.template:
+    src: 99-k3s.conf.j2
+    dest: /etc/sysctl.d/99-k3s.conf
+    mode: '0644'
+  notify: reload sysctl
+  tags:
+    - common
+    - sysctl
+
+# -----------------------------------------------------------------------------
+# Base Packages
+# -----------------------------------------------------------------------------
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  tags:
+    - common
+    - packages
+
+- name: Install required packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+  tags:
+    - common
+    - packages
+
+# -----------------------------------------------------------------------------
+# Verify Configuration
+# -----------------------------------------------------------------------------
+- name: Verify sysctl settings
+  ansible.builtin.command: "sysctl {{ item.key }}"
+  loop: "{{ common_sysctl_params | dict2items }}"
+  changed_when: false
+  tags:
+    - common
+    - verify
+
+- name: Display configuration summary
+  ansible.builtin.debug:
+    msg: |
+      Common configuration complete for {{ inventory_hostname }}:
+        - Time sync: {{ common_timesync_enabled }}
+        - Swap: {{ 'enabled' if common_swap_enabled else 'disabled' }}
+        - Kernel modules: {{ common_kernel_modules | join(', ') }}
+        - Packages installed: {{ common_packages | length }}
+  tags:
+    - common
+    - summary

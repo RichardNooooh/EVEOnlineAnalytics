@@ -1,0 +1,15 @@
+galaxy_info:
+  role_name: k3s_server
+  namespace: eve_market
+  author: Ansible Automation
+  description: Install and configure k3s server nodes with embedded etcd HA
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  dependencies:
+    - role: common
+      when: false  # Soft dependency

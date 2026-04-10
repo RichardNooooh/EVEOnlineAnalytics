@@ -1,0 +1,301 @@
+# =============================================================================
+# k3s Server Role Tasks
+# =============================================================================
+# Installs k3s on server nodes using config file approach.
+# Handles both first-node (cluster-init) and other-nodes (join) logic.
+# =============================================================================
+
+---
+# -----------------------------------------------------------------------------
+# Pre-flight Checks
+# -----------------------------------------------------------------------------
+- name: Check if k3s is already installed
+  ansible.builtin.stat:
+    path: "{{ k3s_binary_path }}"
+  register: k3s_binary_stat
+  tags:
+    - k3s
+    - preflight
+
+- name: Get current k3s version
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ k3s_binary_path }} --version 2>/dev/null | grep 'k3s version' | awk '{print $3}' || echo 'none'
+  register: k3s_current_version
+  changed_when: false
+  when: k3s_binary_stat.stat.exists
+  tags:
+    - k3s
+    - preflight
+
+- name: Display current k3s version
+  ansible.builtin.debug:
+    msg: "Current k3s version on {{ inventory_hostname }}: {{ k3s_current_version.stdout | default('not installed') }}"
+  tags:
+    - k3s
+    - preflight
+
+- name: Determine if installation/upgrade needed
+  ansible.builtin.set_fact:
+    k3s_needs_install: >
+      {{ not k3s_binary_stat.stat.exists or
+         k3s_current_version.stdout != k3s_version }}
+  tags:
+    - k3s
+    - preflight
+
+# -----------------------------------------------------------------------------
+# Ensure Directories
+# -----------------------------------------------------------------------------
+- name: Create k3s directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ k3s_config_dir }}"
+    - "{{ k3s_installer_cache }}"
+  tags:
+    - k3s
+    - config
+
+# -----------------------------------------------------------------------------
+# Install k3s Config File
+# -----------------------------------------------------------------------------
+- name: Render k3s configuration file
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ k3s_config_file }}"
+    mode: '0600'
+  tags:
+    - k3s
+    - config
+
+# -----------------------------------------------------------------------------
+# First Node: Initialize Cluster
+# -----------------------------------------------------------------------------
+- name: Initialize k3s cluster on first node
+  when:
+    - k3s_is_first_node | bool
+    - k3s_needs_install | bool
+  tags:
+    - k3s
+    - install
+    - first
+  block:
+    - name: Download k3s installer script
+      ansible.builtin.get_url:
+        url: "{{ k3s_installer_url }}"
+        dest: "{{ k3s_installer_script }}"
+        mode: '0755'
+        timeout: 120
+      register: installer_download
+
+    - name: Install k3s with cluster-init
+      ansible.builtin.shell: |
+        INSTALL_K3S_VERSION={{ k3s_version }} \
+        INSTALL_K3S_SKIP_START=false \
+        {{ k3s_installer_script }}
+      args:
+        creates: "{{ k3s_binary_path }}"
+      register: k3s_install_first
+      retries: 3
+      delay: 10
+      until: k3s_install_first.rc == 0
+      environment:
+        K3S_CLUSTER_INIT: "true"
+
+    - name: Wait for k3s service
+      ansible.builtin.systemd:
+        name: "{{ k3s_service_name }}"
+        state: started
+        enabled: true
+      register: k3s_service_first
+      until: k3s_service_first.status.ActiveState == "active"
+      retries: "{{ k3s_wait_retries }}"
+      delay: "{{ k3s_wait_delay }}"
+
+    - name: Wait for API server to be ready
+      ansible.builtin.uri:
+        url: "https://{{ k3s_tls_san }}:6443/readyz"
+        validate_certs: false
+        status_code: 200
+      register: api_ready
+      until: api_ready.status == 200
+      retries: "{{ k3s_api_wait_retries }}"
+      delay: "{{ k3s_api_wait_delay }}"
+
+    - name: Retrieve cluster token
+      ansible.builtin.slurp:
+        src: "{{ k3s_token_node }}"
+      register: k3s_token_b64
+
+    - name: Set cluster token fact
+      ansible.builtin.set_fact:
+        k3s_cluster_token: "{{ k3s_token_b64.content | b64decode | trim }}"
+
+    - name: Save token locally
+      ansible.builtin.copy:
+        content: "{{ k3s_cluster_token }}"
+        dest: "{{ k3s_token_file }}"
+        mode: '0600'
+      delegate_to: localhost
+      run_once: true
+      become: false
+
+    - name: Take initial etcd snapshot
+      ansible.builtin.command: |
+        {{ k3s_binary_path }} etcd-snapshot save
+      register: etcd_snapshot
+      changed_when: true
+
+# -----------------------------------------------------------------------------
+# Other Nodes: Join Cluster
+# -----------------------------------------------------------------------------
+- name: Join k3s cluster on other nodes
+  when:
+    - not (k3s_is_first_node | bool)
+    - k3s_needs_install | bool
+  tags:
+    - k3s
+    - install
+    - join
+  block:
+    - name: Read cluster token from local file
+      ansible.builtin.slurp:
+        src: "{{ k3s_token_file }}"
+      register: k3s_token_local_b64
+      delegate_to: localhost
+      run_once: true
+      become: false
+
+    - name: Set cluster token fact for joining
+      ansible.builtin.set_fact:
+        k3s_cluster_token: "{{ k3s_token_local_b64.content | b64decode | trim }}"
+
+    - name: Get first node IP
+      ansible.builtin.set_fact:
+        k3s_first_node_ip: "{{ hostvars[groups['k3s_first_node'][0]]['ansible_host'] }}"
+
+    - name: Download k3s installer script
+      ansible.builtin.get_url:
+        url: "{{ k3s_installer_url }}"
+        dest: "{{ k3s_installer_script }}"
+        mode: '0755'
+        timeout: 120
+
+    - name: Install k3s and join cluster
+      ansible.builtin.shell: |
+        INSTALL_K3S_VERSION={{ k3s_version }} \
+        K3S_URL=https://{{ k3s_first_node_ip }}:6443 \
+        K3S_TOKEN={{ k3s_cluster_token }} \
+        INSTALL_K3S_SKIP_START=false \
+        {{ k3s_installer_script }}
+      args:
+        creates: "{{ k3s_binary_path }}"
+      register: k3s_install_join
+      retries: 3
+      delay: 10
+      until: k3s_install_join.rc == 0
+
+    - name: Wait for k3s service
+      ansible.builtin.systemd:
+        name: "{{ k3s_service_name }}"
+        state: started
+        enabled: true
+      register: k3s_service_join
+      until: k3s_service_join.status.ActiveState == "active"
+      retries: "{{ k3s_wait_retries }}"
+      delay: "{{ k3s_wait_delay }}"
+
+# -----------------------------------------------------------------------------
+# Verify Cluster Health
+# -----------------------------------------------------------------------------
+- name: Verify cluster health
+  when: k3s_is_first_node | bool
+  tags:
+    - k3s
+    - verify
+  block:
+    - name: Wait for all nodes to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Node
+        kubeconfig: "{{ k3s_kubeconfig_node }}"
+      register: k8s_nodes
+      until: k8s_nodes.resources | length == groups['k3s_servers'] | length
+      retries: 20
+      delay: 10
+
+    - name: Check node ready status
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig_node }} \
+          get nodes -o json | jq -r '.items[].status.conditions[] | select(.type=="Ready") | .status'
+      register: node_ready_status
+      changed_when: false
+      failed_when: "'False' in node_ready_status.stdout"
+
+    - name: Display cluster nodes
+      ansible.builtin.command: |
+        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig_node }} get nodes -o wide
+      register: cluster_status
+      changed_when: false
+
+    - name: Show cluster status
+      ansible.builtin.debug:
+        var: cluster_status.stdout_lines
+
+# -----------------------------------------------------------------------------
+# Export Kubeconfig
+# -----------------------------------------------------------------------------
+- name: Export kubeconfig locally
+  when:
+    - k3s_is_first_node | bool
+    - k3s_kubeconfig_local | bool
+  tags:
+    - k3s
+    - kubeconfig
+  block:
+    - name: Fetch kubeconfig from first node
+      ansible.builtin.slurp:
+        src: "{{ k3s_kubeconfig_node }}"
+      register: kubeconfig_b64
+
+    - name: Ensure local .kube directory exists
+      ansible.builtin.file:
+        path: "{{ kubeconfig_local_path | dirname }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      run_once: true
+      become: false
+
+    - name: Save kubeconfig locally with TLS-SAN rewrite
+      ansible.builtin.copy:
+        content: "{{ kubeconfig_b64.content | b64decode | regex_replace('https://127.0.0.1:6443', 'https://' ~ k3s_tls_san ~ ':6443') }}"
+        dest: "{{ kubeconfig_local_path }}"
+        mode: '0600'
+        backup: true
+      delegate_to: localhost
+      run_once: true
+      become: false
+
+    - name: Display kubeconfig saved message
+      ansible.builtin.debug:
+        msg: "Kubeconfig saved to {{ kubeconfig_local_path }} (server rewritten to {{ k3s_tls_san }})"
+
+# -----------------------------------------------------------------------------
+# Summary
+# -----------------------------------------------------------------------------
+- name: Display installation summary
+  ansible.builtin.debug:
+    msg: |
+      k3s installation complete on {{ inventory_hostname }}:
+        - Version: {{ k3s_version }}
+        - Role: {{ 'first node (cluster-init)' if k3s_is_first_node else 'joining node' }}
+        - Config: {{ k3s_config_file }}
+        - Kubeconfig: {{ k3s_kubeconfig_node }}
+  tags:
+    - k3s
+    - summary

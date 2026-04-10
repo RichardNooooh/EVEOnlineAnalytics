@@ -1,0 +1,57 @@
+#!/usr/bin/env ansible-playbook
+# =============================================================================
+# k3s-uninstall.yml — Clean Teardown of k3s Cluster
+# =============================================================================
+# Runs k3s-uninstall.sh on all nodes. Used before `tofu destroy` for clean VM deletion.
+# WARNING: This will DESTROY all k3s data and workloads.
+#
+# Usage:
+#   ansible-playbook playbooks/k3s-uninstall.yml
+#
+# Safety: Requires confirmation via -e "confirm_uninstall=yes"
+# =============================================================================
+
+---
+- name: Uninstall k3s cluster
+  hosts: k3s_servers
+  become: true
+  gather_facts: false
+
+  vars:
+    k3s_uninstall_script: "/usr/local/bin/k3s-uninstall.sh"
+
+  tasks:
+    - name: Require confirmation
+      ansible.builtin.assert:
+        that:
+          - confirm_uninstall | default('') == "yes"
+        fail_msg: "Add -e 'confirm_uninstall=yes' to confirm cluster destruction"
+        success_msg: "Uninstall confirmation accepted"
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Check for uninstall script
+      ansible.builtin.stat:
+        path: "{{ k3s_uninstall_script }}"
+      register: uninstall_stat
+
+    - name: Run k3s uninstall
+      ansible.builtin.command: |
+        {{ k3s_uninstall_script }}
+      when: uninstall_stat.stat.exists
+      register: uninstall_result
+      changed_when: uninstall_result.rc == 0
+      failed_when: false
+
+    - name: Unmount NFS if mounted
+      ansible.posix.mount:
+        path: "{{ nfs_local_mount }}"
+        state: absent
+      when: nfs_local_mount is defined
+
+    - name: Display uninstall status
+      ansible.builtin.debug:
+        msg: |
+          Uninstall {{ 'complete' if uninstall_result.rc == 0 else 'script not found or failed' }}
+          on {{ inventory_hostname }}

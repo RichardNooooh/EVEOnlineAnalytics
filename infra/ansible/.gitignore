@@ -1,0 +1,53 @@
+# =============================================================================
+# Ansible .gitignore
+# =============================================================================
+# Files and directories that should not be committed to git.
+# These are generated during playbook runs and contain sensitive data.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Generated / Sensitive Files
+# -----------------------------------------------------------------------------
+# k3s cluster token — sensitive, auto-generated per cluster
+inventory/k3s-token.txt
+
+# kubeconfig files — contain cluster credentials
+inventory/kubeconfig
+inventory/*.kubeconfig
+
+# Etcd snapshots — large binary data, should be backed up elsewhere
+inventory/etcd-snapshots/
+
+# -----------------------------------------------------------------------------
+# Ansible Runtime Files
+# -----------------------------------------------------------------------------
+# Fact caching directory
+.ansible_cache/
+
+# Retry files (created on playbook failure)
+*.retry
+
+# Ansible Galaxy downloaded content
+collections/ansible_collections/
+roles/ansible.*/
+roles/community.*/
+roles/kubernetes.*/
+
+# -----------------------------------------------------------------------------
+# Temporary Files
+# -----------------------------------------------------------------------------
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# -----------------------------------------------------------------------------
+# Python (if using local venv in ansible/)
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
