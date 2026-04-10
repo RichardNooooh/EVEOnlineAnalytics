@@ -121,7 +121,7 @@
 
 - name: Write to NFS
   ansible.builtin.copy:
-    content: "NFS write test from {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}\n"
+    content: "NFS write test from {{ inventory_hostname }} at {{ ansible_facts['date_time']['iso8601'] }}\n"
     dest: "{{ test_file.path }}"
     mode: '0644'
   tags:

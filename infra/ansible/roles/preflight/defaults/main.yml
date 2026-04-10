@@ -21,7 +21,7 @@ preflight_connectivity_timeout: 5
 # Required packages that must be present
 preflight_required_packages:
   - python3
-  - systemd
+  - systemctl
 
 # Disk space warning threshold (MB free)
 preflight_min_disk_space_mb: 1024

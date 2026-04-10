@@ -33,16 +33,6 @@
         - always
 
   roles:
-    - role: preflight
-      tags:
-        - preflight
-        - always
-
-    - role: common
-      tags:
-        - common
-        - bootstrap
-
     - role: k3s_server
       tags:
         - k3s

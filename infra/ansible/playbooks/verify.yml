@@ -60,6 +60,7 @@
 
     - name: Verify all nodes are Ready
       ansible.builtin.shell: |
+        set -o pipefail
         echo '{{ node_status_json.stdout }}' | jq -r '.items[].status.conditions[] | select(.type=="Ready") | .status'
       register: ready_status
       changed_when: false

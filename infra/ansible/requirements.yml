@@ -6,18 +6,22 @@
 # =============================================================================
 collections:
   # POSIX platform support (acl, firewalld, mount, selinux, etc.)
+  # NOTE: ansible.posix still has open deprecation warning issue #695 (not yet fixed)
   - name: ansible.posix
-    version: ">=1.5.0"
+    version: ">=1.6.0"
     source: https://galaxy.ansible.com
   # General community modules (filesystem, packaging, etc.)
+  # to_native deprecation fixed in 9.0.0 (PR #2877)
   - name: community.general
-    version: ">=8.0.0"
+    version: ">=9.0.0"
     source: https://galaxy.ansible.com
   # Kubernetes management (k8s, kubectl, helm)
+  # to_native deprecation fixed in 6.0.0 (PR #1053)
   - name: kubernetes.core
-    version: ">=3.0.0"
+    version: ">=6.0.0"
     source: https://galaxy.ansible.com
   # Docker/podman container management (for local dev)
+  # to_native deprecation fixed in 3.0.0 (PR #164)
   - name: community.docker
-    version: ">=3.0.0"
+    version: ">=4.0.0"
     source: https://galaxy.ansible.com

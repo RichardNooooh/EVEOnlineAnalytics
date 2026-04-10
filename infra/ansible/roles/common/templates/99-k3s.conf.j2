@@ -1,4 +1,20 @@
-# Kernel module configuration for k3s
-{% for module in common_kernel_modules %}
-{{ module }}
-{% endfor %}
+# Sysctl configuration for k3s nodes
+# These settings are applied by systemd-sysctl.service after modules are loaded
+# Note: nf_conntrack module must be loaded before net.netfilter.nf_conntrack_max is set
+
+# Kubernetes networking
+net.ipv4.ip_forward = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+
+# Inotify limits (required by Airbyte, Airflow, and file-intensive workloads)
+fs.inotify.max_user_instances = 8192
+fs.inotify.max_user_watches = 524288
+
+# Connection tracking limits (requires nf_conntrack module)
+net.netfilter.nf_conntrack_max = 131072
+
+# TCP keepalive settings
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.tcp_keepalive_intvl = 30
+net.ipv4.tcp_keepalive_probes = 10
