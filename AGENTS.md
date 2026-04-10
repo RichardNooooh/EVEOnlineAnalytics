@@ -215,7 +215,7 @@ eve-market-analytics/
 - **Everything runs on a 3-node k3s cluster** deployed across a Proxmox homelab (3 mini PCs, ~13 GB usable RAM each, ~39 GB total).
 - **All 3 nodes are k3s server nodes** with workload scheduling enabled (no dedicated workers). k3s HA uses embedded etcd, which requires an odd number of server nodes.
 - **Shared storage** is provided by TrueNAS NFS, mounted as a Kubernetes PersistentVolume. The DuckDB database file, model artifacts, and Airflow DAGs live on NFS.
-- **Service exposure** uses MetalLB to assign stable LAN IPs from a reserved range (outside DHCP pool). The existing reverse proxy routes to these IPs.
+- **Service exposure** uses k3s's built-in servicelb (Service Load Balancer) to assign stable LAN IPs. The existing reverse proxy routes to these IPs.
 
 ### IaC Layers
 
@@ -223,7 +223,7 @@ Infrastructure is provisioned in three sequential layers:
 
 1. **OpenTofu (bpg/proxmox provider):** Provisions 3 Ubuntu VMs (one per Proxmox node) from a cloud-init template. Injects SSH keys, static IPs on the appropriate VLAN, and hostnames. State is local. This OpenTofu project lives in `infra/terraform/proxmox/` and is scoped exclusively to the EVE project VMs — homelab base infrastructure (DNS containers, reverse proxy, Proxmox cluster config) is managed separately and is not in this repo.
 2. **Ansible (k3s-io/k3s-ansible):** Configures the 3 VMs and bootstraps a k3s HA cluster with embedded etcd. Installs NFS client utilities and verifies TrueNAS connectivity. Generates a kubeconfig for `kubectl` and Helm access from the dev workstation.
-3. **Helm + kubectl:** Deploys all application services into the k3s cluster. Airbyte uses Helm chart V2. Airflow, MLflow, Grafana, and VictoriaMetrics each have their own Helm values files in `infra/helm/`. Base Kubernetes resources (namespaces, NFS PersistentVolume, MetalLB config) are applied via raw manifests in `infra/k8s/`.
+3. **Helm + kubectl:** Deploys all application services into the k3s cluster. Airbyte uses Helm chart V2. Airflow, MLflow, Grafana, and VictoriaMetrics each have their own Helm values files in `infra/helm/`. Base Kubernetes resources (namespaces, NFS PersistentVolume) are applied via raw manifests in `infra/k8s/`.
 
 ### Snowflake Cloud-Readiness
 
