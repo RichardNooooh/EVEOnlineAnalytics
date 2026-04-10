@@ -1,0 +1,14 @@
+# =============================================================================
+# Bootstrap Playbook — First-Time Cluster Setup
+# =============================================================================
+# Convenience wrapper for first-time cluster bootstrap.
+# Runs preflight → common → k3s-init → nfs in sequence.
+#
+# This is an alias for: ansible-playbook site.yml --tags bootstrap
+#
+# Usage:
+#   ansible-playbook bootstrap.yml
+# =============================================================================
+
+---
+- import_playbook: site.yml

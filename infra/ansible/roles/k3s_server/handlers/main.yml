@@ -1,0 +1,15 @@
+# =============================================================================
+# k3s Server Role Handlers
+# =============================================================================
+
+---
+- name: restart k3s
+  ansible.builtin.systemd:
+    name: "{{ k3s_service_name }}"
+    state: restarted
+    daemon_reload: true
+
+- name: reload k3s
+  ansible.builtin.systemd:
+    name: "{{ k3s_service_name }}"
+    state: reloaded

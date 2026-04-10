@@ -1,0 +1,147 @@
+#!/usr/bin/env ansible-playbook
+# =============================================================================
+# verify.yml — Post-Deployment Verification
+# =============================================================================
+# Verifies cluster health and displays summary after deployment.
+#
+# Usage:
+#   ansible-playbook playbooks/verify.yml
+#   ansible-playbook site.yml --tags verify
+# =============================================================================
+
+---
+- name: Verify cluster health
+  hosts: k3s_first_node
+  become: true
+  gather_facts: false
+
+  vars:
+    k3s_binary_path: "/usr/local/bin/k3s"
+    k3s_kubeconfig: "/etc/rancher/k3s/k3s.yaml"
+
+  tasks:
+    - name: Check k3s service status
+      ansible.builtin.systemd:
+        name: k3s
+      register: k3s_service
+      tags:
+        - verify
+
+    - name: Verify k3s is active
+      ansible.builtin.assert:
+        that:
+          - k3s_service.status.ActiveState == "active"
+        fail_msg: "k3s service is not active on {{ inventory_hostname }}"
+        success_msg: "k3s service is active"
+      tags:
+        - verify
+
+    - name: Get cluster nodes
+      ansible.builtin.command: |
+        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig }} get nodes -o wide
+      register: node_list
+      changed_when: false
+      tags:
+        - verify
+
+    - name: Display cluster nodes
+      ansible.builtin.debug:
+        var: node_list.stdout_lines
+      tags:
+        - verify
+
+    - name: Get node status (JSON)
+      ansible.builtin.command: |
+        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig }} get nodes -o json
+      register: node_status_json
+      changed_when: false
+      tags:
+        - verify
+
+    - name: Verify all nodes are Ready
+      ansible.builtin.shell: |
+        echo '{{ node_status_json.stdout }}' | jq -r '.items[].status.conditions[] | select(.type=="Ready") | .status'
+      register: ready_status
+      changed_when: false
+      failed_when: "'False' in ready_status.stdout"
+      tags:
+        - verify
+
+    - name: Get system pods
+      ansible.builtin.command: |
+        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig }} get pods -n kube-system
+      register: system_pods
+      changed_when: false
+      tags:
+        - verify
+
+    - name: Display system pods
+      ansible.builtin.debug:
+        var: system_pods.stdout_lines
+      tags:
+        - verify
+
+    - name: Get k3s version
+      ansible.builtin.command: |
+        {{ k3s_binary_path }} --version
+      register: k3s_version_output
+      changed_when: false
+      tags:
+        - verify
+
+    - name: Display verification summary
+      ansible.builtin.debug:
+        msg: |
+          Cluster Verification Summary
+          ============================
+          k3s Version: {{ k3s_version_output.stdout | default('unknown') }}
+
+          Nodes: {{ groups['k3s_servers'] | length }}
+          All nodes Ready: {{ 'True' in ready_status.stdout and 'False' not in ready_status.stdout }}
+
+          Status: HEALTHY
+      tags:
+        - verify
+        - summary
+
+- name: Verify NFS mounts
+  hosts: k3s_servers
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check NFS mount
+      ansible.builtin.command: |
+        mountpoint -q {{ nfs_local_mount }} && echo "mounted" || echo "not mounted"
+      register: mount_check
+      changed_when: false
+      tags:
+        - verify
+        - nfs
+
+    - name: Verify NFS is mounted
+      ansible.builtin.assert:
+        that:
+          - mount_check.stdout == "mounted"
+        fail_msg: "NFS is not mounted on {{ inventory_hostname }} at {{ nfs_local_mount }}"
+        success_msg: "NFS is mounted on {{ inventory_hostname }}"
+      tags:
+        - verify
+        - nfs
+
+    - name: Display mount information
+      ansible.builtin.command: |
+        df -h {{ nfs_local_mount }}
+      register: df_output
+      changed_when: false
+      tags:
+        - verify
+        - nfs
+
+    - name: Show NFS status
+      ansible.builtin.debug:
+        msg: "NFS on {{ inventory_hostname }}: {{ df_output.stdout_lines[-1] | default('unknown') }}"
+      tags:
+        - verify
+        - nfs
+        - summary

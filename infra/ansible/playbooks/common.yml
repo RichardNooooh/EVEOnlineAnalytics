@@ -1,0 +1,22 @@
+#!/usr/bin/env ansible-playbook
+# =============================================================================
+# common.yml — Common Node Configuration
+# =============================================================================
+# Base OS configuration: time sync, swap, sysctl, packages.
+#
+# Usage:
+#   ansible-playbook playbooks/common.yml
+#   ansible-playbook site.yml --tags common
+# =============================================================================
+
+---
+- name: Common node configuration
+  hosts: k3s_servers
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: common
+      tags:
+        - common
+        - bootstrap

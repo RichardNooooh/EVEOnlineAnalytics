@@ -1,0 +1,87 @@
+# =============================================================================
+# Group Variables — All Hosts
+# =============================================================================
+# Shared variables used across all playbooks and roles.
+# These values are used by multiple roles (k3s_server, k3s_upgrade, nfs_client).
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# k3s Configuration
+# -----------------------------------------------------------------------------
+# Target k3s version for installation and upgrades
+# Reference: https://github.com/k3s-io/k3s/releases
+k3s_version: "v1.35.3+k3s1"
+
+# TLS SAN hostname for API server certificate
+# This is the DNS name used to access the k3s API
+k3s_tls_san: "eve-market.lab.answerisnoh.dev"
+
+# k3s cluster domain for internal DNS
+k3s_cluster_domain: "internal"
+
+# -----------------------------------------------------------------------------
+# Kubeconfig Management
+# -----------------------------------------------------------------------------
+# Whether to copy kubeconfig to local workstation
+k3s_kubeconfig_local: true
+
+# Local path for kubeconfig (expanded at runtime)
+kubeconfig_local_path: "~/.kube/config"
+
+# Token file for cluster join (persisted locally for resume after failure)
+k3s_token_file: "{{ inventory_dir }}/k3s-token.txt"
+
+# -----------------------------------------------------------------------------
+# NFS Configuration
+# -----------------------------------------------------------------------------
+# TrueNAS NFS server IP address
+# IMPORTANT: Must match the IP in infra/k8s/nfs-pv.yaml
+nfs_server: "10.218.20.30"
+
+# Remote NFS export path on TrueNAS
+nfs_remote_path: "/mnt/pve/TrueNAS"
+
+# Local mount point on k3s nodes
+nfs_local_mount: "/mnt/truenas"
+
+# NFS mount options (NFSv4.2 with performance tuning)
+# - vers=4.2: Explicit NFS version (not relying on kernel default)
+# - hard: Retry indefinitely on server failure (safer for data integrity)
+# - intr: Allow interruption of hard mount operations
+# - timeo=600: Deciseconds to wait before retry (60 seconds)
+# - retrans=2: Number of retries before major timeout
+# - rsize/wsize: Read/write block size (1MB for performance)
+nfs_mount_options: "vers=4.2,hard,intr,timeo=600,retrans=2,rsize=1048576,wsize=1048576,_netdev"
+
+# NFS health check subdirectory (test files go here, not root)
+nfs_health_dir: ".ansible-health"
+
+# -----------------------------------------------------------------------------
+# Upgrade Settings
+# -----------------------------------------------------------------------------
+# Timeout for node drain operation (seconds)
+k3s_upgrade_drain_timeout: "300s"
+
+# Seconds to wait for node to become Ready after upgrade
+k3s_upgrade_wait_timeout: 300
+
+# Whether to force delete pods with local storage during drain (DANGEROUS)
+# Set to true only if you understand the risk of data loss
+k3s_upgrade_force_drain: false
+
+# -----------------------------------------------------------------------------
+# Paths
+# -----------------------------------------------------------------------------
+# k3s installation paths
+k3s_install_dir: "/usr/local/bin"
+k3s_binary_path: "{{ k3s_install_dir }}/k3s"
+k3s_config_dir: "/etc/rancher/k3s"
+k3s_config_file: "{{ k3s_config_dir }}/config.yaml"
+k3s_data_dir: "/var/lib/rancher/k3s"
+
+# Cache directory for installer script
+k3s_installer_cache: "/var/cache/k3s"
+
+# Etcd snapshots
+k3s_etcd_snapshot_dir: "{{ k3s_data_dir }}/server/db/snapshots"
+etcd_snapshot_local_dir: "{{ inventory_dir }}/etcd-snapshots"

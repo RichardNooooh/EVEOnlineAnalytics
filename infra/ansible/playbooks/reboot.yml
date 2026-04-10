@@ -1,0 +1,94 @@
+#!/usr/bin/env ansible-playbook
+# =============================================================================
+# reboot.yml — Rolling Reboot of k3s Cluster Nodes
+# =============================================================================
+# Performs rolling reboot: cordon → drain → reboot → wait → uncordon.
+# Serial execution (one node at a time) for cluster safety.
+#
+# Usage:
+#   ansible-playbook playbooks/reboot.yml
+# =============================================================================
+
+---
+- name: Rolling reboot of k3s cluster nodes
+  hosts: k3s_servers
+  become: true
+  serial: 1
+  gather_facts: true
+
+  vars:
+    k3s_binary_path: "/usr/local/bin/k3s"
+    k3s_kubeconfig: "/etc/rancher/k3s/k3s.yaml"
+    reboot_wait_timeout: 300
+    kubectl_node: "{{ groups['k3s_first_node'][0] }}"
+
+  tasks:
+    - name: Display reboot plan
+      ansible.builtin.debug:
+        msg: "Initiating rolling reboot of {{ inventory_hostname }}"
+
+    - name: Cordon node
+      kubernetes.core.k8s_drain:
+        name: "{{ inventory_hostname }}"
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        state: cordon
+      delegate_to: "{{ kubectl_node }}"
+
+    - name: Drain node
+      kubernetes.core.k8s_drain:
+        name: "{{ inventory_hostname }}"
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        state: drain
+        delete_options:
+          ignore_daemonsets: true
+          disable_eviction: false
+        wait_timeout: "{{ reboot_wait_timeout }}"
+      delegate_to: "{{ kubectl_node }}"
+
+    - name: Trigger reboot
+      ansible.builtin.reboot:
+        reboot_timeout: "{{ reboot_wait_timeout }}"
+        connect_timeout: 60
+        pre_reboot_delay: 5
+        post_reboot_delay: 30
+
+    - name: Wait for k3s service after reboot
+      ansible.builtin.systemd:
+        name: k3s
+      register: k3s_status
+      until: k3s_status.status.ActiveState == "active"
+      retries: 30
+      delay: 10
+
+    - name: Wait for node Ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Node
+        name: "{{ inventory_hostname }}"
+        kubeconfig: "{{ k3s_kubeconfig }}"
+      register: node_status
+      until: >
+        node_status.resources | length > 0 and
+        (node_status.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | list)[0].status == 'True'
+      retries: 30
+      delay: 10
+      delegate_to: "{{ kubectl_node }}"
+
+    - name: Uncordon node
+      kubernetes.core.k8s_drain:
+        name: "{{ inventory_hostname }}"
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        state: uncordon
+      delegate_to: "{{ kubectl_node }}"
+
+    - name: Display reboot complete
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} rebooted and back online"
+
+  post_tasks:
+    - name: Rolling reboot complete
+      ansible.builtin.debug:
+        msg: "All nodes rebooted successfully"
+      run_once: true
+      delegate_to: localhost
+      become: false

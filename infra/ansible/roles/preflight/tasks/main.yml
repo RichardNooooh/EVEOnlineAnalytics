@@ -1,0 +1,150 @@
+# =============================================================================
+# Preflight Tasks — Read-Only Validation
+# =============================================================================
+# These tasks perform validation without making any changes to the system.
+# All tasks are tagged with 'preflight' for selective execution.
+# =============================================================================
+
+---
+- name: Validate Ansible version
+  ansible.builtin.assert:
+    that:
+      - ansible_version.full is version(preflight_min_ansible_version, '>=')
+    fail_msg: "Ansible version {{ ansible_version.full }} is too old. Required: >= {{ preflight_min_ansible_version }}"
+    success_msg: "Ansible version {{ ansible_version.full }} meets requirements"
+  tags:
+    - preflight
+    - version
+  run_once: true
+  delegate_to: localhost
+  become: false
+
+- name: Validate inventory groups exist
+  ansible.builtin.assert:
+    that:
+      - groups[item] is defined
+      - groups[item] | length > 0
+    fail_msg: "Required group '{{ item }}' is missing or empty in inventory"
+    success_msg: "Group '{{ item }}' exists with {{ groups[item] | length }} hosts"
+  loop: "{{ preflight_required_groups }}"
+  tags:
+    - preflight
+    - inventory
+  run_once: true
+  delegate_to: localhost
+  become: false
+
+- name: Validate k3s_servers group has odd number of nodes (for embedded etcd)
+  ansible.builtin.assert:
+    that:
+      - groups['k3s_servers'] | length is odd
+    fail_msg: "k3s_servers group must have an odd number of nodes for embedded etcd HA (found {{ groups['k3s_servers'] | length }})"
+    success_msg: "k3s_servers group has {{ groups['k3s_servers'] | length }} nodes (odd number, suitable for etcd)"
+  when: groups['k3s_servers'] is defined
+  tags:
+    - preflight
+    - inventory
+    - etcd
+  run_once: true
+  delegate_to: localhost
+  become: false
+
+- name: Test connectivity to all hosts
+  ansible.builtin.ping:
+  tags:
+    - preflight
+    - connectivity
+
+- name: Gather minimal facts
+  ansible.builtin.setup:
+    gather_subset:
+      - '!all'
+      - '!min'
+      - distribution
+      - distribution_version
+      - pkg_mgr
+      - python
+      - python_version
+  tags:
+    - preflight
+    - facts
+
+- name: Validate target OS
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution in ['Ubuntu', 'Debian']
+    fail_msg: "Unsupported OS: {{ ansible_distribution }}. Only Ubuntu/Debian are supported."
+    success_msg: "OS {{ ansible_distribution }} {{ ansible_distribution_version }} is supported"
+  tags:
+    - preflight
+    - os
+
+- name: Validate Python version on targets
+  ansible.builtin.assert:
+    that:
+      - ansible_python_version is version(preflight_min_python_version, '>=')
+    fail_msg: "Python {{ ansible_python_version }} is too old. Required: >= {{ preflight_min_python_version }}"
+    success_msg: "Python {{ ansible_python_version }} meets requirements"
+  tags:
+    - preflight
+    - python
+
+- name: Check required packages are installed
+  ansible.builtin.command: "which {{ item }}"
+  loop: "{{ preflight_required_packages }}"
+  changed_when: false
+  register: package_check
+  failed_when: package_check.rc != 0
+  tags:
+    - preflight
+    - packages
+
+- name: Check disk space
+  ansible.builtin.shell: |
+    df -BM / | tail -1 | awk '{print $4}' | sed 's/M//'
+  register: disk_space_mb
+  changed_when: false
+  tags:
+    - preflight
+    - resources
+
+- name: Validate disk space
+  ansible.builtin.assert:
+    that:
+      - disk_space_mb.stdout | int >= preflight_min_disk_space_mb
+    fail_msg: "Insufficient disk space: {{ disk_space_mb.stdout }}MB free, required {{ preflight_min_disk_space_mb }}MB"
+    success_msg: "Disk space OK: {{ disk_space_mb.stdout }}MB free"
+  tags:
+    - preflight
+    - resources
+
+- name: Check memory
+  ansible.builtin.shell: |
+    free -m | grep Mem | awk '{print $7}'
+  register: memory_free_mb
+  changed_when: false
+  tags:
+    - preflight
+    - resources
+
+- name: Validate memory
+  ansible.builtin.assert:
+    that:
+      - memory_free_mb.stdout | int >= preflight_min_memory_mb
+    fail_msg: "Insufficient memory: {{ memory_free_mb.stdout }}MB free, recommended {{ preflight_min_memory_mb }}MB"
+    success_msg: "Memory OK: {{ memory_free_mb.stdout }}MB free"
+  tags:
+    - preflight
+    - resources
+
+- name: Display preflight summary
+  ansible.builtin.debug:
+    msg: |
+      Preflight checks passed for {{ inventory_hostname }}:
+        - OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+        - Python: {{ ansible_python_version }}
+        - Disk: {{ disk_space_mb.stdout }}MB free
+        - Memory: {{ memory_free_mb.stdout }}MB free
+  tags:
+    - preflight
+    - summary

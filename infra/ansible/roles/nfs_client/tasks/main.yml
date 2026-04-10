@@ -1,0 +1,167 @@
+# =============================================================================
+# NFS Client Role Tasks
+# =============================================================================
+# Configures NFS mount with proper version pinning and performance tuning.
+# Uses single ansible.builtin.mount module (no double/triple mount logic).
+# =============================================================================
+
+---
+# -----------------------------------------------------------------------------
+# Install NFS utilities
+# -----------------------------------------------------------------------------
+- name: Install NFS packages
+  ansible.builtin.apt:
+    name: "{{ nfs_packages }}"
+    state: present
+    update_cache: true
+  tags:
+    - nfs
+    - install
+
+# -----------------------------------------------------------------------------
+# Pre-Check: NFS Server Reachability
+# -----------------------------------------------------------------------------
+- name: Check NFS server reachability
+  ansible.builtin.wait_for:
+    host: "{{ nfs_server }}"
+    port: 2049
+    timeout: "{{ nfs_precheck_timeout }}"
+  tags:
+    - nfs
+    - preflight
+
+- name: Verify NFS export is available
+  ansible.builtin.command: |
+    showmount -e {{ nfs_server }}
+  register: nfs_exports
+  changed_when: false
+  tags:
+    - nfs
+    - preflight
+
+- name: Verify requested export exists
+  ansible.builtin.assert:
+    that:
+      - nfs_remote_path in nfs_exports.stdout
+    fail_msg: "NFS export {{ nfs_remote_path }} not found on {{ nfs_server }}"
+    success_msg: "NFS export {{ nfs_remote_path }} is available"
+  tags:
+    - nfs
+    - preflight
+
+# -----------------------------------------------------------------------------
+# Create Mount Point
+# -----------------------------------------------------------------------------
+- name: Create mount directory
+  ansible.builtin.file:
+    path: "{{ nfs_local_mount }}"
+    state: directory
+    mode: '0755'
+  tags:
+    - nfs
+    - config
+
+# -----------------------------------------------------------------------------
+# Mount NFS (Single Source of Truth)
+# -----------------------------------------------------------------------------
+- name: Mount NFS share
+  ansible.posix.mount:
+    path: "{{ nfs_local_mount }}"
+    src: "{{ nfs_server }}:{{ nfs_remote_path }}"
+    fstype: nfs
+    opts: "{{ nfs_mount_options }}"
+    state: mounted
+    backup: true
+  tags:
+    - nfs
+    - mount
+
+# -----------------------------------------------------------------------------
+# Verify Mount
+# -----------------------------------------------------------------------------
+- name: Get mount information
+  ansible.builtin.command: |
+    mount | grep "{{ nfs_local_mount }}"
+  register: mount_info
+  changed_when: false
+  tags:
+    - nfs
+    - verify
+
+- name: Display mount information
+  ansible.builtin.debug:
+    msg: "NFS mounted: {{ mount_info.stdout }}"
+  tags:
+    - nfs
+    - verify
+
+# -----------------------------------------------------------------------------
+# Health Check (Write Test in Subdirectory)
+# -----------------------------------------------------------------------------
+- name: Create health check directory
+  ansible.builtin.file:
+    path: "{{ nfs_local_mount }}/{{ nfs_health_dir }}"
+    state: directory
+    mode: '0755'
+  tags:
+    - nfs
+    - health
+
+- name: Create test file
+  ansible.builtin.tempfile:
+    state: file
+    suffix: nfs_test
+    path: "{{ nfs_local_mount }}/{{ nfs_health_dir }}"
+    prefix: "ansible_test_"
+  register: test_file
+  changed_when: true
+  tags:
+    - nfs
+    - health
+
+- name: Write to NFS
+  ansible.builtin.copy:
+    content: "NFS write test from {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}\n"
+    dest: "{{ test_file.path }}"
+    mode: '0644'
+  tags:
+    - nfs
+    - health
+
+- name: Read from NFS
+  ansible.builtin.slurp:
+    src: "{{ test_file.path }}"
+  register: test_content
+  tags:
+    - nfs
+    - health
+
+- name: Display test content
+  ansible.builtin.debug:
+    msg: "NFS test verified: {{ test_content.content | b64decode | trim }}"
+  tags:
+    - nfs
+    - health
+
+- name: Remove test file
+  ansible.builtin.file:
+    path: "{{ test_file.path }}"
+    state: absent
+  tags:
+    - nfs
+    - health
+
+# -----------------------------------------------------------------------------
+# Display Summary
+# -----------------------------------------------------------------------------
+- name: Display NFS summary
+  ansible.builtin.debug:
+    msg: |
+      NFS client configured on {{ inventory_hostname }}:
+        - Server: {{ nfs_server }}:{{ nfs_remote_path }}
+        - Local mount: {{ nfs_local_mount }}
+        - Options: {{ nfs_mount_options }}
+        - Health check dir: {{ nfs_local_mount }}/{{ nfs_health_dir }}
+  tags:
+    - nfs
+    - summary

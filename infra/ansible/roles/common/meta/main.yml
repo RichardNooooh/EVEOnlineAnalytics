@@ -1,0 +1,15 @@
+galaxy_info:
+  role_name: common
+  namespace: eve_market
+  author: Ansible Automation
+  description: Common OS configuration for k3s nodes
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  dependencies:
+    - role: preflight
+      when: false  # Soft dependency, not auto-triggered

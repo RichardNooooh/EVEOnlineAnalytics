@@ -1,0 +1,105 @@
+# k3s configuration file
+# Rendered by Ansible from group_vars
+# Reference: https://docs.k3s.io/installation/configuration
+
+# -----------------------------------------------------------------------------
+# Server Configuration
+# -----------------------------------------------------------------------------
+
+# Disable components (replaced with Helm-managed alternatives)
+{% if k3s_disable_components | length > 0 %}
+disable:
+{% for component in k3s_disable_components %}
+  - {{ component }}
+{% endfor %}
+{% endif %}
+
+# TLS SANs for API server certificate
+tls-san:
+  - {{ k3s_tls_san }}
+{% if k3s_additional_tls_sans | length > 0 %}
+{% for san in k3s_additional_tls_sans %}
+  - {{ san }}
+{% endfor %}
+{% endif %}
+
+# Cluster domain
+cluster-domain: {{ k3s_cluster_domain }}
+
+# -----------------------------------------------------------------------------
+# Kubelet Configuration (Resource Reservations)
+# -----------------------------------------------------------------------------
+# Critical for stability on memory-constrained nodes
+
+kubelet-arg:
+  # System-reserved resources (OS daemons)
+  - "system-reserved=cpu={{ k3s_system_reserved_cpu }},memory={{ k3s_system_reserved_memory }},ephemeral-storage={{ k3s_system_reserved_ephemeral }}"
+  
+  # Kube-reserved resources (Kubernetes system pods)
+  - "kube-reserved=cpu={{ k3s_kube_reserved_cpu }},memory={{ k3s_kube_reserved_memory }}"
+  
+  # Eviction threshold (when to evict pods due to memory pressure)
+  - "eviction-hard=memory.available<{{ k3s_eviction_hard_memory }}"
+
+# -----------------------------------------------------------------------------
+# API Server Arguments
+# -----------------------------------------------------------------------------
+{% if k3s_kube_apiserver_args | length > 0 %}
+kube-apiserver-arg:
+{% for arg in k3s_kube_apiserver_args %}
+  - {{ arg }}
+{% endfor %}
+{% endif %}
+
+# -----------------------------------------------------------------------------
+# Controller Manager Arguments
+# -----------------------------------------------------------------------------
+{% if k3s_kube_controller_manager_args | length > 0 %}
+kube-controller-manager-arg:
+{% for arg in k3s_kube_controller_manager_args %}
+  - {{ arg }}
+{% endfor %}
+{% endif %}
+
+# -----------------------------------------------------------------------------
+# Scheduler Arguments
+# -----------------------------------------------------------------------------
+{% if k3s_kube_scheduler_args | length > 0 %}
+kube-scheduler-arg:
+{% for arg in k3s_kube_scheduler_args %}
+  - {{ arg }}
+{% endfor %}
+{% endif %}
+
+# -----------------------------------------------------------------------------
+# etcd Configuration
+# -----------------------------------------------------------------------------
+etcd-snapshot-schedule-cron: "{{ k3s_etcd_snapshot_schedule_cron }}"
+etcd-snapshot-retention: {{ k3s_etcd_snapshot_retention }}
+
+# -----------------------------------------------------------------------------
+# Node Configuration
+# -----------------------------------------------------------------------------
+{% if k3s_node_labels | length > 0 %}
+node-label:
+{% for label in k3s_node_labels %}
+  - {{ label }}
+{% endfor %}
+{% endif %}
+
+{% if k3s_node_taints | length > 0 %}
+node-taint:
+{% for taint in k3s_node_taints %}
+  - {{ taint }}
+{% endfor %}
+{% endif %}
+
+# -----------------------------------------------------------------------------
+# Feature Gates
+# -----------------------------------------------------------------------------
+{% if k3s_feature_gates | length > 0 %}
+feature-gates:
+{% for gate in k3s_feature_gates %}
+  - {{ gate }}
+{% endfor %}
+{% endif %}
