@@ -229,3 +229,14 @@ resource "proxmox_virtual_environment_vm" "k3s" {
     ]
   }
 }
+
+resource "random_password" "k3s_cluster_key" {
+  length = 32
+  special = false
+}
+
+resource "local_file" "k3s_cluster_key_file" {
+  content  = random_password.k3s_cluster_key.result
+  filename = "${path.module}/../../ansible/inventory/k3s_cluster.key"
+  file_permission = "0644"
+}

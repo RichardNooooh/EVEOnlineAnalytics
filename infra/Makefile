@@ -272,21 +272,3 @@ endif
 	rm -f $(ANSIBLE_DIR)/inventory/k3s-token.txt
 	rm -f backup-*/kubeconfig 2>/dev/null || true
 	@echo "Secrets cleaned"
-
-# =============================================================================
-# Legacy Aliases (for backward compatibility)
-# =============================================================================
-
-.PHONY: init plan fmt validate
-
-init: tf-init ## [Legacy] Alias for tf-init
-	@echo "NOTE: 'init' is deprecated, use 'tf-init' instead"
-
-plan: vms-plan ## [Legacy] Alias for vms-plan
-	@echo "NOTE: 'plan' is deprecated, use 'vms-plan' instead"
-
-fmt: tf-fmt ## [Legacy] Alias for tf-fmt
-	@echo "NOTE: 'fmt' is deprecated, use 'tf-fmt' instead"
-
-validate: tf-validate ## [Legacy] Alias for tf-validate
-	@echo "NOTE: 'validate' is deprecated, use 'tf-validate' instead"
