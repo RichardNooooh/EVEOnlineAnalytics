@@ -1,21 +1,92 @@
 # =============================================================================
 # Group Variables — k3s Servers
 # =============================================================================
-# Variables specific to k3s server nodes. These configure the k3s cluster
-# behavior, including which components to disable and resource reservations.
+# Single source of truth for all site configuration. Everything a human
+# would configure lives here. Role implementation internals live in each
+# role's defaults/main.yml.
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# k3s Configuration
+# -----------------------------------------------------------------------------
+# Target k3s version for installation
+# Reference: https://github.com/k3s-io/k3s/releases
+k3s_version: "v1.35.3+k3s1"
+
+# TLS SAN hostname for API server certificate
+k3s_tls_san: "eve-market.lab.answerisnoh.dev"
+
+# k3s cluster domain for internal DNS
+k3s_cluster_domain: "internal"
+
+# -----------------------------------------------------------------------------
+# Kubeconfig Management
+# -----------------------------------------------------------------------------
+# Whether to copy kubeconfig to local workstation
+k3s_kubeconfig_local: true
+
+# Local path for kubeconfig (expanded at runtime)
+kubeconfig_local_path: "~/.kube/config"
+
+# Kubeconfig path on k3s nodes
+k3s_kubeconfig_node: "/etc/rancher/k3s/k3s.yaml"
+
+# Token file for cluster join (persisted locally for resume after failure)
+k3s_token_file: "{{ inventory_dir }}/k3s-token.txt"
+
+# -----------------------------------------------------------------------------
+# k3s Paths
+# -----------------------------------------------------------------------------
+k3s_service_name: "k3s"
+k3s_install_dir: "/usr/local/bin"
+k3s_binary_path: "{{ k3s_install_dir }}/k3s"
+k3s_uninstall_script: "{{ k3s_install_dir }}/k3s-uninstall.sh"
+k3s_config_dir: "/etc/rancher/k3s"
+k3s_config_file: "{{ k3s_config_dir }}/config.yaml"
+k3s_data_dir: "/var/lib/rancher/k3s"
+
+# Cache directory for installer script
+k3s_installer_cache: "/var/cache/k3s"
+
+# etcd snapshots
+k3s_etcd_snapshot_dir: "{{ k3s_data_dir }}/server/db/snapshots"
+etcd_snapshot_local_dir: "{{ inventory_dir }}/etcd-snapshots"
+
+# -----------------------------------------------------------------------------
+# NFS Configuration
+# -----------------------------------------------------------------------------
+# TrueNAS NFS server IP address
+# IMPORTANT: Must match the IP in infra/k8s/nfs-pv.yaml
+nfs_server: "10.218.20.30"
+
+# Remote NFS export path on TrueNAS (dataset path configured in TrueNAS)
+nfs_remote_path: "/mnt/tank/proxmox"
+
+# Local mount point on k3s nodes
+nfs_local_mount: "/mnt/truenas"
+
+# NFS mount options (NFSv4.2 with performance tuning)
+# - vers=4.2: Explicit NFS version (not relying on kernel default)
+# - hard: Retry indefinitely on server failure (safer for data integrity)
+# - intr: Allow interruption of hard mount operations
+# - timeo=600: Deciseconds to wait before retry (60 seconds)
+# - retrans=2: Number of retries before major timeout
+# - rsize/wsize: Read/write block size (1MB for performance)
+nfs_mount_options: "vers=4.2,hard,intr,timeo=600,retrans=2,rsize=1048576,wsize=1048576,_netdev"
+
+# NFS health check subdirectory (test files go here, not root)
+nfs_health_dir: ".ansible-health"
 
 # -----------------------------------------------------------------------------
 # k3s Server Configuration (config.yaml)
 # -----------------------------------------------------------------------------
-# Components to disable (we'll use Helm-managed replacements)
-# All built-in k3s components are enabled:
-# - servicelb: Enabled for LoadBalancer service exposure
-# - traefik: Enabled for ingress handling
+# Components to disable — empty means all built-in components are enabled:
+# - servicelb: LoadBalancer service exposure
+# - traefik: Ingress handling
 k3s_disable_components: []
 
 # Additional TLS SAN entries for API server certificate
-# The primary SAN is defined in all.yml as k3s_tls_san
+# The primary SAN is defined above as k3s_tls_san
 k3s_additional_tls_sans: []
 
 # -----------------------------------------------------------------------------
@@ -23,11 +94,6 @@ k3s_additional_tls_sans: []
 # -----------------------------------------------------------------------------
 # Critical for stability on ~13GB nodes running Airflow (2-3GB) + dlt tasks
 # Without these, system processes can be OOM-killed during memory spikes.
-#
-# Reserved resources:
-# - system-reserved: For OS system daemons (ssh, systemd, etc.)
-# - kube-reserved: For Kubernetes system pods (kube-proxy, coredns, etc.)
-# - eviction-hard: When to evict pods due to memory pressure
 
 # System-reserved resources (for OS daemons)
 k3s_system_reserved_cpu: "200m"
@@ -45,21 +111,10 @@ k3s_eviction_hard_memory: "300Mi"
 k3s_feature_gates: []
 
 # -----------------------------------------------------------------------------
-# API Server Arguments
+# API Server / Controller Manager / Scheduler Arguments
 # -----------------------------------------------------------------------------
-# Extra arguments passed to kube-apiserver
 k3s_kube_apiserver_args: []
-
-# -----------------------------------------------------------------------------
-# Controller Manager Arguments
-# -----------------------------------------------------------------------------
-# Extra arguments passed to kube-controller-manager
 k3s_kube_controller_manager_args: []
-
-# -----------------------------------------------------------------------------
-# Scheduler Arguments
-# -----------------------------------------------------------------------------
-# Extra arguments passed to kube-scheduler
 k3s_kube_scheduler_args: []
 
 # -----------------------------------------------------------------------------

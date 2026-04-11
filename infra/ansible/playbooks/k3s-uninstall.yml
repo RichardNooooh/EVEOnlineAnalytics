@@ -17,9 +17,6 @@
   become: true
   gather_facts: false
 
-  vars:
-    k3s_uninstall_script: "/usr/local/bin/k3s-uninstall.sh"
-
   tasks:
     - name: Require confirmation
       ansible.builtin.assert:
@@ -48,7 +45,6 @@
       ansible.posix.mount:
         path: "{{ nfs_local_mount }}"
         state: absent
-      when: nfs_local_mount is defined
 
     - name: Display uninstall status
       ansible.builtin.debug:

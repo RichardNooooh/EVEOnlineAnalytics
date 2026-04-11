@@ -15,11 +15,6 @@
   become: true
   gather_facts: false
 
-  vars:
-    k3s_binary_path: "/usr/local/bin/k3s"
-    k3s_etcd_snapshot_dir: "/var/lib/rancher/k3s/server/db/snapshots"
-    etcd_snapshot_local_dir: "{{ inventory_dir }}/etcd-snapshots"
-
   tasks:
     - name: Create local snapshot directory
       ansible.builtin.file:

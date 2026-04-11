@@ -1,19 +1,12 @@
 # =============================================================================
 # NFS Client Role — Default Variables
 # =============================================================================
+# Role-internal variables only. Site-specific NFS configuration
+# (nfs_server, nfs_remote_path, nfs_local_mount, etc.) lives in
+# group_vars/k3s_servers.yml.
+# =============================================================================
 
 ---
-# NFS server configuration
-nfs_server: "10.218.20.30"
-nfs_remote_path: "/mnt/pve/TrueNAS"
-nfs_local_mount: "/mnt/truenas"
-
-# Mount options (NFSv4.2 with performance tuning)
-nfs_mount_options: "vers=4.2,hard,intr,timeo=600,retrans=2,rsize=1048576,wsize=1048576,_netdev"
-
-# Health check directory (keeps test files out of share root)
-nfs_health_dir: ".ansible-health"
-
 # Pre-check timeout (seconds)
 nfs_precheck_timeout: 30
 
