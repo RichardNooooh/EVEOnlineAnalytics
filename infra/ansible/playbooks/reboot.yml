@@ -17,8 +17,6 @@
   gather_facts: true
 
   vars:
-    k3s_binary_path: "/usr/local/bin/k3s"
-    k3s_kubeconfig: "/etc/rancher/k3s/k3s.yaml"
     reboot_wait_timeout: 300
     kubectl_node: "{{ groups['k3s_first_node'][0] }}"
 
@@ -30,14 +28,14 @@
     - name: Cordon node
       kubernetes.core.k8s_drain:
         name: "{{ inventory_hostname }}"
-        kubeconfig: "{{ k3s_kubeconfig }}"
+        kubeconfig: "{{ k3s_kubeconfig_node }}"
         state: cordon
       delegate_to: "{{ kubectl_node }}"
 
     - name: Drain node
       kubernetes.core.k8s_drain:
         name: "{{ inventory_hostname }}"
-        kubeconfig: "{{ k3s_kubeconfig }}"
+        kubeconfig: "{{ k3s_kubeconfig_node }}"
         state: drain
         delete_options:
           ignore_daemonsets: true
@@ -54,7 +52,7 @@
 
     - name: Wait for k3s service after reboot
       ansible.builtin.systemd:
-        name: k3s
+        name: "{{ k3s_service_name }}"
       register: k3s_status
       until: k3s_status.status.ActiveState == "active"
       retries: 30
@@ -65,7 +63,7 @@
         api_version: v1
         kind: Node
         name: "{{ inventory_hostname }}"
-        kubeconfig: "{{ k3s_kubeconfig }}"
+        kubeconfig: "{{ k3s_kubeconfig_node }}"
       register: node_status
       until: >
         node_status.resources | length > 0 and
@@ -77,7 +75,7 @@
     - name: Uncordon node
       kubernetes.core.k8s_drain:
         name: "{{ inventory_hostname }}"
-        kubeconfig: "{{ k3s_kubeconfig }}"
+        kubeconfig: "{{ k3s_kubeconfig_node }}"
         state: uncordon
       delegate_to: "{{ kubectl_node }}"
 

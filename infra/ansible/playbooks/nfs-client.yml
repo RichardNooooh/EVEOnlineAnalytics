@@ -11,7 +11,7 @@
 # Usage:
 #   ansible-playbook playbooks/nfs-client.yml
 #
-# Variables: See group_vars/all.yml
+# Variables: See group_vars/k3s_servers.yml
 # =============================================================================
 
 ---

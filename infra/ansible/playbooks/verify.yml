@@ -15,14 +15,10 @@
   become: true
   gather_facts: false
 
-  vars:
-    k3s_binary_path: "/usr/local/bin/k3s"
-    k3s_kubeconfig: "/etc/rancher/k3s/k3s.yaml"
-
   tasks:
     - name: Check k3s service status
       ansible.builtin.systemd:
-        name: k3s
+        name: "{{ k3s_service_name }}"
       register: k3s_service
       tags:
         - verify
@@ -38,7 +34,7 @@
 
     - name: Get cluster nodes
       ansible.builtin.command: |
-        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig }} get nodes -o wide
+        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig_node }} get nodes -o wide
       register: node_list
       changed_when: false
       tags:
@@ -52,7 +48,7 @@
 
     - name: Get node status (JSON)
       ansible.builtin.command: |
-        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig }} get nodes -o json
+        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig_node }} get nodes -o json
       register: node_status_json
       changed_when: false
       tags:
@@ -70,7 +66,7 @@
 
     - name: Get system pods
       ansible.builtin.command: |
-        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig }} get pods -n kube-system
+        {{ k3s_binary_path }} kubectl --kubeconfig {{ k3s_kubeconfig_node }} get pods -n kube-system
       register: system_pods
       changed_when: false
       tags:
