@@ -1,105 +1,76 @@
-# k3s configuration file
-# Rendered by Ansible from group_vars
-# Reference: https://docs.k3s.io/installation/configuration
+# /etc/rancher/k3s/config.yaml
+# Managed by Ansible — do not edit manually on nodes.
+#
+# Docs: https://docs.k3s.io/installation/configuration
+#
+# IMPORTANT: Network-related flags and component-disable flags
+# MUST be identical across all server nodes, or the cluster
+# will behave unpredictably.
+#   Ref: https://docs.k3s.io/datastore/ha-embedded
 
-# -----------------------------------------------------------------------------
-# Server Configuration
-# -----------------------------------------------------------------------------
-
-# Disable components (replaced with Helm-managed alternatives)
-{% if k3s_disable_components | length > 0 %}
-disable:
-{% for component in k3s_disable_components %}
-  - {{ component }}
-{% endfor %}
+# --------------------------------------------------------------
+# Cluster membership
+# --------------------------------------------------------------
+# Node 1 initializes the cluster; nodes 2-3 join via the VIP.
+{% if k3s_is_first_node %}
+cluster-init: true
+{% else %}
+server: "https://{{k3s_vip_address}}:6443"
 {% endif %}
 
-# TLS SANs for API server certificate
+# Shared token used by all servers to join the cluster.
+# This is the "short" format — the secure format (with CA hash)
+# cannot be known until after the first server generates its
+# self-signed CA certificates.
+token: {{ k3s_cluster_token }}
+
+# --------------------------------------------------------------
+# TLS
+# --------------------------------------------------------------
+# Add the kube-vip VIP (and optionally a DNS name) as Subject
+# Alternative Names on the API server certificate. Without this,
+# kubectl and kubelets will reject the VIP endpoint with a TLS
+# error after kube-vip is deployed.
+#   Ref: https://docs.k3s.io/datastore/cluster-loadbalancer
 tls-san:
-  - {{ k3s_tls_san }}
-{% if k3s_additional_tls_sans | length > 0 %}
-{% for san in k3s_additional_tls_sans %}
-  - {{ san }}
-{% endfor %}
-{% endif %}
+  - "{{ k3s_vip_address }}"
+  - "{{ k3s_tls_san }}"
 
-# Cluster domain
-cluster-domain: {{ k3s_cluster_domain }}
+# --------------------------------------------------------------
+# Kubeconfig
+# --------------------------------------------------------------
+write-kubeconfig-mode: "0644"
 
-# -----------------------------------------------------------------------------
-# Kubelet Configuration (Resource Reservations)
-# -----------------------------------------------------------------------------
-# Critical for stability on memory-constrained nodes
+# --------------------------------------------------------------
+# Networking (defaults — listed explicitly for documentation)
+# --------------------------------------------------------------
+# Flannel VXLAN is the default CNI backend. Listing it here
+# makes the choice visible and auditable.
+#   Ref: https://docs.k3s.io/networking/basic-network-options
+flannel-backend: "vxlan"
 
-kubelet-arg:
-  # System-reserved resources (OS daemons)
-  - "system-reserved=cpu={{ k3s_system_reserved_cpu }},memory={{ k3s_system_reserved_memory }},ephemeral-storage={{ k3s_system_reserved_ephemeral }}"
-  
-  # Kube-reserved resources (Kubernetes system pods)
-  - "kube-reserved=cpu={{ k3s_kube_reserved_cpu }},memory={{ k3s_kube_reserved_memory }}"
-  
-  # Eviction threshold (when to evict pods due to memory pressure)
-  - "eviction-hard=memory.available<{{ k3s_eviction_hard_memory }}"
+# Default CIDRs. Ensure these don't collide with your LAN.
+#   Ref: https://docs.k3s.io/networking/basic-network-options
+cluster-cidr: "10.42.0.0/16"
+service-cidr: "10.43.0.0/16"
 
-# -----------------------------------------------------------------------------
-# API Server Arguments
-# -----------------------------------------------------------------------------
-{% if k3s_kube_apiserver_args | length > 0 %}
-kube-apiserver-arg:
-{% for arg in k3s_kube_apiserver_args %}
-  - {{ arg }}
-{% endfor %}
-{% endif %}
+# --------------------------------------------------------------
+# etcd snapshots
+# --------------------------------------------------------------
+# Scheduled snapshots are enabled by default (every 12h, 5
+# retained). We increase frequency and retention, and push
+# snapshots to an S3-compatible backend (Garage) so they
+# survive total cluster loss.
+#   Ref: https://docs.k3s.io/cli/etcd-snapshot
+etcd-snapshot-schedule-cron: "{{ etcd_snapshot_schedule_cron }}"
+etcd-snapshot-retention: "{{ etcd_snapshot_retention }}"
 
-# -----------------------------------------------------------------------------
-# Controller Manager Arguments
-# -----------------------------------------------------------------------------
-{% if k3s_kube_controller_manager_args | length > 0 %}
-kube-controller-manager-arg:
-{% for arg in k3s_kube_controller_manager_args %}
-  - {{ arg }}
-{% endfor %}
-{% endif %}
+# TODO: configure etcd s3 and backend
 
-# -----------------------------------------------------------------------------
-# Scheduler Arguments
-# -----------------------------------------------------------------------------
-{% if k3s_kube_scheduler_args | length > 0 %}
-kube-scheduler-arg:
-{% for arg in k3s_kube_scheduler_args %}
-  - {{ arg }}
-{% endfor %}
-{% endif %}
-
-# -----------------------------------------------------------------------------
-# etcd Configuration
-# -----------------------------------------------------------------------------
-etcd-snapshot-schedule-cron: "{{ k3s_etcd_snapshot_schedule_cron }}"
-etcd-snapshot-retention: {{ k3s_etcd_snapshot_retention }}
-
-# -----------------------------------------------------------------------------
-# Node Configuration
-# -----------------------------------------------------------------------------
-{% if k3s_node_labels | length > 0 %}
-node-label:
-{% for label in k3s_node_labels %}
-  - {{ label }}
-{% endfor %}
-{% endif %}
-
-{% if k3s_node_taints | length > 0 %}
-node-taint:
-{% for taint in k3s_node_taints %}
-  - {{ taint }}
-{% endfor %}
-{% endif %}
-
-# -----------------------------------------------------------------------------
-# Feature Gates
-# -----------------------------------------------------------------------------
-{% if k3s_feature_gates | length > 0 %}
-feature-gates:
-{% for gate in k3s_feature_gates %}
-  - {{ gate }}
-{% endfor %}
-{% endif %}
+# --------------------------------------------------------------
+# Node configuration
+# --------------------------------------------------------------
+# Unique node name. Prevents issues when Terraform reprovisions
+# VMs that reuse the same hostname.
+#   Ref: https://docs.k3s.io/installation/requirements
+node-name: "{{ inventory_hostname }}"

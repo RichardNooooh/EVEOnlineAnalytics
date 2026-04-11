@@ -54,6 +54,7 @@
     mode: '0755'
   loop:
     - "{{ k3s_config_dir }}"
+    - "{{ k3s_manifest_dir }}"
     - "{{ k3s_installer_cache }}"
   tags:
     - k3s
@@ -62,6 +63,13 @@
 # -----------------------------------------------------------------------------
 # Install k3s Config File
 # -----------------------------------------------------------------------------
+- name: Load in generated k3s cluster key from localhost
+  ansible.builtin.slurp:
+    src: "{{ k3s_token_file }}"
+  register: k3s_cluster_token
+  delegate_to: localhost
+  become: false
+
 - name: Render k3s configuration file
   ansible.builtin.template:
     src: config.yaml.j2
@@ -70,6 +78,13 @@
   tags:
     - k3s
     - config
+
+- name: Download k3s installer script
+  ansible.builtin.get_url:
+    url: "{{ k3s_installer_url }}"
+    dest: "{{ k3s_installer_script }}"
+    mode: '0755'
+    timeout: 120
 
 # -----------------------------------------------------------------------------
 # First Node: Initialize Cluster
@@ -83,21 +98,17 @@
     - install
     - first
   block:
-    - name: Download k3s installer script
-      ansible.builtin.get_url:
-        url: "{{ k3s_installer_url }}"
-        dest: "{{ k3s_installer_script }}"
-        mode: '0755'
-        timeout: 120
-      register: installer_download
+    - name: Render kube_vip config on first node
+      ansible.builtin.template:
+        src: kube-vip.yaml.j2
+        dest: "{{ k3s_manifest_dir }}/kube-vip.yaml"
+        mode: '0600'
 
-    - name: Install k3s with cluster-init
+    - name: Install k3s on first node
       ansible.builtin.shell: |
+        INSTALL_K3S_EXEC="server" \
         INSTALL_K3S_VERSION={{ k3s_version }} \
-        INSTALL_K3S_SKIP_START=false \
         {{ k3s_installer_script }}
-      environment:
-        K3S_CLUSTER_INIT: "true"
 
     - name: Wait for k3s service
       ansible.builtin.systemd:
@@ -109,7 +120,7 @@
       retries: "{{ k3s_wait_retries }}"
       delay: "{{ k3s_wait_delay }}"
 
-    - name: Wait for API server to be ready
+    - name: Wait for API server to be ready on localhost
       # k3s disables anonymous-auth by default, so /readyz returns 401
       # when healthy. 401 confirms the API server and auth stack are up.
       ansible.builtin.uri:
@@ -121,58 +132,21 @@
       retries: "{{ k3s_api_wait_retries }}"
       delay: "{{ k3s_api_wait_delay }}"
 
-    - name: Take initial etcd snapshot
-      ansible.builtin.command: |
-        {{ k3s_binary_path }} etcd-snapshot save
-      register: etcd_snapshot
-      changed_when: true
-
-# -----------------------------------------------------------------------------
-# First Node: Persist Token (always, regardless of install state)
-# -----------------------------------------------------------------------------
-- name: Persist cluster token to local file
-  when: k3s_is_first_node | bool
-  tags:
-    - k3s
-    - token
-  block:
-    - name: Retrieve cluster token from first node
-      ansible.builtin.slurp:
-        src: "{{ k3s_token_node }}"
-      register: k3s_token_b64
-
-    - name: Save token locally
-      ansible.builtin.copy:
-        content: "{{ k3s_token_b64.content | b64decode | trim }}"
-        dest: "{{ k3s_token_file }}"
-        mode: '0600'
-      delegate_to: localhost
-      become: false
+    - name: Wait for API server to be ready on kube-vip VIP
+      # k3s disables anonymous-auth by default, so /readyz returns 401
+      # when healthy. 401 confirms the API server and auth stack are up.
+      ansible.builtin.uri:
+        url: "https://{{ k3s_vip_address }}:6443/readyz"
+        validate_certs: false
+        status_code: [200, 401]
+      register: api_ready
+      until: api_ready.status | default(-1) in [200, 401]
+      retries: "{{ k3s_api_wait_retries }}"
+      delay: "{{ k3s_api_wait_delay }}"
 
 # -----------------------------------------------------------------------------
 # Other Nodes: Join Cluster
 # -----------------------------------------------------------------------------
-- name: Gather token facts for joining cluster
-  when:
-    - not (k3s_is_first_node | bool)
-  tags:
-    - k3s
-  block:
-    - name: Read cluster token from local file
-      ansible.builtin.slurp:
-        src: "{{ k3s_token_file }}"
-      register: k3s_token_local_b64
-      delegate_to: localhost
-      become: false
-
-    - name: Set cluster token fact for joining
-      ansible.builtin.set_fact:
-        k3s_cluster_token: "{{ k3s_token_local_b64.content | b64decode | trim }}"
-
-    - name: Get first node IP
-      ansible.builtin.set_fact:
-        k3s_first_node_ip: "{{ hostvars[groups['k3s_first_node'][0]]['ansible_host'] }}"
-
 - name: Join k3s cluster on other nodes
   when:
     - not (k3s_is_first_node | bool)
@@ -182,20 +156,10 @@
     - install
     - join
   block:
-    - name: Download k3s installer script
-      ansible.builtin.get_url:
-        url: "{{ k3s_installer_url }}"
-        dest: "{{ k3s_installer_script }}"
-        mode: '0755'
-        timeout: 120
-
     - name: Install k3s and join cluster
       ansible.builtin.shell: |
         INSTALL_K3S_EXEC="server" \
         INSTALL_K3S_VERSION={{ k3s_version }} \
-        K3S_URL=https://{{ k3s_first_node_ip }}:6443 \
-        K3S_TOKEN={{ k3s_cluster_token }} \
-        INSTALL_K3S_SKIP_START=false \
         {{ k3s_installer_script }}
 
     - name: Wait for k3s service
@@ -257,26 +221,11 @@
     - k3s
     - kubeconfig
   block:
-    - name: Fetch kubeconfig from first node
-      ansible.builtin.slurp:
-        src: "{{ k3s_kubeconfig_node }}"
-      register: kubeconfig_b64
-
     - name: Ensure local .kube directory exists
       ansible.builtin.file:
         path: "{{ kubeconfig_local_path | dirname }}"
         state: directory
         mode: '0755'
-      delegate_to: localhost
-      run_once: true
-      become: false
-
-    - name: Save kubeconfig locally with TLS-SAN rewrite
-      ansible.builtin.copy:
-        content: "{{ kubeconfig_b64.content | b64decode | regex_replace('https://127.0.0.1:6443', 'https://' ~ k3s_tls_san ~ ':6443') }}"
-        dest: "{{ kubeconfig_local_path }}"
-        mode: '0600'
-        backup: true
       delegate_to: localhost
       run_once: true
       become: false
