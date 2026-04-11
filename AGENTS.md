@@ -180,11 +180,28 @@ eve-market-analytics/
 │   │       └── README.md                  # Instructions: how to terraform plan/apply against trial
 │   ├── ansible/                           # VM configuration + k3s bootstrap
 │   │   ├── inventory/
-│   │   │   └── hosts.ini                  # k3s server nodes (all 3 are server + workload nodes)
+│   │   │   ├── hosts.ini                  # k3s server nodes (all 3 are server + workload nodes)
+│   │   │   └── group_vars/
+│   │   │       └── k3s_servers.yml        # Shared vars for all k3s server nodes
 │   │   ├── playbooks/
 │   │   │   ├── k3s-init.yml               # Bootstrap 3-node k3s HA cluster (embedded etcd)
-│   │   │   └── nfs-client.yml             # Install NFS utils, verify TrueNAS mount
-│   │   ├── roles/                         # Ansible roles for k3s setup, prereqs, storage
+│   │   │   ├── k3s-uninstall.yml          # Tear down k3s on all nodes
+│   │   │   ├── k3s-etcd-snapshot.yml      # Trigger and retrieve etcd snapshots
+│   │   │   ├── nfs-client.yml             # Install NFS utils, verify TrueNAS mount
+│   │   │   ├── common.yml                 # Apply common role to all nodes
+│   │   │   ├── preflight.yml              # Run preflight checks before cluster ops
+│   │   │   ├── verify.yml                 # Post-install verification
+│   │   │   ├── kubeconfig-refresh.yml     # Fetch fresh kubeconfig to dev workstation
+│   │   │   └── reboot.yml                 # Rolling reboot of cluster nodes
+│   │   ├── roles/
+│   │   │   ├── common/                    # Base OS config: sysctl tuning (99-k3s.conf)
+│   │   │   ├── preflight/                 # Pre-cluster checks (kernel params, swap, firewall)
+│   │   │   ├── k3s_server/                # k3s install + config; kube-vip manifest templating
+│   │   │   └── nfs_client/                # NFS utils install + mount verification
+│   │   ├── site.yml                       # Top-level playbook: runs all roles in order
+│   │   ├── bootstrap.yml                  # One-shot bootstrap: preflight → common → k3s_server → nfs
+│   │   ├── ansible.cfg                    # Ansible config (inventory path, ssh settings)
+│   │   ├── requirements.yml               # Galaxy role/collection dependencies
 │   │   └── README.md                      # Sequencing: terraform apply → ansible k3s-init → helm deploys
 │   ├── helm/                              # Helm values overrides for all k3s-deployed services
 
