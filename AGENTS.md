@@ -163,12 +163,13 @@ eve-market-analytics/
 │
 ├── infra/                                 # Infrastructure as code
 │   ├── terraform/                           # OpenTofu configuration (Terraform-compatible)
-│   │   ├── proxmox/                       # VM provisioning (bpg/proxmox provider)
-│   │   │   ├── main.tf                    # Provider config (bpg/proxmox), backend (local state)
-│   │   │   ├── vms.tf                     # 3 k3s VMs: one per Proxmox node, cloud-init, static IPs
-│   │   │   ├── templates.tf               # Cloud-init template download + configuration
+│   │   ├── proxmox/                       # VM provisioning (bpg/proxmox + ansible providers)
+│   │   │   ├── main.tf                    # k3s VM resources: one per Proxmox node, cloud-init, static IPs
+│   │   │   ├── proxmox.tf                 # Data sources (SSH key, cloud-init template lookups)
+│   │   │   ├── ansible.tf                 # ansible/ansible provider: dynamic inventory + INI file output
 │   │   │   ├── variables.tf               # VLAN IDs, IP ranges, VM specs, SSH keys
-│   │   │   ├── outputs.tf                 # VM IPs (consumed by Ansible inventory)
+│   │   │   ├── outputs.tf                 # VM IPs and hostnames
+│   │   │   ├── terraform.tfvars.example   # Example var values (safe to commit)
 │   │   │   └── README.md                  # Prerequisites: API token, cloud-init template, NFS datastore
 │   │   └── snowflake/                     # Cloud-readiness proof (IaC only, not kept live)
 │   │       ├── main.tf                    # Provider config, backend
