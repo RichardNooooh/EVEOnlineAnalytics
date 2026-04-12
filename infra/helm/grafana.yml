@@ -1,0 +1,74 @@
+# ---------------------------------------------------------------------------
+# Admin credentials
+# IMPORTANT: Change the password after first deployment.
+# ---------------------------------------------------------------------------
+adminUser: admin
+adminPassword: "1234"
+
+# ---------------------------------------------------------------------------
+# Resource limits
+# RAM budget: ~0.5 GB. Grafana is lightweight for dashboarding.
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# Persistence: store dashboards and Grafana DB on local storage.
+# Using k3s local-path-provisioner for fast access.
+# ---------------------------------------------------------------------------
+persistence:
+  enabled: true
+  size: 2Gi
+  # storageClassName: "" # Uses default (local-path)
+
+#---------------------------------------------------------------------------
+# Datasources: VictoriaMetrics as Prometheus-compatible backend
+# VictoriaMetrics exposes a Prometheus-compatible query API, so
+# Grafana treats it as a Prometheus datasource.
+# ---------------------------------------------------------------------------
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: VictoriaMetrics
+        type: prometheus
+        access: proxy
+        url: http://victoriametrics-victoria-metrics-single-server.monitoring.svc.cluster.local:8428
+        isDefault: true
+        editable: true
+
+# ---------------------------------------------------------------------------
+# Dashboard provisioning via sidecar
+# Grafana's sidecar watches for ConfigMaps with the label
+# "grafana_dashboard: '1'" and loads them as dashboards.
+# Create ConfigMaps in the monitoring namespace with your dashboard JSON.
+# ---------------------------------------------------------------------------
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    searchNamespace: monitoring
+
+# ---------------------------------------------------------------------------
+# Ingress: expose Grafana via k3s Traefik
+# DNS: create an A record for eve-grafana.lab.answerisnoh.dev → <k3s-node-IP>
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - "eve-grafana.lab.answerisnoh.dev"
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 80
+
