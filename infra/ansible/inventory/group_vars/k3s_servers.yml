@@ -13,8 +13,7 @@
 # Reference: https://github.com/k3s-io/k3s/releases
 k3s_version: "v1.35.3+k3s1"
 
-# TLS SAN hostname for API server certificate
-k3s_tls_san: "eve-market.lab.answerisnoh.dev"
+# k3s_vip VIP Address
 k3s_vip_address: "10.218.20.200"
 
 # k3s cluster domain for internal DNS

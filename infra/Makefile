@@ -40,7 +40,7 @@ check-deps: ## Verify tofu, ansible-playbook, helm, kubectl are installed
 	@echo "All dependencies present"
 
 status: ## Full view: VMs, k3s nodes, pods per namespace (no truncation)
-	@echo "=== Proxmox VMs ==="
+	@echo "=== Proxmox VMs ===" ## TODO: this doesn't acutally show the status of the VMs
 	@$(TOFU) -chdir=$(PROXMOX_DIR) output vm_names 2>/dev/null || echo "No VMs deployed yet"
 	@echo ""
 	@echo "=== k8s Nodes ==="
@@ -136,7 +136,7 @@ ansible-lint: ## Run ansible-lint on all Ansible files
 .PHONY: _helm-repos helm-lint k8s-base deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
 
 _helm-repos: ## Add + update Helm repos (internal use)
-	$(HELM) repo add apache-airflow https://airflow.apache.org 2>/dev/null || true
+	$(HELM) repo add apache-airflow https://airflow.apache.org 3>/dev/null || true
 	$(HELM) repo add community-charts https://community-charts.github.io/helm-charts 2>/dev/null || true
 	$(HELM) repo add vm https://victoriametrics.github.io/helm-charts 2>/dev/null || true
 	$(HELM) repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
@@ -149,8 +149,8 @@ helm-lint: ## Lint all Helm values files
 	$(HELM) lint $(HELM_DIR)/grafana-values.yaml 2>/dev/null || echo "Warning: grafana-values.yaml not found"
 
 k8s-base: kube-context ## Apply base k8s manifests (namespaces, storage)
-	$(KUBECTL) apply -f $(K8S_DIR)/namespaces.yaml
-	$(KUBECTL) apply -f $(K8S_DIR)/nfs-pv.yaml
+	$(KUBECTL) apply -f $(K8S_DIR)/namespaces.yml
+	$(KUBECTL) apply -f $(K8S_DIR)/nfs-pv.yml
 
 deploy-all: kube-context _helm-repos k8s-base ## Deploy all services (full chain)
 	@$(MAKE) deploy-airflow

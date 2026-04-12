@@ -62,8 +62,6 @@ Key settings:
 ```yaml
 # group_vars/all.yml
 k3s_version: "v1.35.3+k3s1"
-k3s_tls_san: "eve-market.lab.answerisnoh.dev"
-
 
 # NFS with performance tuning
 nfs_mount_options: "vers=4.2,hard,intr,timeo=600,retrans=2,rsize=1048576,wsize=1048576,_netdev"
