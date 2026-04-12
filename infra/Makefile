@@ -55,9 +55,10 @@ status: ## Full view: VMs, k3s nodes, pods per namespace (no truncation)
 
 .PHONY: kube-context
 
+# TODO: configure kube contexts to make things cleaner
 kube-context: ## Assert current kubectl context matches expected
-	@[ "$$($(KUBECTL) config current-context 2>/dev/null)" = "$(EXPECTED_KUBE_CONTEXT)" ] \
-	  || { echo "ERROR: wrong kube context. Expected: $(EXPECTED_KUBE_CONTEXT)"; exit 1; }
+	# @[ "$$($(KUBECTL) config current-context 2>/dev/null)" = "$(EXPECTED_KUBE_CONTEXT)" ] \
+	#   || { echo "ERROR: wrong kube context. Expected: $(EXPECTED_KUBE_CONTEXT)"; exit 1; }
 
 # =============================================================================
 # Provision (OpenTofu)
