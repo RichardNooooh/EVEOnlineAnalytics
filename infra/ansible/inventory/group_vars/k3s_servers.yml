@@ -70,7 +70,7 @@ etcd_snapshot_local_dir: "{{ inventory_dir }}/etcd-snapshots"
 nfs_server: "10.218.20.30"
 
 # Remote NFS export path on TrueNAS (dataset path configured in TrueNAS)
-nfs_remote_path: "/mnt/tank/proxmox"
+nfs_remote_path: "/mnt/tank/eve-market"
 
 # Local mount point on k3s nodes
 nfs_local_mount: "/mnt/truenas"
