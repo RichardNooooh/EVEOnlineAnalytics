@@ -1,0 +1,110 @@
+# =============================================================================
+# DuckDB data volume — warehouse database files
+# Used by: dbt tasks, dlt ingestion tasks, analysis pods
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: eve-duckdb-pv
+  labels:
+    app.kubernetes.io/part-of: eve-market
+    storage-purpose: warehouse
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs
+  nfs:
+    server: "10.218.20.30"
+    path: "/mnt/tank/eve-market/duckdb"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eve-duckdb-pvc
+  namespace: airflow
+  labels:
+    app.kubernetes.io/part-of: eve-market
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs
+  resources:
+    requests:
+      storage: 100Gi
+---
+# =============================================================================
+# MLflow artifact volume — experiment artifacts only
+# Used by: MLflow tracking server, training pods, BentoML (later)
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: eve-mlflow-pv
+  labels:
+    app.kubernetes.io/part-of: eve-market
+    storage-purpose: ml-artifacts
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs
+  nfs:
+    server: "10.218.20.30"
+    path: "/mnt/tank/eve-market/mlflow"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eve-mlflow-pvc
+  namespace: ml
+  labels:
+    app.kubernetes.io/part-of: eve-market
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs
+  resources:
+    requests:
+      storage: 20Gi
+---
+# =============================================================================
+# Airflow logs volume — task execution logs readable by the webserver
+# Used by: Airflow KubernetesExecutor task pods (write), Airflow webserver (read)
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: eve-airflow-logs-pv
+  labels:
+    app.kubernetes.io/part-of: eve-market
+    storage-purpose: airflow-logs
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs
+  nfs:
+    server: "10.218.20.30"
+    path: "/mnt/tank/eve-market/airflow-logs"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eve-airflow-logs-pvc
+  namespace: airflow
+  labels:
+    app.kubernetes.io/part-of: eve-market
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs
+  resources:
+    requests:
+      storage: 10Gi

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: airflow
+  labels:
+    app.kubernetes.io/part-of: eve-market
+    purpose: orchestration
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml
+  labels:
+    app.kubernetes.io/part-of: eve-market
+    purpose: machine-learning
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/part-of: eve-market
+    purpose: observability
