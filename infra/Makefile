@@ -77,15 +77,8 @@ tf-validate: tf-init ## Validate OpenTofu configuration
 vms-plan: tf-init ## Plan infrastructure changes in Proxmox
 	$(TOFU) -chdir=$(PROXMOX_DIR) plan
 
-vms: tf-init ## Plan, then prompt for confirmation, then apply VMs
-	@echo "Planning infrastructure changes..."
-	$(TOFU) -chdir=$(PROXMOX_DIR) plan
-	@echo ""
-	@read -p "Apply this plan? [y/N]: " confirm && [ "$${confirm:-N}" = "y" ] || [ "$${confirm:-N}" = "Y" ] || { echo "Aborted."; exit 1; }
-	@$(TOFU) -chdir=$(PROXMOX_DIR) apply
-
-vms-yes: tf-init ## Apply VMs with -auto-approve (scripted use only)
-	$(TOFU) -chdir=$(PROXMOX_DIR) apply -auto-approve
+vms: tf-init ## Apply VMs
+	$(TOFU) -chdir=$(PROXMOX_DIR) apply
 	@echo ""
 	@echo "VMs created. Next step: make cluster"
 

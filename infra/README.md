@@ -77,7 +77,7 @@ In TrueNAS, under the dataset's NFS share settings:
 The dataset itself must also have matching permissions:
 
 - Owner: `root`
-- Group: `wheel`
+- Group: `wheel` (or just keep it at `root`)
 - Mode: `770`
 
 The share is mounted on all k3s nodes at `/mnt/truenas` by the `nfs_client` Ansible role, and exposed inside the cluster via the NFS PersistentVolume in `k8s/nfs-pv.yaml`.

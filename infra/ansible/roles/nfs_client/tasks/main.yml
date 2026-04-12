@@ -152,6 +152,18 @@
     - nfs
     - health
 
+- name: Create subdirectories for project
+  ansible.builtin.file:
+    path: "{{ nfs_local_mount }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "duckdb"
+    - "mlflow"
+    - "airflow-logs"
+  tags:
+    - nfs
+
 # -----------------------------------------------------------------------------
 # Display Summary
 # -----------------------------------------------------------------------------
