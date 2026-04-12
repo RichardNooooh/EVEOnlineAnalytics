@@ -1,0 +1,32 @@
+# ---------------------------------------------------------------------------
+# Server configuration
+# ---------------------------------------------------------------------------
+server:
+  # Retain metrics for 90 days. TrueNAS has plenty of disk.
+  retentionPeriod: "90d"
+
+  # Use local-path-provisioner (k3s default) for metrics storage.
+  # VictoriaMetrics benefits from local disk I/O over NFS.
+  persistentVolume:
+    enabled: true
+    size: 10Gi
+    # storageClassName: "" # Uses default (local-path)
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 700m
+      memory: 1024Mi
+
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - name: "eve-vm.lab.answerisnoh.dev"
+        path: /
+        port: http
+
+  scrape:
+    enabled: true

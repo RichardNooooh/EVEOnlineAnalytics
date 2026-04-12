@@ -144,10 +144,10 @@ _helm-repos: ## Add + update Helm repos (internal use)
 	$(HELM) repo update
 
 helm-lint: ## Lint all Helm values files
-	$(HELM) lint $(HELM_DIR)/airflow-values.yaml 2>/dev/null || echo "Warning: airflow-values.yaml not found"
-	$(HELM) lint $(HELM_DIR)/mlflow-values.yaml 2>/dev/null || echo "Warning: mlflow-values.yaml not found"
-	$(HELM) lint $(HELM_DIR)/victoriametrics-values.yaml 2>/dev/null || echo "Warning: victoriametrics-values.yaml not found"
-	$(HELM) lint $(HELM_DIR)/grafana-values.yaml 2>/dev/null || echo "Warning: grafana-values.yaml not found"
+	$(HELM) lint $(HELM_DIR)/airflow.yml 2>/dev/null || echo "Warning: airflow.yml not found"
+	$(HELM) lint $(HELM_DIR)/mlflow.yml 2>/dev/null || echo "Warning: mlflow.yml not found"
+	$(HELM) lint $(HELM_DIR)/victoriametrics.yml 2>/dev/null || echo "Warning: victoriametrics.yml not found"
+	$(HELM) lint $(HELM_DIR)/grafana.yml 2>/dev/null || echo "Warning: grafana.yml not found"
 
 k8s-base: kube-context ## Apply base k8s manifests (namespaces, storage)
 	$(KUBECTL) apply -f $(K8S_DIR)/namespaces.yml
@@ -160,28 +160,28 @@ deploy-all: kube-context _helm-repos k8s-base ## Deploy all services (full chain
 
 deploy-airflow: kube-context _helm-repos ## Deploy Airflow Helm chart
 	$(HELM) upgrade --install airflow apache-airflow/airflow \
-	    --values $(HELM_DIR)/airflow-values.yaml \
+	    --values $(HELM_DIR)/airflow.yml \
 	    --namespace data --create-namespace
 
 deploy-mlflow: kube-context _helm-repos ## Deploy MLflow Helm chart
 	$(HELM) upgrade --install mlflow community-charts/mlflow \
-	    --values $(HELM_DIR)/mlflow-values.yaml \
+	    --values $(HELM_DIR)/mlflow.yml \
 	    --namespace ml --create-namespace
 
 deploy-monitoring: kube-context _helm-repos ## Deploy VictoriaMetrics + Grafana
 	$(HELM) upgrade --install victoriametrics vm/victoria-metrics-single \
-	    --values $(HELM_DIR)/victoriametrics-values.yaml \
+	    --values $(HELM_DIR)/victoriametrics.yml \
 	    --namespace monitoring --create-namespace
 	$(HELM) upgrade --install grafana grafana/grafana \
-	    --values $(HELM_DIR)/grafana-values.yaml \
+	    --values $(HELM_DIR)/grafana.yml \
 	    --namespace monitoring --create-namespace
 
 plan-helm: kube-context _helm-repos ## Run helm diff upgrade on all charts (drift check)
 	@echo "Checking helm diff for all charts..."
-	@$(HELM) diff upgrade airflow apache-airflow/airflow --values $(HELM_DIR)/airflow-values.yaml --namespace data 2>/dev/null || echo "airflow: no diff or not installed"
-	@$(HELM) diff upgrade mlflow community-charts/mlflow --values $(HELM_DIR)/mlflow-values.yaml --namespace ml 2>/dev/null || echo "mlflow: no diff or not installed"
-	@$(HELM) diff upgrade victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics-values.yaml --namespace monitoring 2>/dev/null || echo "victoriametrics: no diff or not installed"
-	@$(HELM) diff upgrade grafana grafana/grafana --values $(HELM_DIR)/grafana-values.yaml --namespace monitoring 2>/dev/null || echo "grafana: no diff or not installed"
+	@$(HELM) diff upgrade airflow apache-airflow/airflow --values $(HELM_DIR)/airflow.yml --namespace data 2>/dev/null || echo "airflow: no diff or not installed"
+	@$(HELM) diff upgrade mlflow community-charts/mlflow --values $(HELM_DIR)/mlflow.yml --namespace ml 2>/dev/null || echo "mlflow: no diff or not installed"
+	@$(HELM) diff upgrade victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace monitoring 2>/dev/null || echo "victoriametrics: no diff or not installed"
+	@$(HELM) diff upgrade grafana grafana/grafana --values $(HELM_DIR)/grafana.yml --namespace monitoring 2>/dev/null || echo "grafana: no diff or not installed"
 
 uninstall-services: kube-context ## Uninstall all Helm releases (requires CONFIRM=yes)
 ifneq ($(CONFIRM),yes)
