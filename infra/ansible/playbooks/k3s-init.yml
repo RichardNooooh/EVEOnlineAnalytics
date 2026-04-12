@@ -28,7 +28,7 @@
         msg: |
           Starting k3s cluster bootstrap
           Target version: {{ k3s_version }}
-          TLS SAN: {{ k3s_tls_san }}
+          k3s VIP: {{ k3s_vip_address }}
       tags:
         - always
 

@@ -49,6 +49,7 @@
   delegate_to: localhost
   become: false
 
+  # TODO: add timeout and retry. VMs don't have IP available for around ~1min after creation
 - name: Test connectivity to all hosts
   ansible.builtin.ping:
   tags:

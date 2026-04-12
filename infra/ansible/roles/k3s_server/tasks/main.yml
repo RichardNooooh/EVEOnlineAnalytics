@@ -230,9 +230,27 @@
       run_once: true
       become: false
 
+    - name: Copy kubeconfig to local workstation
+      ansible.builtin.fetch:
+        src: "{{ k3s_kubeconfig_node }}"
+        dest: "{{ kubeconfig_local_path }}"
+        flat: true
+      delegate_to: "{{ inventory_hostname }}"
+      run_once: true
+      become: true
+
+    - name: Replace localhost IP with VIP address in kubeconfig
+      ansible.builtin.replace:
+        path: "{{ kubeconfig_local_path }}"
+        regexp: 'https://127\.0\.0\.1:6443'
+        replace: "https://{{ k3s_vip_address }}:6443"
+      delegate_to: localhost
+      run_once: true
+      become: false
+
     - name: Display kubeconfig saved message
       ansible.builtin.debug:
-        msg: "Kubeconfig saved to {{ kubeconfig_local_path }} (server rewritten to {{ k3s_tls_san }})"
+        msg: "Kubeconfig saved to {{ kubeconfig_local_path }}"
 
 # -----------------------------------------------------------------------------
 # Summary

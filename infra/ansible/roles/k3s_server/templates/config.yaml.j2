@@ -34,7 +34,6 @@ token: {{ k3s_cluster_token }}
 #   Ref: https://docs.k3s.io/datastore/cluster-loadbalancer
 tls-san:
   - "{{ k3s_vip_address }}"
-  - "{{ k3s_tls_san }}"
 
 # --------------------------------------------------------------
 # Kubeconfig
