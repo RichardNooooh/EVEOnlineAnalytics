@@ -15,8 +15,17 @@ preflight_min_python_version: "3.10"
 preflight_required_groups:
   - k3s_servers
 
-# Connectivity test timeout (seconds)
-preflight_connectivity_timeout: 5
+# Total time to wait for a host to become reachable (seconds)
+preflight_connectivity_timeout: 120
+
+# Per-attempt SSH/connect timeout (seconds)
+preflight_connectivity_connect_timeout: 5
+
+# Seconds between connectivity retry attempts
+preflight_connectivity_sleep: 5
+
+# Initial delay before the first connectivity attempt (seconds)
+preflight_connectivity_delay: 0
 
 # Required packages that must be present
 preflight_required_packages:
