@@ -246,8 +246,8 @@ resource "local_file" "k3s_cluster_key_file" {
   file_permission = "0644"
 }
 
-resource "local_file" "grafana_admin_env_file" {
-  sensitive_content = <<-EOF
+resource "local_sensitive_file" "grafana_admin_env_file" {
+  content = <<-EOF
     admin-user=admin
     admin-password=${random_password.grafana_admin_password.result}
   EOF
