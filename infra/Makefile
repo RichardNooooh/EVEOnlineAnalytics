@@ -38,7 +38,7 @@ GRAFANA_ADMIN_ENV_FILE := .grafana-admin.env
 .PHONY: help check-deps status
 
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 check-deps: ## Verify tofu, ansible-playbook, helm, kubectl are installed
 	@for bin in $(TOFU) ansible-playbook $(HELM) $(KUBECTL); do \
@@ -148,7 +148,7 @@ ansible-lint: ## Run ansible-lint on all Ansible files
 # Deploy (kubectl + Helm)
 # =============================================================================
 
-.PHONY: _helm-repos helm-lint helm-render k8s-base apply-monitoring-secrets deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
+.PHONY: _helm-repos helm-lint helm-render validate-k8s validate-monitoring validate k8s-base apply-monitoring-secrets deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
 
 _helm-repos: ## Add + update Helm repos (internal use)
 	$(HELM) repo add apache-airflow https://airflow.apache.org 3>/dev/null || true
@@ -168,6 +168,21 @@ helm-render: _helm-repos ## Render Helm charts with available values files
 	@test ! -f $(HELM_DIR)/mlflow.yml || $(HELM) template mlflow community-charts/mlflow --values $(HELM_DIR)/mlflow.yml --namespace $(ML_NAMESPACE) >/dev/null
 	@test ! -f $(HELM_DIR)/victoriametrics.yml || $(HELM) template victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace $(MONITORING_NAMESPACE) >/dev/null
 	@test ! -f $(HELM_DIR)/grafana.yml || $(HELM) template grafana grafana-community/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) >/dev/null
+
+validate-k8s: ## Validate raw k8s manifests with kubectl client dry-run
+	$(KUBECTL) apply --dry-run=client -f $(K8S_DIR)/namespaces.yml >/dev/null
+	$(KUBECTL) apply --dry-run=client -f $(K8S_DIR)/nfs-pv.yml >/dev/null
+
+validate-monitoring: _helm-repos ## Render monitoring charts and verify wiring
+	@vm_render=$$(mktemp); grafana_render=$$(mktemp); trap 'rm -f "$$vm_render" "$$grafana_render"' EXIT; \
+	$(HELM) template victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace $(MONITORING_NAMESPACE) >"$$vm_render"; \
+	$(HELM) template grafana grafana-community/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) >"$$grafana_render"; \
+	rg -q 'name: victoriametrics-victoria-metrics-single-server' "$$vm_render" || { echo "ERROR: VictoriaMetrics service name mismatch"; exit 1; }; \
+	rg -q 'namespace: monitoring' "$$vm_render" || { echo "ERROR: VictoriaMetrics namespace mismatch"; exit 1; }; \
+	rg -q 'port: 8428' "$$vm_render" || { echo "ERROR: VictoriaMetrics port 8428 missing"; exit 1; }; \
+	rg -q 'http://victoriametrics-victoria-metrics-single-server\.monitoring\.svc\.cluster\.local:8428' "$$grafana_render" || { echo "ERROR: Grafana datasource URL mismatch"; exit 1; }
+
+validate: tf-validate helm-lint helm-render validate-k8s validate-monitoring ## Run infrastructure validation checks
 
 k8s-base: kube-context ## Apply base k8s manifests (namespaces, storage)
 	$(KUBECTL) apply -f $(K8S_DIR)/namespaces.yml
@@ -252,13 +267,15 @@ ifneq ($(CONFIRM),yes)
 endif
 	cd $(ANSIBLE_DIR) && $(ANSIBLE) playbooks/k3s-uninstall.yml
 
-backup-state: ## Backup OpenTofu state + k3s token + kubeconfig to archive
+backup-state: ## Backup OpenTofu state, local secret files, and kubeconfig to archive
 	@echo "Creating backup archive..."
-	@mkdir -p backup-$$(date +%Y%m%d-%H%M%S)
-	@cp -r $(PROXMOX_DIR)/*.tfstate* backup-$$(date +%Y%m%d-%H%M%S)/ 2>/dev/null || true
-	@cp $(K3S_TOKEN_FILE) backup-$$(date +%Y%m%d-%H%M%S)/ 2>/dev/null || true
-	@cp ~/.kube/config backup-$$(date +%Y%m%d-%H%M%S)/kubeconfig 2>/dev/null || true
-	@echo "Backup created in backup-$$(date +%Y%m%d-%H%M%S)/"
+	@backup_dir=backup-$$(date +%Y%m%d-%H%M%S); \
+	mkdir -p "$$backup_dir"; \
+	cp -r $(PROXMOX_DIR)/*.tfstate* "$$backup_dir"/ 2>/dev/null || true; \
+	cp $(K3S_TOKEN_FILE) "$$backup_dir"/ 2>/dev/null || true; \
+	cp $(GRAFANA_ADMIN_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
+	cp ~/.kube/config "$$backup_dir"/kubeconfig 2>/dev/null || true; \
+	echo "Backup created in $$backup_dir/"
 
 # =============================================================================
 # Cleanup
@@ -285,12 +302,13 @@ endif
 	rm -f $(PROXMOX_DIR)/terraform.tfstate*
 	@echo "OpenTofu state files removed"
 
-clean-secrets: ## Delete k3s token files and local kubeconfig backups (requires CONFIRM=yes)
+clean-secrets: ## Delete local secret files and secret backups (requires CONFIRM=yes)
 ifneq ($(CONFIRM),yes)
 	@echo "ERROR: Refusing to delete secrets. Re-run with CONFIRM=yes"
 	@exit 1
 endif
-	rm -f $(K3S_TOKEN_FILE) $(LEGACY_K3S_TOKEN_FILE)
+	rm -f $(K3S_TOKEN_FILE) $(LEGACY_K3S_TOKEN_FILE) $(GRAFANA_ADMIN_ENV_FILE)
 	rm -f backup-*/k3s_cluster.key 2>/dev/null || true
+	rm -f backup-*/.grafana-admin.env 2>/dev/null || true
 	rm -f backup-*/kubeconfig 2>/dev/null || true
 	@echo "Secrets cleaned"
