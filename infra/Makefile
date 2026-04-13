@@ -18,6 +18,11 @@ KUBECTL       := kubectl
 
 # Configuration
 EXPECTED_KUBE_CONTEXT := eve-market
+AIRFLOW_NAMESPACE     := airflow
+ML_NAMESPACE          := ml
+MONITORING_NAMESPACE  := monitoring
+K3S_TOKEN_FILE        := $(ANSIBLE_DIR)/inventory/k3s_cluster.key
+LEGACY_K3S_TOKEN_FILE := $(ANSIBLE_DIR)/inventory/k3s-token.txt
 
 # =============================================================================
 # Default Target
@@ -40,8 +45,16 @@ check-deps: ## Verify tofu, ansible-playbook, helm, kubectl are installed
 	@echo "All dependencies present"
 
 status: ## Full view: VMs, k3s nodes, pods per namespace (no truncation)
-	@echo "=== Proxmox VMs ===" ## TODO: this doesn't acutally show the status of the VMs
-	@$(TOFU) -chdir=$(PROXMOX_DIR) output vm_names 2>/dev/null || echo "No VMs deployed yet"
+	@echo "=== Proxmox VMs ==="
+	@vms="$$($(TOFU) -chdir=$(PROXMOX_DIR) state list 2>/dev/null | grep '^proxmox_virtual_environment_vm\.k3s')"; \
+	if [ -z "$$vms" ]; then \
+	  echo "No VMs deployed yet"; \
+	else \
+	  for vm in $$vms; do \
+	    $(TOFU) -chdir=$(PROXMOX_DIR) state show "$$vm" | \
+	      awk '/^    name[[:space:]]+= / { name=$$3 } /^    vm_id[[:space:]]+= / { vm_id=$$3 } /^    node_name[[:space:]]+= / { node=$$3 } /^    started[[:space:]]+= / { started=$$3 } END { gsub(/"/, "", name); gsub(/"/, "", node); printf "%s (vm_id=%s, node=%s, started=%s)\n", name, vm_id, node, started }'; \
+	  done; \
+	fi
 	@echo ""
 	@echo "=== k8s Nodes ==="
 	@$(KUBECTL) get nodes 2>/dev/null || echo "k3s cluster not accessible"
@@ -64,7 +77,7 @@ kube-context: ## Assert current kubectl context matches expected
 # Provision (OpenTofu)
 # =============================================================================
 
-.PHONY: tf-init tf-fmt tf-validate vms-plan vms vms-yes vms-destroy
+.PHONY: tf-init tf-fmt tf-validate vms-plan vms vms-destroy
 
 tf-init: ## Initialize OpenTofu in Proxmox directory
 	$(TOFU) -chdir=$(PROXMOX_DIR) init
@@ -161,37 +174,37 @@ deploy-all: kube-context _helm-repos k8s-base ## Deploy all services (full chain
 deploy-airflow: kube-context _helm-repos ## Deploy Airflow Helm chart
 	$(HELM) upgrade --install airflow apache-airflow/airflow \
 	    --values $(HELM_DIR)/airflow.yml \
-	    --namespace data --create-namespace
+	    --namespace $(AIRFLOW_NAMESPACE) --create-namespace
 
 deploy-mlflow: kube-context _helm-repos ## Deploy MLflow Helm chart
 	$(HELM) upgrade --install mlflow community-charts/mlflow \
 	    --values $(HELM_DIR)/mlflow.yml \
-	    --namespace ml --create-namespace
+	    --namespace $(ML_NAMESPACE) --create-namespace
 
 deploy-monitoring: kube-context _helm-repos ## Deploy VictoriaMetrics + Grafana
 	$(HELM) upgrade --install victoriametrics vm/victoria-metrics-single \
 	    --values $(HELM_DIR)/victoriametrics.yml \
-	    --namespace monitoring --create-namespace
+	    --namespace $(MONITORING_NAMESPACE) --create-namespace
 	$(HELM) upgrade --install grafana grafana/grafana \
 	    --values $(HELM_DIR)/grafana.yml \
-	    --namespace monitoring --create-namespace
+	    --namespace $(MONITORING_NAMESPACE) --create-namespace
 
 plan-helm: kube-context _helm-repos ## Run helm diff upgrade on all charts (drift check)
 	@echo "Checking helm diff for all charts..."
-	@$(HELM) diff upgrade airflow apache-airflow/airflow --values $(HELM_DIR)/airflow.yml --namespace data 2>/dev/null || echo "airflow: no diff or not installed"
-	@$(HELM) diff upgrade mlflow community-charts/mlflow --values $(HELM_DIR)/mlflow.yml --namespace ml 2>/dev/null || echo "mlflow: no diff or not installed"
-	@$(HELM) diff upgrade victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace monitoring 2>/dev/null || echo "victoriametrics: no diff or not installed"
-	@$(HELM) diff upgrade grafana grafana/grafana --values $(HELM_DIR)/grafana.yml --namespace monitoring 2>/dev/null || echo "grafana: no diff or not installed"
+	@$(HELM) diff upgrade airflow apache-airflow/airflow --values $(HELM_DIR)/airflow.yml --namespace $(AIRFLOW_NAMESPACE) 2>/dev/null || echo "airflow: no diff or not installed"
+	@$(HELM) diff upgrade mlflow community-charts/mlflow --values $(HELM_DIR)/mlflow.yml --namespace $(ML_NAMESPACE) 2>/dev/null || echo "mlflow: no diff or not installed"
+	@$(HELM) diff upgrade victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace $(MONITORING_NAMESPACE) 2>/dev/null || echo "victoriametrics: no diff or not installed"
+	@$(HELM) diff upgrade grafana grafana/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) 2>/dev/null || echo "grafana: no diff or not installed"
 
 uninstall-services: kube-context ## Uninstall all Helm releases (requires CONFIRM=yes)
 ifneq ($(CONFIRM),yes)
 	@echo "ERROR: Refusing to uninstall. Re-run with CONFIRM=yes"
 	@exit 1
 endif
-	$(HELM) uninstall airflow --namespace data 2>/dev/null || true
-	$(HELM) uninstall mlflow --namespace ml 2>/dev/null || true
-	$(HELM) uninstall victoriametrics --namespace monitoring 2>/dev/null || true
-	$(HELM) uninstall grafana --namespace monitoring 2>/dev/null || true
+	$(HELM) uninstall airflow --namespace $(AIRFLOW_NAMESPACE) 2>/dev/null || true
+	$(HELM) uninstall mlflow --namespace $(ML_NAMESPACE) 2>/dev/null || true
+	$(HELM) uninstall victoriametrics --namespace $(MONITORING_NAMESPACE) 2>/dev/null || true
+	$(HELM) uninstall grafana --namespace $(MONITORING_NAMESPACE) 2>/dev/null || true
 
 # =============================================================================
 # Full-stack Workflows
@@ -199,7 +212,7 @@ endif
 
 .PHONY: bootstrap teardown backup-state cluster-uninstall
 
-bootstrap: check-deps vms-yes cluster nfs deploy-all ## Full bootstrap: VMs → cluster → NFS → deploy-all
+bootstrap: check-deps vms cluster nfs deploy-all ## Full bootstrap: VMs → cluster → NFS → deploy-all
 	@echo ""
 	@echo "Full bootstrap complete!"
 	@echo ""
@@ -229,7 +242,7 @@ backup-state: ## Backup OpenTofu state + k3s token + kubeconfig to archive
 	@echo "Creating backup archive..."
 	@mkdir -p backup-$$(date +%Y%m%d-%H%M%S)
 	@cp -r $(PROXMOX_DIR)/*.tfstate* backup-$$(date +%Y%m%d-%H%M%S)/ 2>/dev/null || true
-	@cp $(ANSIBLE_DIR)/inventory/k3s-token.txt backup-$$(date +%Y%m%d-%H%M%S)/ 2>/dev/null || true
+	@cp $(K3S_TOKEN_FILE) backup-$$(date +%Y%m%d-%H%M%S)/ 2>/dev/null || true
 	@cp ~/.kube/config backup-$$(date +%Y%m%d-%H%M%S)/kubeconfig 2>/dev/null || true
 	@echo "Backup created in backup-$$(date +%Y%m%d-%H%M%S)/"
 
@@ -258,11 +271,12 @@ endif
 	rm -f $(PROXMOX_DIR)/terraform.tfstate*
 	@echo "OpenTofu state files removed"
 
-clean-secrets: ## Delete inventory/k3s-token.txt and local kubeconfig backups (requires CONFIRM=yes)
+clean-secrets: ## Delete k3s token files and local kubeconfig backups (requires CONFIRM=yes)
 ifneq ($(CONFIRM),yes)
 	@echo "ERROR: Refusing to delete secrets. Re-run with CONFIRM=yes"
 	@exit 1
 endif
-	rm -f $(ANSIBLE_DIR)/inventory/k3s-token.txt
+	rm -f $(K3S_TOKEN_FILE) $(LEGACY_K3S_TOKEN_FILE)
+	rm -f backup-*/k3s_cluster.key 2>/dev/null || true
 	rm -f backup-*/kubeconfig 2>/dev/null || true
 	@echo "Secrets cleaned"
