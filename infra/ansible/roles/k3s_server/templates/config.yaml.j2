@@ -73,3 +73,13 @@ etcd-snapshot-retention: "{{ etcd_snapshot_retention }}"
 # VMs that reuse the same hostname.
 #   Ref: https://docs.k3s.io/installation/requirements
 node-name: "{{ inventory_hostname }}"
+{% set node_labels = k3s_node_labels | default([]) %}
+{% if node_labels | length > 0 %}
+
+# K3s node labels are registration-time settings. Changing them
+# later may require manual relabeling or node rejoin.
+node-label:
+{% for label in node_labels %}
+  - "{{ label }}"
+{% endfor %}
+{% endif %}
