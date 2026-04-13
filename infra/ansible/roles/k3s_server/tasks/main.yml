@@ -137,6 +137,7 @@
     state: directory
     mode: '0755'
   loop:
+    - "{{ k3s_install_dir }}"
     - "{{ k3s_config_dir }}"
     - "{{ k3s_manifest_dir }}"
     - "{{ k3s_installer_cache }}"
@@ -187,12 +188,79 @@
     - k3s
     - config
 
-- name: Download k3s installer script
+- name: Validate k3s release artifact mapping for host architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['architecture'] in k3s_binary_arch_map
+    fail_msg: "This role only supports amd64/x86_64 k3s hosts. Found {{ ansible_facts['architecture'] }}."
+  when: k3s_needs_install | bool
+  tags:
+    - k3s
+    - install
+
+- name: Resolve k3s release artifact for host architecture
+  ansible.builtin.set_fact:
+    k3s_binary_release: "{{ k3s_binary_arch_map[ansible_facts['architecture']] }}"
+  when: k3s_needs_install | bool
+  tags:
+    - k3s
+    - install
+
+- name: Download and verify k3s binary
   ansible.builtin.get_url:
-    url: "{{ k3s_installer_url }}"
-    dest: "{{ k3s_installer_script }}"
+    url: "{{ k3s_binary_base_url }}/{{ k3s_version | replace('+', '%2B') }}/{{ k3s_binary_release.asset_name }}"
+    dest: "{{ k3s_binary_path }}"
     mode: '0755'
     timeout: 120
+    checksum: "sha256:{{ k3s_binary_base_url }}/{{ k3s_version | replace('+', '%2B') }}/{{ k3s_binary_release.checksum_file }}"
+  when: k3s_needs_install | bool
+  tags:
+    - k3s
+    - install
+
+- name: Create k3s command symlinks
+  ansible.builtin.file:
+    src: "{{ k3s_binary_path }}"
+    dest: "{{ k3s_install_dir }}/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ k3s_binary_symlinks }}"
+  tags:
+    - k3s
+    - install
+
+- name: Render k3s systemd environment file
+  ansible.builtin.template:
+    src: k3s.service.env.j2
+    dest: "{{ k3s_systemd_env_file }}"
+    mode: '0600'
+  register: k3s_systemd_env_result
+  tags:
+    - k3s
+    - install
+
+- name: Render k3s systemd unit
+  ansible.builtin.template:
+    src: k3s.service.j2
+    dest: "{{ k3s_systemd_unit_file }}"
+    mode: '0644'
+  register: k3s_systemd_unit_result
+  tags:
+    - k3s
+    - install
+
+- name: Restart k3s for managed service definition changes
+  ansible.builtin.systemd:
+    name: "{{ k3s_service_name }}"
+    state: restarted
+    enabled: true
+    daemon_reload: true
+  when:
+    - not (k3s_needs_install | bool)
+    - k3s_systemd_env_result.changed or k3s_systemd_unit_result.changed
+  tags:
+    - k3s
+    - install
 
 # -----------------------------------------------------------------------------
 # First Node: Initialize Cluster
@@ -213,10 +281,11 @@
         mode: '0600'
 
     - name: Install k3s on first node
-      ansible.builtin.shell: |
-        INSTALL_K3S_EXEC="server" \
-        INSTALL_K3S_VERSION={{ k3s_version }} \
-        {{ k3s_installer_script }}
+      ansible.builtin.systemd:
+        name: "{{ k3s_service_name }}"
+        state: restarted
+        enabled: true
+        daemon_reload: true
 
     - name: Wait for k3s service
       ansible.builtin.systemd:
@@ -265,10 +334,11 @@
     - join
   block:
     - name: Install k3s and join cluster
-      ansible.builtin.shell: |
-        INSTALL_K3S_EXEC="server" \
-        INSTALL_K3S_VERSION={{ k3s_version }} \
-        {{ k3s_installer_script }}
+      ansible.builtin.systemd:
+        name: "{{ k3s_service_name }}"
+        state: restarted
+        enabled: true
+        daemon_reload: true
 
     - name: Wait for k3s service
       ansible.builtin.systemd:
