@@ -169,9 +169,31 @@ make preflight          # Run read-only preflight checks
 make cluster            # Full site.yml (preflight → common → k3s → nfs → verify)
 make kubeconfig         # Refresh ~/.kube/config from cluster
 make snapshot           # On-demand etcd snapshot
+make validate           # Run Terraform, Helm, k8s, and monitoring validation checks
+make validate-k8s       # Client-side dry-run for raw manifests
+make validate-monitoring # Render monitoring charts and verify VictoriaMetrics ↔ Grafana wiring
 make deploy-all         # Deploy/upgrade all Helm releases
 make plan-helm          # Drift check (helm diff) for all charts
 ```
+
+## Monitoring Operations
+
+- VictoriaMetrics ingress is admin-only. Enforce authentication and/or IP allowlisting at the reverse proxy layer before exposing it beyond a trusted network. Reverse proxy config is managed outside this repo.
+- VictoriaMetrics currently retains 30 days of data on a 10Gi `local-path` volume. If scrape volume grows, either increase the disk allocation in `helm/victoriametrics.yml` or lower retention before the PVC fills.
+- Rotate the Grafana admin password with the existing Terraform-generated secret file workflow:
+
+```bash
+rm -f .grafana-admin.env
+tofu -chdir=terraform/proxmox apply \
+  -target=random_password.grafana_admin_password \
+  -target=local_file.grafana_admin_env_file
+make apply-monitoring-secrets
+kubectl rollout restart deployment/grafana --namespace monitoring
+kubectl rollout status deployment/grafana --namespace monitoring
+```
+
+- After rotation, verify login with the new password from `.grafana-admin.env`, then remove stale secret backups if needed with `make clean-secrets CONFIRM=yes`.
+- Grafana dashboards created only in the UI live on the local-path PVC. If that PVC or its node is lost, those dashboards can be lost too. Export important dashboards or provision them as code.
 
 ## Teardown
 
