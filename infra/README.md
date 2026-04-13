@@ -1,31 +1,33 @@
 # infra/
 
-Infrastructure as code for the eve-market-analytics platform. Three sequential layers provision and configure a 3-node k3s HA cluster on Proxmox homelab hardware.
+Infrastructure as code for the eve-market-analytics platform. Three sequential layers
+provision and configure a 3-node k3s HA cluster on Proxmox homelab hardware.
 
 ## Directory Structure
 
-```
+```text
 infra/
-├── Makefile                    # Single entrypoint for all IaC workflows
+├── Makefile                    # Single entrypoint for IaC workflows
 ├── terraform/
-│   ├── proxmox/                # Layer 1: VM provisioning (bpg/proxmox + ansible providers)
-│   └── snowflake/              # Cloud-readiness proof (IaC only, not kept live)
-├── ansible/                    # Layer 2: OS config + k3s cluster bootstrap
-├── helm/                       # Layer 3: Helm values overrides for all deployed services
-└── k8s/                        # Layer 3: Raw manifests (namespaces, NFS PersistentVolume)
+│   ├── proxmox/                # Layer 1: VM provisioning
+│   └── snowflake/              # Cloud-readiness proof
+├── ansible/                    # Layer 2: OS config + k3s bootstrap
+├── helm/                       # Layer 3: Helm values overrides
+└── k8s/                        # Layer 3: Raw manifests (namespaces, NFS PersistentVolumes)
 ```
 
 ## Bootstrap Order
 
-Infrastructure must be applied in this exact sequence — each layer depends on the previous:
+Infrastructure must be applied in this sequence:
 
-```
-1. tofu apply          (terraform/proxmox)   → VMs created, hosts.ini generated
-2. ansible-playbook    (ansible/)            → k3s cluster bootstrapped, kubeconfig fetched
-3. kubectl + helm      (k8s/ + helm/)        → Services deployed into cluster
+```text
+1. tofu apply          (terraform/proxmox)   -> VMs created, hosts.ini generated
+2. ansible-playbook    (ansible/)            -> k3s bootstrapped, kubeconfig fetched
+3. kubectl + helm      (k8s/ + helm/)        -> Base resources and services deployed
 ```
 
-Use `make bootstrap` to run the full chain, or individual `make` targets for each step. Run `make help` for all available targets.
+Use `make bootstrap` to run the full chain, or individual `make` targets for each
+step.
 
 ## Prerequisites
 
@@ -40,7 +42,7 @@ mise install
 Required tools:
 
 | Tool | Purpose |
-|------|---------|
+|---|---|
 | `tofu` (>= 1.11) | VM provisioning |
 | `ansible-playbook` | Cluster configuration |
 | `helm` | Service deployment |
@@ -48,26 +50,28 @@ Required tools:
 
 ### Proxmox Cluster
 
-1. **API Token** — Create at Datacenter → Permissions → API Tokens:
-   - Needs: `Datastore.AllocateTemplate`, `VM.Allocate`, `VM.Config.*`, `SDN.Use`
-   - Format: `USER@REALM!TOKENID=TOKEN-UUID`
-
-2. **Cloud-init template** — A Debian 13 (Trixie) VM template with cloud-init support must exist on the cluster. The `terraform.tfvars` file references it by name.
-
-3. **Shared Proxmox datastore** (named `TrueNAS` in this config) accessible from all nodes, with **Import** and **Snippets** content types enabled. Used for cloud images and cloud-init snippets.
-
-4. **Network bridge** — `vmbr0` with VLAN support enabled.
-
-5. **SSH access** — The bpg/proxmox provider uploads cloud-init snippets over SSH. Your SSH key must be loaded in `ssh-agent`:
-   ```bash
-   ssh-add ~/.ssh/id_ed25519
-   ```
+1. **API Token** - Create at Datacenter -> Permissions -> API Tokens.
+2. **Cloud-init template** - A Debian 13 VM template with cloud-init support.
+3. **Shared Proxmox datastore** - Accessible from all nodes and enabled for imports and snippets.
+4. **Network bridge** - `vmbr0` with VLAN support enabled.
+5. **SSH access** - Required for cloud-init snippet upload.
 
 ### TrueNAS NFS Share
 
-All persistent data (DuckDB, MLflow artifacts, Airflow logs) lives on a TrueNAS NFS share mounted into k3s nodes.
+Shared NFS storage backs:
 
-**NFS export must be configured with `mapall` user/group permissions.** Without `mapall`, pods running as non-root UIDs (which is all of them in this cluster) cannot write to the share.
+- published Parquet datasets
+- dataset manifests and contracts
+- MLflow artifacts
+- Airflow logs
+
+It does **not** back a cluster-shared writable DuckDB warehouse file.
+
+Any DuckDB database used by dbt or batch jobs is local or transient scratch and should
+live on `emptyDir` or node-local `ReadWriteOnce` storage, not RWX NFS.
+
+**NFS export must be configured with `mapall` user/group permissions.** Without
+`mapall`, pods running as non-root UIDs cannot write to the share.
 
 In TrueNAS, under the dataset's NFS share settings:
 
@@ -77,35 +81,38 @@ In TrueNAS, under the dataset's NFS share settings:
 The dataset itself must also have matching permissions:
 
 - Owner: `root`
-- Group: `wheel` (or just keep it at `root`)
+- Group: `wheel` or `root`
 - Mode: `770`
 
-The share is mounted on all k3s nodes at `/mnt/truenas` by the `nfs_client` Ansible role, and exposed inside the cluster via the NFS PersistentVolume in `k8s/nfs-pv.yaml`.
+The share is mounted on all k3s nodes at `/mnt/truenas` by the `nfs_client` Ansible
+role and exposed inside the cluster via the NFS PersistentVolumes in `k8s/nfs-pv.yml`.
 
-NFS server IP and export path are configured in `ansible/inventory/group_vars/k3s_servers.yml` and must match the values in `k8s/nfs-pv.yaml`.
+NFS server IP and export path are configured in
+`ansible/inventory/group_vars/k3s_servers.yml` and must match the values in
+`k8s/nfs-pv.yml`.
 
 ### Ansible Inventory
 
-The inventory file (`ansible/inventory/hosts.ini`) is **auto-generated by `tofu apply`** via the `ansible/ansible` Terraform provider. Do not edit it manually — re-run `tofu apply` if VM IPs change.
+The inventory file (`ansible/inventory/hosts.ini`) is auto-generated by `tofu apply`
+via the `ansible/ansible` provider. Do not edit it manually.
 
 ## Layer Details
 
-### Layer 1 — OpenTofu (`terraform/proxmox/`)
+### Layer 1 - OpenTofu (`terraform/proxmox/`)
 
-Provisions 3 Debian 13 VMs (one per Proxmox node) from the cloud-init template. Configures static IPs, SSH keys, and hostnames. See `terraform/proxmox/README.md` for full variable reference.
+Provisions 3 Debian 13 VMs with static IPs, SSH keys, and hostnames. See
+`terraform/proxmox/README.md` for variable details.
 
 ```bash
 cd terraform/proxmox
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars
 tofu init && tofu apply
 ```
 
-State is stored locally in `terraform/proxmox/terraform.tfstate`. Back it up with `make backup-state`.
+### Layer 2 - Ansible (`ansible/`)
 
-### Layer 2 — Ansible (`ansible/`)
-
-Configures the 3 VMs and bootstraps a k3s HA cluster with embedded etcd. Also installs NFS client utilities and verifies TrueNAS connectivity.
+Bootstraps k3s, installs NFS client utilities, verifies shared storage connectivity,
+and prepares the cluster for Helm and raw manifest deployment.
 
 ```bash
 cd ansible
@@ -113,92 +120,59 @@ ansible-galaxy collection install -r requirements.yml
 ansible-playbook bootstrap.yml
 ```
 
-The cluster join token is written to `ansible/inventory/k3s_cluster.key` (gitignored). A kubeconfig is fetched to `~/.kube/config`. See `ansible/README.md` for playbook reference.
-
-`tofu apply` also generates `infra/.grafana-admin.env` (gitignored) for the Grafana admin secret. `make deploy-monitoring` applies that secret automatically before the Grafana Helm release.
-
-### Layer 3 — kubectl + Helm (`k8s/` + `helm/`)
+### Layer 3 - kubectl + Helm (`k8s/` + `helm/`)
 
 Deploys base cluster resources and application services:
 
 ```bash
-# Base resources (namespaces, NFS PersistentVolume)
 kubectl apply -f k8s/namespaces.yml
 kubectl apply -f k8s/nfs-pv.yml
-
-# Services
 make deploy-all
 ```
 
 Services deployed:
 
 | Service | Namespace | Helm Chart |
-|---------|-----------|------------|
+|---|---|---|
 | Airflow | `airflow` | `apache-airflow/airflow` |
 | MLflow | `ml` | `community-charts/mlflow` |
 | VictoriaMetrics | `monitoring` | `vm/victoria-metrics-single` |
 | Grafana | `monitoring` | `grafana-community/grafana` |
 
-The homelab reverse proxy terminates TLS for Grafana and VictoriaMetrics, so the in-cluster ingress values intentionally omit TLS blocks.
-
-Monitoring persistence for Grafana and VictoriaMetrics stays on local-path storage rather than NFS.
-
-VictoriaMetrics ingress is kept intentionally for homelab/admin query exploration and debugging of the VictoriaMetrics UI, not for public application exposure.
+Monitoring persistence for Grafana and VictoriaMetrics stays on local-path storage
+rather than NFS.
 
 ## Sensitive Files
 
 These files are gitignored and must not be committed:
 
 | File | Contents |
-|------|---------|
+|---|---|
 | `terraform/proxmox/terraform.tfvars` | Proxmox API token, SSH key paths |
-| `terraform/proxmox/terraform.tfstate*` | OpenTofu state (contains secrets) |
-| `ansible/inventory/hosts.ini` | Generated inventory (contains IPs) |
+| `terraform/proxmox/terraform.tfstate*` | OpenTofu state |
+| `ansible/inventory/hosts.ini` | Generated inventory |
 | `ansible/inventory/k3s_cluster.key` | Cluster join token |
-| `.grafana-admin.env` | Generated Grafana admin credentials for Kubernetes secret creation |
-
-Back up state and secrets with `make backup-state` before reprovisioning.
+| `.grafana-admin.env` | Generated Grafana admin credentials |
 
 ## Common Operations
 
 ```bash
-make help               # List all targets
-make status             # VMs + k3s nodes + pod status
-make ping               # Verify Ansible connectivity to all nodes
-make preflight          # Run read-only preflight checks
-make cluster            # Full site.yml (preflight → common → k3s → nfs → verify)
-make kubeconfig         # Refresh ~/.kube/config from cluster
-make snapshot           # On-demand etcd snapshot
-make validate           # Run Terraform, Helm, k8s, and monitoring validation checks
-make validate-k8s       # Client-side dry-run for raw manifests
-make validate-monitoring # Render monitoring charts and verify VictoriaMetrics ↔ Grafana wiring
-make deploy-all         # Deploy/upgrade all Helm releases
-make plan-helm          # Drift check (helm diff) for all charts
+make help
+make status
+make ping
+make preflight
+make cluster
+make kubeconfig
+make snapshot
+make validate
+make validate-k8s
+make validate-monitoring
+make deploy-all
+make plan-helm
 ```
-
-## Monitoring Operations
-
-- VictoriaMetrics ingress is admin-only. Enforce authentication and/or IP allowlisting at the reverse proxy layer before exposing it beyond a trusted network. Reverse proxy config is managed outside this repo.
-- VictoriaMetrics currently retains 30 days of data on a 10Gi `local-path` volume. If scrape volume grows, either increase the disk allocation in `helm/victoriametrics.yml` or lower retention before the PVC fills.
-- Rotate the Grafana admin password with the existing Terraform-generated secret file workflow:
-
-```bash
-rm -f .grafana-admin.env
-tofu -chdir=terraform/proxmox apply \
-  -target=random_password.grafana_admin_password \
-  -target=local_file.grafana_admin_env_file
-make apply-monitoring-secrets
-kubectl rollout restart deployment/grafana --namespace monitoring
-kubectl rollout status deployment/grafana --namespace monitoring
-```
-
-- After rotation, verify login with the new password from `.grafana-admin.env`, then remove stale secret backups if needed with `make clean-secrets CONFIRM=yes`.
-- Grafana dashboards created only in the UI live on the local-path PVC. If that PVC or its node is lost, those dashboards can be lost too. Export important dashboards or provision them as code.
 
 ## Teardown
 
 ```bash
-make teardown CONFIRM=yes   # Uninstall services → k3s → destroy VMs
+make teardown CONFIRM=yes
 ```
-
-Each step also has a standalone target (`uninstall-services`, `cluster-uninstall`, `vms-destroy`) if you need to tear down partially.

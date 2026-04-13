@@ -1,32 +1,53 @@
 ---
-status: accepted
+status: superseded
 date: 2026-03-28
-tags: 
+tags:
   - tools
-amended: []
+amended:
+  - 2026-04-13
+superseded_by: ADR-016
 ---
 
-# ADR 005 - DuckDB as Primary Warehouse (with Cloud-Readiness Proofs)
+# ADR 005 - Superseded: DuckDB as Primary Warehouse
 
 ## Context
 
-The project operates under a $0/month budget target ($5/month absolute max). A warehouse is 
-needed for analytical queries, dbt transformations, and ML feature engineering.
+The project originally needed a zero-cost analytical store for dbt transformations,
+ML feature engineering, and local development. DuckDB was chosen early because it is
+embedded, fast, and simple to operate.
 
-## Decision
+## Original Decision
 
-DuckDB is the primary warehouse, running as an embedded database file on NFS-backed persistent 
-storage. Snowflake and MotherDuck serve as cloud-readiness demonstrations only.
+ADR-005 originally established DuckDB as the primary warehouse, with a shared writable
+`.duckdb` file placed on NFS-backed persistent storage.
 
-## Rationale
+## Current Status
 
-- DuckDB is free, requires no server process, and performs well for analytical workloads at the 
-  scale of EVE market data (single-region focus on The Forge).
-- Snowflake is handled via a separate Terraform directory (`terraform/snowflake/`) with its own 
-  state as a cloud-readiness proof. The approach: write valid Terraform resource definitions, 
-  run `tofu plan` during the 30-day trial, record a screencast of the output, then let the trial 
-  expire. The IaC remains valid and reviewable.
-- MotherDuck is noted as a sustainable cloud middle-ground (free tier, DuckDB-compatible) if a 
-  live cloud deployment becomes desirable.
-- The DuckDB file, model artifacts, and Airflow DAGs live on TrueNAS NFS, mounted as a Kubernetes 
-  PersistentVolume accessible by all nodes.
+This ADR is superseded by ADR-016.
+
+The repository no longer treats a cluster-shared writable DuckDB file as the system of
+record. The current contract is:
+
+- Published Parquet datasets on shared storage are the system of record.
+- DuckDB is local or transient compute for development and single-writer batch jobs.
+- There is no cluster-shared writable `.duckdb` file.
+
+## Historical Rationale
+
+The original decision was reasonable at the time because DuckDB offered:
+
+- zero license cost
+- no server process to manage
+- strong analytical performance for the planned market-data scale
+
+What changed was not DuckDB's usefulness as a compute engine. What changed was the
+storage contract. Shared mutable database files on RWX storage make publication,
+concurrency, and recovery semantics less explicit than a dataset-oriented design with
+single-writer publication rules.
+
+## Amendments
+
+- 2026-04-13 - Superseded by ADR-016
+  - ADR-016 replaces the shared DuckDB warehouse contract with a single-writer Parquet
+    dataset architecture. DuckDB remains in the stack only as local or transient
+    compute, not as cluster-shared writable storage.

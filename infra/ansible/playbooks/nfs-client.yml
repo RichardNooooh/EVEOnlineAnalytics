@@ -49,7 +49,7 @@
           - {{ host }}: {{ nfs_local_mount }}
           {% endfor %}
 
-          Used by: Kubernetes PersistentVolumes in infra/k8s/nfs-pv.yaml
+          Used by: dataset, artifact, and log PersistentVolumes in infra/k8s/nfs-pv.yml
       run_once: true
       delegate_to: localhost
       become: false
