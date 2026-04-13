@@ -31,6 +31,7 @@ spec:
   accessModes:
     - ReadWriteMany
   storageClassName: nfs
+  volumeName: eve-duckdb-pv
   resources:
     requests:
       storage: 100Gi
@@ -68,6 +69,7 @@ spec:
   accessModes:
     - ReadWriteMany
   storageClassName: nfs
+  volumeName: eve-mlflow-pv
   resources:
     requests:
       storage: 20Gi
@@ -105,6 +107,7 @@ spec:
   accessModes:
     - ReadWriteMany
   storageClassName: nfs
+  volumeName: eve-airflow-logs-pv
   resources:
     requests:
       storage: 10Gi

@@ -23,6 +23,7 @@ ML_NAMESPACE          := ml
 MONITORING_NAMESPACE  := monitoring
 K3S_TOKEN_FILE        := $(ANSIBLE_DIR)/inventory/k3s_cluster.key
 LEGACY_K3S_TOKEN_FILE := $(ANSIBLE_DIR)/inventory/k3s-token.txt
+GRAFANA_ADMIN_ENV_FILE := .grafana-admin.env
 
 # =============================================================================
 # Default Target
@@ -147,24 +148,37 @@ ansible-lint: ## Run ansible-lint on all Ansible files
 # Deploy (kubectl + Helm)
 # =============================================================================
 
-.PHONY: _helm-repos helm-lint k8s-base deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
+.PHONY: _helm-repos helm-lint helm-render k8s-base apply-monitoring-secrets deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
 
 _helm-repos: ## Add + update Helm repos (internal use)
 	$(HELM) repo add apache-airflow https://airflow.apache.org 3>/dev/null || true
 	$(HELM) repo add community-charts https://community-charts.github.io/helm-charts 2>/dev/null || true
 	$(HELM) repo add vm https://victoriametrics.github.io/helm-charts 2>/dev/null || true
-	$(HELM) repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
+	$(HELM) repo add grafana-community https://grafana-community.github.io/helm-charts 2>/dev/null || true
 	$(HELM) repo update
 
-helm-lint: ## Lint all Helm values files
-	$(HELM) lint $(HELM_DIR)/airflow.yml 2>/dev/null || echo "Warning: airflow.yml not found"
-	$(HELM) lint $(HELM_DIR)/mlflow.yml 2>/dev/null || echo "Warning: mlflow.yml not found"
-	$(HELM) lint $(HELM_DIR)/victoriametrics.yml 2>/dev/null || echo "Warning: victoriametrics.yml not found"
-	$(HELM) lint $(HELM_DIR)/grafana.yml 2>/dev/null || echo "Warning: grafana.yml not found"
+helm-lint: _helm-repos ## Lint Helm charts with their values files
+	@if [ -f $(HELM_DIR)/airflow.yml ]; then tmp_dir=$$(mktemp -d); trap 'rm -rf "$$tmp_dir"' EXIT; $(HELM) pull apache-airflow/airflow --untar --untardir "$$tmp_dir" >/dev/null 2>&1; $(HELM) lint "$$tmp_dir"/airflow --values $(HELM_DIR)/airflow.yml; fi
+	@if [ -f $(HELM_DIR)/mlflow.yml ]; then tmp_dir=$$(mktemp -d); trap 'rm -rf "$$tmp_dir"' EXIT; $(HELM) pull community-charts/mlflow --untar --untardir "$$tmp_dir" >/dev/null 2>&1; $(HELM) lint "$$tmp_dir"/mlflow --values $(HELM_DIR)/mlflow.yml; fi
+	@if [ -f $(HELM_DIR)/victoriametrics.yml ]; then tmp_dir=$$(mktemp -d); trap 'rm -rf "$$tmp_dir"' EXIT; $(HELM) pull vm/victoria-metrics-single --untar --untardir "$$tmp_dir" >/dev/null 2>&1; $(HELM) lint "$$tmp_dir"/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml; fi
+	@if [ -f $(HELM_DIR)/grafana.yml ]; then tmp_dir=$$(mktemp -d); trap 'rm -rf "$$tmp_dir"' EXIT; $(HELM) pull grafana-community/grafana --untar --untardir "$$tmp_dir" >/dev/null 2>&1; $(HELM) lint "$$tmp_dir"/grafana --values $(HELM_DIR)/grafana.yml; fi
+
+helm-render: _helm-repos ## Render Helm charts with available values files
+	@test ! -f $(HELM_DIR)/airflow.yml || $(HELM) template airflow apache-airflow/airflow --values $(HELM_DIR)/airflow.yml --namespace $(AIRFLOW_NAMESPACE) >/dev/null
+	@test ! -f $(HELM_DIR)/mlflow.yml || $(HELM) template mlflow community-charts/mlflow --values $(HELM_DIR)/mlflow.yml --namespace $(ML_NAMESPACE) >/dev/null
+	@test ! -f $(HELM_DIR)/victoriametrics.yml || $(HELM) template victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace $(MONITORING_NAMESPACE) >/dev/null
+	@test ! -f $(HELM_DIR)/grafana.yml || $(HELM) template grafana grafana-community/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) >/dev/null
 
 k8s-base: kube-context ## Apply base k8s manifests (namespaces, storage)
 	$(KUBECTL) apply -f $(K8S_DIR)/namespaces.yml
 	$(KUBECTL) apply -f $(K8S_DIR)/nfs-pv.yml
+
+apply-monitoring-secrets: ## Apply generated monitoring secrets from local env files
+	@test -f $(GRAFANA_ADMIN_ENV_FILE) || { echo "ERROR: missing $(GRAFANA_ADMIN_ENV_FILE). Run 'make vms' or 'cd $(PROXMOX_DIR) && $(TOFU) apply' first."; exit 1; }
+	$(KUBECTL) create secret generic grafana-admin-credentials \
+	    --namespace $(MONITORING_NAMESPACE) \
+	    --from-env-file=$(GRAFANA_ADMIN_ENV_FILE) \
+	    --dry-run=client -o yaml | $(KUBECTL) apply -f -
 
 deploy-all: kube-context _helm-repos k8s-base ## Deploy all services (full chain)
 	@$(MAKE) deploy-airflow
@@ -181,11 +195,11 @@ deploy-mlflow: kube-context _helm-repos ## Deploy MLflow Helm chart
 	    --values $(HELM_DIR)/mlflow.yml \
 	    --namespace $(ML_NAMESPACE) --create-namespace
 
-deploy-monitoring: kube-context _helm-repos ## Deploy VictoriaMetrics + Grafana
+deploy-monitoring: kube-context _helm-repos k8s-base apply-monitoring-secrets ## Deploy VictoriaMetrics + Grafana
 	$(HELM) upgrade --install victoriametrics vm/victoria-metrics-single \
 	    --values $(HELM_DIR)/victoriametrics.yml \
 	    --namespace $(MONITORING_NAMESPACE) --create-namespace
-	$(HELM) upgrade --install grafana grafana/grafana \
+	$(HELM) upgrade --install grafana grafana-community/grafana \
 	    --values $(HELM_DIR)/grafana.yml \
 	    --namespace $(MONITORING_NAMESPACE) --create-namespace
 
@@ -194,7 +208,7 @@ plan-helm: kube-context _helm-repos ## Run helm diff upgrade on all charts (drif
 	@$(HELM) diff upgrade airflow apache-airflow/airflow --values $(HELM_DIR)/airflow.yml --namespace $(AIRFLOW_NAMESPACE) 2>/dev/null || echo "airflow: no diff or not installed"
 	@$(HELM) diff upgrade mlflow community-charts/mlflow --values $(HELM_DIR)/mlflow.yml --namespace $(ML_NAMESPACE) 2>/dev/null || echo "mlflow: no diff or not installed"
 	@$(HELM) diff upgrade victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace $(MONITORING_NAMESPACE) 2>/dev/null || echo "victoriametrics: no diff or not installed"
-	@$(HELM) diff upgrade grafana grafana/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) 2>/dev/null || echo "grafana: no diff or not installed"
+	@$(HELM) diff upgrade grafana grafana-community/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) 2>/dev/null || echo "grafana: no diff or not installed"
 
 uninstall-services: kube-context ## Uninstall all Helm releases (requires CONFIRM=yes)
 ifneq ($(CONFIRM),yes)

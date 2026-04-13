@@ -115,6 +115,8 @@ ansible-playbook bootstrap.yml
 
 The cluster join token is written to `ansible/inventory/k3s_cluster.key` (gitignored). A kubeconfig is fetched to `~/.kube/config`. See `ansible/README.md` for playbook reference.
 
+`tofu apply` also generates `infra/.grafana-admin.env` (gitignored) for the Grafana admin secret. `make deploy-monitoring` applies that secret automatically before the Grafana Helm release.
+
 ### Layer 3 — kubectl + Helm (`k8s/` + `helm/`)
 
 Deploys base cluster resources and application services:
@@ -135,7 +137,7 @@ Services deployed:
 | Airflow | `airflow` | `apache-airflow/airflow` |
 | MLflow | `ml` | `community-charts/mlflow` |
 | VictoriaMetrics | `monitoring` | `vm/victoria-metrics-single` |
-| Grafana | `monitoring` | `Grafana Helm chart` |
+| Grafana | `monitoring` | `grafana-community/grafana` |
 
 The homelab reverse proxy terminates TLS for Grafana and VictoriaMetrics, so the in-cluster ingress values intentionally omit TLS blocks.
 
@@ -153,6 +155,7 @@ These files are gitignored and must not be committed:
 | `terraform/proxmox/terraform.tfstate*` | OpenTofu state (contains secrets) |
 | `ansible/inventory/hosts.ini` | Generated inventory (contains IPs) |
 | `ansible/inventory/k3s_cluster.key` | Cluster join token |
+| `.grafana-admin.env` | Generated Grafana admin credentials for Kubernetes secret creation |
 
 Back up state and secrets with `make backup-state` before reprovisioning.
 
