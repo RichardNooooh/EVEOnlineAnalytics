@@ -260,3 +260,8 @@ Resource requests and limits must be set in every Helm values file.
 - **Set up a monitoring dashboard** -> `monitoring/grafana/dashboards/`.
 - **Write OpenTofu for Snowflake** -> `infra/terraform/snowflake/`.
 - **Update documentation** -> prefer `docs/` first, then `README.md` if needed.
+- **Write commit** -> use `docs: `, `cleanup: `, `feat: `, `refactor: `, or `fix: `
+  prefixes, followed by capitalized action verb like `feat: Add...` in both title and
+  body. Body should have a sequence of `{prefix}: {Verb}`. Append co-authorship as
+  `Co-Authored-By: {Model} ({effort level}) via OpenCode`; e.g.
+  `Co-Authored-By: GPT-5.4 (high) via OpenCode`.
