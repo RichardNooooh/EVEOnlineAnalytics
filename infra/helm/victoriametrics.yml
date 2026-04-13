@@ -2,15 +2,15 @@
 # Server configuration
 # ---------------------------------------------------------------------------
 server:
-  # Retain metrics for 90 days. TrueNAS has plenty of disk.
-  retentionPeriod: "90d"
+  # Retain metrics for 30 days on local monitoring storage.
+  retentionPeriod: "30d"
 
   # Use local-path-provisioner (k3s default) for metrics storage.
   # VictoriaMetrics benefits from local disk I/O over NFS.
   persistentVolume:
     enabled: true
     size: 10Gi
-    # storageClassName: "" # Uses default (local-path)
+    storageClassName: local-path
 
   resources:
     requests:
@@ -21,6 +21,8 @@ server:
       memory: 1024Mi
 
   ingress:
+    # Keep ingress enabled for homelab/admin UI exploration and debugging.
+    # TLS is terminated at the homelab reverse proxy, so no TLS block is set here.
     enabled: true
     ingressClassName: traefik
     hosts:
