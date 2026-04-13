@@ -12,7 +12,7 @@ bootstrap.
   - SSH key authentication
   - qemu guest agent, NFS utils, iSCSI initiator
   - static IP configuration
-- **Specs per VM**: 4 CPU cores, 8 GB RAM, 40 GB disk
+- **Specs per VM by default**: 4 CPU cores, 10 GB RAM, 40 GB disk
 - **Ansible inventory** auto-generated at `../../ansible/inventory/hosts.ini`
 
 ## Prerequisites
@@ -60,6 +60,8 @@ After apply completes:
 
 1. The VMs boot and cloud-init runs.
 2. An Ansible inventory file is generated at `../../ansible/inventory/hosts.ini`.
+3. A local `../../.grafana-admin.env` file is generated for Grafana admin credential
+   bootstrapping.
 
 ## Outputs
 
@@ -85,8 +87,9 @@ This configuration uses the `ansible/ansible` provider to:
 Once VMs are running and the inventory is generated:
 
 ```bash
-cd ../ansible
-ansible-playbook -i inventory/hosts.ini playbooks/k3s-init.yml
+cd ../../ansible
+ansible-galaxy collection install -r requirements.yml
+ansible-playbook bootstrap.yml
 ```
 
 ## Troubleshooting

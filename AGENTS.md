@@ -217,7 +217,8 @@ eve-market-analytics/
 
 ### Snowflake Cloud-Readiness
 
-- `infra/terraform/snowflake/` exists to prove a managed warehouse path.
+- Snowflake IaC is a planned cloud-readiness path and is not checked into this repo
+  yet.
 - The steady-state architecture remains self-hosted Parquet datasets plus local or
   transient compute.
 
@@ -239,12 +240,13 @@ Resource requests and limits must be set in every Helm values file.
 
 ## Coding Conventions
 
-- **Python:** use `pyproject.toml` for all config. Format with `ruff`. Type hints are
-  encouraged. Use `uv`.
+- **Python:** format with `ruff`, use `uv`, and prefer a repo-root `pyproject.toml`
+  for Python tool configuration when Python packages are added. Today, tool bootstrap
+  is managed through `mise.toml`.
 - **SQL (dbt):** lowercase keywords, CTEs over subqueries, one model per file,
   descriptive prefixes such as `stg_`, `int_`, `mart_`, and `feat_`.
 - **OpenTofu:** standard HCL formatting with `tofu fmt`.
-- **Git:** conventional commits. Feature branches off `main`. PRs required.
+- **Git:** conventional commits. Feature branches off `master`. PRs required.
 - **Mise:** use `mise` to handle all tooling.
 
 ## Common Agent Tasks
@@ -257,8 +259,12 @@ Resource requests and limits must be set in every Helm values file.
   exists.
 - **Update storage architecture** -> start with `docs/architecture.md`,
   `docs/storage_layout.md`, and ADRs before touching implementation.
-- **Set up a monitoring dashboard** -> `monitoring/grafana/dashboards/`.
-- **Write OpenTofu for Snowflake** -> `infra/terraform/snowflake/`.
+- **Set up a monitoring dashboard** -> update Grafana provisioning in
+  `infra/helm/grafana.yml` and add Kubernetes dashboard ConfigMaps/manifests under
+  `infra/k8s/` if the dashboard should be checked in.
+- **Write OpenTofu for Snowflake** -> create a new `infra/terraform/snowflake/`
+  module only when the user explicitly asks for cloud-readiness IaC beyond the current
+  Proxmox stack.
 - **Update documentation** -> prefer `docs/` first, then `README.md` if needed.
 - **Write commit** -> use `docs: `, `cleanup: `, `feat: `, `refactor: `, or `fix: `
   prefixes, followed by capitalized action verb like `feat: Add...` in both title and

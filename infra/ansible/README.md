@@ -12,6 +12,9 @@ This layer uses a role-based architecture with clear separation of concerns:
 - **k3s_server role:** cluster bootstrap and node joining
 - **nfs_client role:** shared NFS mount configuration
 
+The repo also contains a `k3s_upgrade` role for future upgrade-specific workflows, but
+the main entrypoint today is still `site.yml`.
+
 The shared NFS mount backs published Parquet datasets, manifests, MLflow artifacts,
 and Airflow logs. It does not host a shared writable DuckDB warehouse file.
 
@@ -56,7 +59,12 @@ Non-secret configuration lives in `inventory/group_vars/`.
 Sensitive etcd snapshot S3 configuration lives in an Ansible Vault file under
 `inventory/vault/`.
 
-Key settings include the pinned k3s version and NFS mount options.
+Key settings include the pinned k3s version, kubeconfig copy behavior, and NFS mount
+options.
+
+`site.yml` copies kubeconfig to the local workstation when
+`k3s_kubeconfig_local: true`. There is no standalone `playbooks/kubeconfig-refresh.yml`
+checked into the repo today.
 
 ### etcd Snapshot S3 Backup
 
@@ -126,7 +134,6 @@ Existing clusters need a `k3s` server restart after enabling this feature so new
 | `playbooks/k3s-etcd-snapshot.yml` | On-demand etcd backup |
 | `playbooks/k3s-uninstall.yml` | Destructive cluster removal |
 | `playbooks/reboot.yml` | Rolling node reboots |
-| `playbooks/kubeconfig-refresh.yml` | Refresh local kubeconfig |
 
 ## Key Features
 
@@ -174,8 +181,10 @@ ansible/
 ├── bootstrap.yml
 ├── site.yml
 ├── requirements.yml
-├── group_vars/
 ├── inventory/
+│   ├── group_vars/
+│   ├── vault/
+│   └── hosts.ini
 ├── playbooks/
 └── roles/
 ```
