@@ -51,9 +51,66 @@ it manually.
 
 ## Configuration
 
-All configuration is kept in `group_vars/`.
+Non-secret configuration lives in `inventory/group_vars/`.
+
+Sensitive etcd snapshot S3 configuration lives in an Ansible Vault file under
+`inventory/vault/`.
 
 Key settings include the pinned k3s version and NFS mount options.
+
+### etcd Snapshot S3 Backup
+
+K3s scheduled etcd snapshots always keep their local schedule and local retention.
+Optional off-cluster S3 replication is enabled with secret-based K3s config.
+
+Plaintext toggles and non-secret overrides stay in
+`inventory/group_vars/k3s_servers.yml`:
+
+- `etcd_snapshot_s3_enabled`
+- `etcd_snapshot_s3_vault_file`
+- `etcd_snapshot_s3_endpoint_ca_name`
+- `etcd_snapshot_s3_timeout`
+- `etcd_snapshot_s3_skip_ssl_verify`
+- `etcd_snapshot_s3_insecure`
+- `etcd_snapshot_s3_retention`
+
+Sensitive S3 fields must be stored in vaulted file
+`inventory/vault/k3s_etcd_snapshot_s3.yml`:
+
+- `etcd_snapshot_s3_secret_name`
+- `etcd_snapshot_s3_endpoint`
+- `etcd_snapshot_s3_bucket`
+- `etcd_snapshot_s3_region`
+- `etcd_snapshot_s3_folder`
+- `etcd_snapshot_s3_access_key`
+- `etcd_snapshot_s3_secret_key`
+
+Optional inline CA bundle can also live in vault file as `etcd_snapshot_s3_endpoint_ca`.
+Do not set both `etcd_snapshot_s3_endpoint_ca` and
+`etcd_snapshot_s3_endpoint_ca_name`.
+
+Bootstrap vault file from committed example:
+
+```bash
+cd infra/ansible
+mkdir -p inventory/vault
+cp inventory/vault/k3s_etcd_snapshot_s3.yml.example inventory/vault/k3s_etcd_snapshot_s3.yml
+ansible-vault encrypt inventory/vault/k3s_etcd_snapshot_s3.yml
+ansible-vault edit inventory/vault/k3s_etcd_snapshot_s3.yml
+```
+
+Run Ansible with vault password when S3 backup enabled:
+
+```bash
+cd infra/ansible
+ansible-playbook site.yml --ask-vault-pass
+```
+
+Role fails early if S3 backup is enabled and vault file is missing or required S3
+fields are unset.
+
+Existing clusters need a `k3s` server restart after enabling this feature so new
+`config.yaml` S3 settings take effect.
 
 ## Playbooks
 

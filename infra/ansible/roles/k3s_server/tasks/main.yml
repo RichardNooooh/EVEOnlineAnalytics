@@ -44,6 +44,90 @@
     - k3s
     - preflight
 
+- name: Check etcd S3 vault file
+  ansible.builtin.stat:
+    path: "{{ etcd_snapshot_s3_vault_file }}"
+  register: etcd_snapshot_s3_vault_stat
+  when: etcd_snapshot_s3_enabled | bool
+  run_once: true
+  delegate_to: localhost
+  become: false
+  tags:
+    - k3s
+    - config
+
+- name: Fail if etcd S3 vault file is missing
+  ansible.builtin.assert:
+    that:
+      - etcd_snapshot_s3_vault_stat.stat.exists
+      - etcd_snapshot_s3_vault_stat.stat.isreg
+    fail_msg: |
+      etcd_snapshot_s3_enabled=true requires vaulted vars file:
+        {{ etcd_snapshot_s3_vault_file }}
+
+      Create it with ansible-vault and define:
+        - etcd_snapshot_s3_secret_name
+        - etcd_snapshot_s3_endpoint
+        - etcd_snapshot_s3_bucket
+        - etcd_snapshot_s3_region
+        - etcd_snapshot_s3_folder
+        - etcd_snapshot_s3_access_key
+        - etcd_snapshot_s3_secret_key
+  when: etcd_snapshot_s3_enabled | bool
+  run_once: true
+  delegate_to: localhost
+  become: false
+  tags:
+    - k3s
+    - config
+
+- name: Load etcd S3 vaulted variables
+  ansible.builtin.include_vars:
+    file: "{{ etcd_snapshot_s3_vault_file }}"
+  when: etcd_snapshot_s3_enabled | bool
+  no_log: true
+  tags:
+    - k3s
+    - config
+
+- name: Validate etcd S3 snapshot configuration
+  ansible.builtin.assert:
+    that:
+      - etcd_snapshot_s3_secret_name | default('') | trim | length > 0
+      - etcd_snapshot_s3_endpoint | default('') | trim | length > 0
+      - etcd_snapshot_s3_bucket | default('') | trim | length > 0
+      - etcd_snapshot_s3_region | default('') | trim | length > 0
+      - etcd_snapshot_s3_folder | default('') | trim | length > 0
+      - etcd_snapshot_s3_access_key | default('') | trim | length > 0
+      - etcd_snapshot_s3_secret_key | default('') | trim | length > 0
+      - not (
+          (etcd_snapshot_s3_endpoint_ca | default('') | trim | length > 0) and
+          (etcd_snapshot_s3_endpoint_ca_name | default('') | trim | length > 0)
+        )
+    fail_msg: |
+      etcd_snapshot_s3_enabled=true requires these variables:
+        - etcd_snapshot_s3_secret_name
+        - etcd_snapshot_s3_endpoint
+        - etcd_snapshot_s3_bucket
+        - etcd_snapshot_s3_region
+        - etcd_snapshot_s3_folder
+        - etcd_snapshot_s3_access_key
+        - etcd_snapshot_s3_secret_key
+
+      Load sensitive values from vault file:
+        {{ etcd_snapshot_s3_vault_file }}
+
+      Set only one of:
+        - etcd_snapshot_s3_endpoint_ca
+        - etcd_snapshot_s3_endpoint_ca_name
+  when: etcd_snapshot_s3_enabled | bool
+  run_once: true
+  delegate_to: localhost
+  become: false
+  tags:
+    - k3s
+    - config
+
 # -----------------------------------------------------------------------------
 # Ensure Directories
 # -----------------------------------------------------------------------------
@@ -75,6 +159,30 @@
     src: config.yaml.j2
     dest: "{{ k3s_config_file }}"
     mode: '0600'
+  tags:
+    - k3s
+    - config
+
+- name: Render etcd S3 snapshot secret manifest
+  ansible.builtin.template:
+    src: etcd-s3-config.yaml.j2
+    dest: "{{ k3s_manifest_dir }}/etcd-s3-config-secret.yaml"
+    mode: '0600'
+  when:
+    - k3s_is_first_node | bool
+    - etcd_snapshot_s3_enabled | bool
+  no_log: true
+  tags:
+    - k3s
+    - config
+
+- name: Remove etcd S3 snapshot secret manifest when disabled
+  ansible.builtin.file:
+    path: "{{ k3s_manifest_dir }}/etcd-s3-config-secret.yaml"
+    state: absent
+  when:
+    - k3s_is_first_node | bool
+    - not (etcd_snapshot_s3_enabled | bool)
   tags:
     - k3s
     - config

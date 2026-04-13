@@ -13,7 +13,7 @@
 #   ansible-playbook playbooks/k3s-init.yml
 #   ansible-playbook site.yml --tags k3s        # Via site playbook
 #
-# Variables: See group_vars/k3s_servers.yml
+# Variables: See inventory/group_vars/k3s_servers.yml and inventory/vault/
 # =============================================================================
 
 ---

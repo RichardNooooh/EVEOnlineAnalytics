@@ -118,6 +118,22 @@ etcd_snapshot_schedule_cron: "0 */6 * * *"
 # Number of etcd snapshots to retain
 etcd_snapshot_retention: 5
 
+# Replicate etcd snapshots to S3-compatible object storage via K3s Secret-based
+# configuration. Keep sensitive S3 fields in an Ansible Vault file, not here and
+# not in k3s config.yaml.
+etcd_snapshot_s3_enabled: false
+etcd_snapshot_s3_vault_file: "{{ inventory_dir }}/vault/k3s_etcd_snapshot_s3.yml"
+
+# Optional custom CA bundle inline, or reference ConfigMap name in kube-system.
+etcd_snapshot_s3_endpoint_ca: ""
+etcd_snapshot_s3_endpoint_ca_name: ""
+
+# Optional K3s etcd S3 settings.
+etcd_snapshot_s3_timeout: ""
+etcd_snapshot_s3_skip_ssl_verify: false
+etcd_snapshot_s3_insecure: false
+etcd_snapshot_s3_retention: ""
+
 # -----------------------------------------------------------------------------
 # Node Labels and Taints
 # -----------------------------------------------------------------------------

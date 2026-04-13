@@ -219,3 +219,4 @@ service-account*.json
 *password*
 *token*
 .env
+infra/ansible/inventory/vault/*.yml

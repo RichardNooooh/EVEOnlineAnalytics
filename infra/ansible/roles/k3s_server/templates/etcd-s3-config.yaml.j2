@@ -1,0 +1,34 @@
+# /var/lib/rancher/k3s/server/manifests/etcd-s3-config-secret.yaml
+# Managed by Ansible — do not edit manually on nodes.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ etcd_snapshot_s3_secret_name }}
+  namespace: kube-system
+type: etcd.k3s.cattle.io/s3-config-secret
+stringData:
+  etcd-s3-endpoint: "{{ etcd_snapshot_s3_endpoint }}"
+  etcd-s3-access-key: "{{ etcd_snapshot_s3_access_key }}"
+  etcd-s3-secret-key: "{{ etcd_snapshot_s3_secret_key }}"
+  etcd-s3-bucket: "{{ etcd_snapshot_s3_bucket }}"
+  etcd-s3-region: "{{ etcd_snapshot_s3_region }}"
+  etcd-s3-folder: "{{ etcd_snapshot_s3_folder | default('') }}"
+{% if etcd_snapshot_s3_endpoint_ca | default('') | trim | length > 0 %}
+  etcd-s3-endpoint-ca: |-
+{{ etcd_snapshot_s3_endpoint_ca | indent(4, true) }}
+{% endif %}
+{% if etcd_snapshot_s3_endpoint_ca_name | default('') | trim | length > 0 %}
+  etcd-s3-endpoint-ca-name: "{{ etcd_snapshot_s3_endpoint_ca_name }}"
+{% endif %}
+{% if etcd_snapshot_s3_timeout | default('') | trim | length > 0 %}
+  etcd-s3-timeout: "{{ etcd_snapshot_s3_timeout }}"
+{% endif %}
+{% if etcd_snapshot_s3_skip_ssl_verify is defined %}
+  etcd-s3-skip-ssl-verify: "{{ etcd_snapshot_s3_skip_ssl_verify | string | lower }}"
+{% endif %}
+{% if etcd_snapshot_s3_insecure is defined %}
+  etcd-s3-insecure: "{{ etcd_snapshot_s3_insecure | string | lower }}"
+{% endif %}
+{% if etcd_snapshot_s3_retention | default('') | string | trim | length > 0 %}
+  etcd-s3-retention: "{{ etcd_snapshot_s3_retention }}"
+{% endif %}

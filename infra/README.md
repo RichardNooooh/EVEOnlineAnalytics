@@ -114,10 +114,17 @@ tofu init && tofu apply
 Bootstraps k3s, installs NFS client utilities, verifies shared storage connectivity,
 and prepares the cluster for Helm and raw manifest deployment.
 
+If you enable etcd snapshot replication to S3-compatible storage, create encrypted
+vault file `ansible/inventory/vault/k3s_etcd_snapshot_s3.yml` before running
+Ansible. Non-secret toggle and override vars stay in
+`ansible/inventory/group_vars/k3s_servers.yml`.
+
 ```bash
 cd ansible
 ansible-galaxy collection install -r requirements.yml
 ansible-playbook bootstrap.yml
+# or, when etcd S3 backup is enabled:
+ansible-playbook bootstrap.yml --ask-vault-pass
 ```
 
 ### Layer 3 - kubectl + Helm (`k8s/` + `helm/`)
@@ -152,6 +159,7 @@ These files are gitignored and must not be committed:
 | `terraform/proxmox/terraform.tfstate*` | OpenTofu state |
 | `ansible/inventory/hosts.ini` | Generated inventory |
 | `ansible/inventory/k3s_cluster.key` | Cluster join token |
+| `ansible/inventory/vault/*.yml` | Vaulted Ansible secrets such as etcd S3 snapshot config |
 | `.grafana-admin.env` | Generated Grafana admin credentials |
 
 ## Common Operations
