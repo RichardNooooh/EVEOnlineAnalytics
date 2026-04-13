@@ -96,15 +96,16 @@ service-cidr: "10.43.0.0/16"
 # --------------------------------------------------------------
 # etcd snapshots
 # --------------------------------------------------------------
-# Scheduled snapshots are enabled by default (every 12h, 5
-# retained). We increase frequency and retention, and push
-# snapshots to an S3-compatible backend (Garage) so they
-# survive total cluster loss.
+# Scheduled snapshots stay local by default. Optional S3
+# replication is enabled through a Kubernetes Secret so access
+# credentials do not live in this config file.
 #   Ref: https://docs.k3s.io/cli/etcd-snapshot
 etcd-snapshot-schedule-cron: "{{ etcd_snapshot_schedule_cron }}"
 etcd-snapshot-retention: "{{ etcd_snapshot_retention }}"
-
-# TODO: configure etcd s3 and backend
+{% if etcd_snapshot_s3_enabled | bool %}
+etcd-s3: true
+etcd-s3-config-secret: "{{ etcd_snapshot_s3_secret_name }}"
+{% endif %}
 
 # --------------------------------------------------------------
 # Node configuration

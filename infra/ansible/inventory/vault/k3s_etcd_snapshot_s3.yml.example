@@ -1,0 +1,15 @@
+---
+# Copy to inventory/vault/k3s_etcd_snapshot_s3.yml and encrypt with ansible-vault.
+etcd_snapshot_s3_secret_name: "k3s-etcd-snapshot-s3-config"
+etcd_snapshot_s3_endpoint: "https://garage.example.internal"
+etcd_snapshot_s3_bucket: "k3s-etcd"
+etcd_snapshot_s3_region: "us-east-1"
+etcd_snapshot_s3_folder: "snapshots/prod"
+etcd_snapshot_s3_access_key: "REPLACE_ME"
+etcd_snapshot_s3_secret_key: "REPLACE_ME"
+
+# Optional if you want inline custom CA in vault instead of plaintext group_vars.
+# etcd_snapshot_s3_endpoint_ca: |
+#   -----BEGIN CERTIFICATE-----
+#   ...
+#   -----END CERTIFICATE-----

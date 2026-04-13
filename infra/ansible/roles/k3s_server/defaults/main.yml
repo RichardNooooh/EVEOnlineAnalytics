@@ -1,8 +1,9 @@
 # =============================================================================
 # k3s Server Role — Default Variables
 # =============================================================================
-# Role-internal variables only. Site configuration (paths, versions, NFS,
-# kubeconfig, etc.) lives in group_vars/k3s_servers.yml.
+# Role-internal variables only. Site configuration lives in
+# inventory/group_vars/k3s_servers.yml, with sensitive etcd S3 backup fields in
+# inventory/vault/.
 # =============================================================================
 
 ---
