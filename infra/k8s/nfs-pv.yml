@@ -1,14 +1,20 @@
 # =============================================================================
-# DuckDB data volume — warehouse database files
-# Used by: dbt tasks, dlt ingestion tasks, analysis pods
+# Shared dataset volume - published Parquet datasets and publication metadata
+# Used by: dataset publication jobs, dbt source readers, analysis pods
+#
+# Contract:
+# - This RWX volume is for published reader-visible state only.
+# - Store Parquet datasets, manifests, and contracts here.
+# - Do not place a shared writable `.duckdb` file on this volume.
+# - Any DuckDB work DB must use pod-local scratch such as emptyDir or node-local RWO.
 # =============================================================================
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: eve-duckdb-pv
+  name: eve-datasets-pv
   labels:
     app.kubernetes.io/part-of: eve-market
-    storage-purpose: warehouse
+    storage-purpose: datasets
 spec:
   capacity:
     storage: 100Gi
@@ -18,12 +24,12 @@ spec:
   storageClassName: nfs
   nfs:
     server: "10.218.20.30"
-    path: "/mnt/tank/eve-market/duckdb"
+    path: "/mnt/tank/eve-market/datasets"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: eve-duckdb-pvc
+  name: eve-datasets-pvc
   namespace: airflow
   labels:
     app.kubernetes.io/part-of: eve-market
@@ -31,13 +37,13 @@ spec:
   accessModes:
     - ReadWriteMany
   storageClassName: nfs
-  volumeName: eve-duckdb-pv
+  volumeName: eve-datasets-pv
   resources:
     requests:
       storage: 100Gi
 ---
 # =============================================================================
-# MLflow artifact volume — experiment artifacts only
+# MLflow artifact volume - experiment artifacts only
 # Used by: MLflow tracking server, training pods, BentoML (later)
 # =============================================================================
 apiVersion: v1
@@ -75,7 +81,7 @@ spec:
       storage: 20Gi
 ---
 # =============================================================================
-# Airflow logs volume — task execution logs readable by the webserver
+# Airflow logs volume - task execution logs readable by the webserver
 # Used by: Airflow KubernetesExecutor task pods (write), Airflow webserver (read)
 # =============================================================================
 apiVersion: v1

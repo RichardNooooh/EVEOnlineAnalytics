@@ -65,7 +65,7 @@ etcd_snapshot_local_dir: "{{ inventory_dir }}/etcd-snapshots"
 # NFS Configuration
 # -----------------------------------------------------------------------------
 # TrueNAS NFS server IP address
-# IMPORTANT: Must match the IP in infra/k8s/nfs-pv.yaml
+# IMPORTANT: Must match the IP in infra/k8s/nfs-pv.yml
 nfs_server: "10.218.20.30"
 
 # Remote NFS export path on TrueNAS (dataset path configured in TrueNAS)
