@@ -231,12 +231,26 @@ resource "proxmox_virtual_environment_vm" "k3s" {
 }
 
 resource "random_password" "k3s_cluster_key" {
-  length = 32
+  length  = 32
+  special = false
+}
+
+resource "random_password" "grafana_admin_password" {
+  length  = 32
   special = false
 }
 
 resource "local_file" "k3s_cluster_key_file" {
-  content  = random_password.k3s_cluster_key.result
-  filename = "${path.module}/../../ansible/inventory/k3s_cluster.key"
+  content         = random_password.k3s_cluster_key.result
+  filename        = "${path.module}/../../ansible/inventory/k3s_cluster.key"
   file_permission = "0644"
+}
+
+resource "local_file" "grafana_admin_env_file" {
+  sensitive_content = <<-EOF
+    admin-user=admin
+    admin-password=${random_password.grafana_admin_password.result}
+  EOF
+  filename          = "${path.module}/../../.grafana-admin.env"
+  file_permission   = "0600"
 }
