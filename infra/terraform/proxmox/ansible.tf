@@ -70,5 +70,5 @@ resource "local_file" "ansible_inventory" {
   EOF
 
   filename        = "${path.module}/../../ansible/inventory/hosts.ini"
-  file_permission = "0644"
+  file_permission = "0600"
 }
