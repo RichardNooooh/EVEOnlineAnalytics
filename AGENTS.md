@@ -265,3 +265,5 @@ Resource requests and limits must be set in every Helm values file.
   body. Body should have a sequence of `{prefix}: {Verb}...`. Append co-authorship as
   `Co-Authored-By: {Model} ({effort level}) via OpenCode`; e.g.
   `Co-Authored-By: GPT-5.4 (high) via OpenCode`.
+- **Diagnosing Errors** -> Attempt to identify fixes and solutions, then validate by
+  searching online. Solutions are rarely unique.
