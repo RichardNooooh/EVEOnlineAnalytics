@@ -121,8 +121,8 @@ Deploys base cluster resources and application services:
 
 ```bash
 # Base resources (namespaces, NFS PersistentVolume)
-kubectl apply -f k8s/namespaces.yaml
-kubectl apply -f k8s/nfs-pv.yaml
+kubectl apply -f k8s/namespaces.yml
+kubectl apply -f k8s/nfs-pv.yml
 
 # Services
 make deploy-all
@@ -132,10 +132,16 @@ Services deployed:
 
 | Service | Namespace | Helm Chart |
 |---------|-----------|------------|
-| Airflow | `data` | `apache-airflow/airflow` |
+| Airflow | `airflow` | `apache-airflow/airflow` |
 | MLflow | `ml` | `community-charts/mlflow` |
 | VictoriaMetrics | `monitoring` | `vm/victoria-metrics-single` |
-| Grafana | `monitoring` | `grafana/grafana` |
+| Grafana | `monitoring` | `Grafana Helm chart` |
+
+The homelab reverse proxy terminates TLS for Grafana and VictoriaMetrics, so the in-cluster ingress values intentionally omit TLS blocks.
+
+Monitoring persistence for Grafana and VictoriaMetrics stays on local-path storage rather than NFS.
+
+VictoriaMetrics ingress is kept intentionally for homelab/admin query exploration and debugging of the VictoriaMetrics UI, not for public application exposure.
 
 ## Sensitive Files
 
