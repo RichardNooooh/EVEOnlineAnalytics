@@ -27,6 +27,12 @@ preflight_connectivity_sleep: 5
 # Initial delay before the first connectivity attempt (seconds)
 preflight_connectivity_delay: 0
 
+# Total attempts while waiting for cloud-init to finish first boot.
+preflight_cloud_init_wait_retries: 30
+
+# Seconds between cloud-init completion checks.
+preflight_cloud_init_wait_delay: 10
+
 # Required packages that must be present
 preflight_required_packages:
   - python3

@@ -76,6 +76,7 @@ resource "proxmox_virtual_environment_file" "user_data" {
         - ca-certificates
         - open-iscsi
         - nfs-common
+        - python3
 
       # ---------------------------------------------------------------
       # Post-Boot Commands

@@ -59,6 +59,57 @@
     - preflight
     - connectivity
 
+- name: Wait for cloud-init to finish first boot
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -o
+      - BatchMode=yes
+      - -o
+      - StrictHostKeyChecking=no
+      - -o
+      - UserKnownHostsFile=/dev/null
+      - -o
+      - ConnectTimeout={{ preflight_connectivity_connect_timeout | string }}
+      - -p
+      - "{{ ansible_port | default(22) | string }}"
+      - -i
+      - "{{ ansible_ssh_private_key_file }}"
+      - "{{ ansible_user }}@{{ ansible_host | default(inventory_hostname) }}"
+      - cloud-init
+      - status
+      - --wait
+  register: cloud_init_wait
+  changed_when: false
+  retries: "{{ preflight_cloud_init_wait_retries }}"
+  delay: "{{ preflight_cloud_init_wait_delay }}"
+  until: cloud_init_wait.rc in [0, 2]
+  failed_when: cloud_init_wait.rc != 0
+  delegate_to: localhost
+  become: false
+  tags:
+    - preflight
+    - connectivity
+    - cloud_init
+
+- name: Reset SSH connection after cloud-init completes
+  ansible.builtin.meta: reset_connection
+  tags:
+    - preflight
+    - connectivity
+    - cloud_init
+
+- name: Reconfirm connectivity after cloud-init
+  ansible.builtin.wait_for_connection:
+    timeout: "{{ preflight_connectivity_timeout }}"
+    connect_timeout: "{{ preflight_connectivity_connect_timeout }}"
+    sleep: "{{ preflight_connectivity_sleep }}"
+    delay: 0
+  tags:
+    - preflight
+    - connectivity
+    - cloud_init
+
 - name: Gather minimal facts
   ansible.builtin.setup:
     gather_subset:
