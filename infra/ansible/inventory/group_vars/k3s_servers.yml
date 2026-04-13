@@ -54,7 +54,7 @@ k3s_manifest_dir: "{{ k3s_data_dir }}/server/manifests"
 
 # kube_vip config directory
 
-# Cache directory for installer script
+# Cache directory for k3s downloads
 k3s_installer_cache: "/var/cache/k3s"
 
 # etcd snapshots

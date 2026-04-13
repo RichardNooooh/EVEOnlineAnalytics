@@ -7,10 +7,22 @@
 # =============================================================================
 
 ---
-# Installer
-k3s_installer_url: "https://get.k3s.io"
+# Release artifacts
 k3s_binary_base_url: "https://github.com/k3s-io/k3s/releases/download"
-k3s_installer_script: "{{ k3s_installer_cache }}/install.sh"
+k3s_systemd_unit_file: "/etc/systemd/system/{{ k3s_service_name }}.service"
+k3s_systemd_env_file: "/etc/systemd/system/{{ k3s_service_name }}.service.env"
+k3s_service_env: {}
+k3s_binary_symlinks:
+  - kubectl
+  - crictl
+  - ctr
+k3s_binary_arch_map:
+  x86_64:
+    asset_name: "k3s"
+    checksum_file: "sha256sum-amd64.txt"
+  amd64:
+    asset_name: "k3s"
+    checksum_file: "sha256sum-amd64.txt"
 
 # First node detection (auto-determined from inventory)
 k3s_is_first_node: "{{ inventory_hostname in groups['k3s_first_node'] | default([]) }}"
