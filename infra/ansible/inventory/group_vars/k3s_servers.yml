@@ -91,18 +91,20 @@ nfs_health_dir: ".ansible-health"
 # -----------------------------------------------------------------------------
 # Critical for stability on ~13GB nodes running Airflow (2-3GB) + dlt tasks
 # Without these, system processes can be OOM-killed during memory spikes.
+# These server nodes run control-plane services and workloads together, so
+# kubelet reserves headroom for OS and Kubernetes daemons before user pods.
 
-# # System-reserved resources (for OS daemons)
-# k3s_system_reserved_cpu: "200m"
-# k3s_system_reserved_memory: "512Mi"
-# k3s_system_reserved_ephemeral: "1Gi"
-#
-# # Kube-reserved resources (for Kubernetes system pods)
-# k3s_kube_reserved_cpu: "200m"
-# k3s_kube_reserved_memory: "512Mi"
-#
-# # Eviction threshold — pods evicted when available memory drops below this
-# k3s_eviction_hard_memory: "300Mi"
+# System-reserved resources (for OS daemons)
+k3s_system_reserved_cpu: "200m"
+k3s_system_reserved_memory: "512Mi"
+k3s_system_reserved_ephemeral: "1Gi"
+
+# Kube-reserved resources (for Kubernetes system pods)
+k3s_kube_reserved_cpu: "200m"
+k3s_kube_reserved_memory: "512Mi"
+
+# Eviction threshold — pods evicted when available memory drops below this
+k3s_eviction_hard_memory: "300Mi"
 #
 # # Feature gates (enable experimental features if needed)
 # k3s_feature_gates: []

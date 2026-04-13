@@ -41,6 +41,46 @@ tls-san:
 write-kubeconfig-mode: "0644"
 
 # --------------------------------------------------------------
+# Kubelet resource reservations
+# --------------------------------------------------------------
+# Small mixed-role nodes need headroom for OS and control-plane
+# daemons so workload spikes do not starve kubelet or system services.
+{%- set system_reserved = [] %}
+{%- if k3s_system_reserved_cpu is defined %}
+{%- set _ = system_reserved.append('cpu=' ~ k3s_system_reserved_cpu) %}
+{%- endif %}
+{%- if k3s_system_reserved_memory is defined %}
+{%- set _ = system_reserved.append('memory=' ~ k3s_system_reserved_memory) %}
+{%- endif %}
+{%- if k3s_system_reserved_ephemeral is defined %}
+{%- set _ = system_reserved.append('ephemeral-storage=' ~ k3s_system_reserved_ephemeral) %}
+{%- endif %}
+{%- set kube_reserved = [] %}
+{%- if k3s_kube_reserved_cpu is defined %}
+{%- set _ = kube_reserved.append('cpu=' ~ k3s_kube_reserved_cpu) %}
+{%- endif %}
+{%- if k3s_kube_reserved_memory is defined %}
+{%- set _ = kube_reserved.append('memory=' ~ k3s_kube_reserved_memory) %}
+{%- endif %}
+{%- set kubelet_args = [] %}
+{%- if system_reserved | length > 0 %}
+{%- set _ = kubelet_args.append('system-reserved=' ~ (system_reserved | join(','))) %}
+{%- endif %}
+{%- if kube_reserved | length > 0 %}
+{%- set _ = kubelet_args.append('kube-reserved=' ~ (kube_reserved | join(','))) %}
+{%- endif %}
+{%- if k3s_eviction_hard_memory is defined %}
+{%- set _ = kubelet_args.append('eviction-hard=memory.available<' ~ k3s_eviction_hard_memory) %}
+{%- endif %}
+{% if kubelet_args | length > 0 %}
+
+kubelet-arg:
+{% for kubelet_arg in kubelet_args %}
+  - "{{ kubelet_arg }}"
+{% endfor %}
+{% endif %}
+
+# --------------------------------------------------------------
 # Networking (defaults — listed explicitly for documentation)
 # --------------------------------------------------------------
 # Flannel VXLAN is the default CNI backend. Listing it here
