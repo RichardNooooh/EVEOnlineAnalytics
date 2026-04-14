@@ -268,7 +268,8 @@ Resource requests and limits must be set in every Helm values file.
 - **Update documentation** -> prefer `docs/` first, then `README.md` if needed.
 - **Write commit** -> use `docs: `, `cleanup: `, `feat: `, `refactor: `, or `fix: `
   prefixes, followed by capitalized action verb like `feat: Add...` in both title and
-  body. Body should have a sequence of `{prefix}: {Verb}...`. Append co-authorship as
+  body. Body should have a sequence of `{prefix}: {Verb}...` for each change. Each one
+  should be on a new line (ensure no raw `\n` characters). Append co-authorship as
   `Co-Authored-By: {Model} ({effort level}) via OpenCode`; e.g.
   `Co-Authored-By: GPT-5.4 (high) via OpenCode`.
 - **Diagnosing Errors** -> Attempt to identify fixes and solutions, then validate by

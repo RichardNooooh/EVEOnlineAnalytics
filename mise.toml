@@ -13,8 +13,9 @@ helm = "latest"
 # Data engineering — dbt-core via pipx (not a standalone binary)
 "pipx:dbt-core" = "latest"
 
-# Ansible"pipx:ansible-core" = "latest"
+# Ansible
 "pipx:ansible" = "latest"
+"pipx:ansible-core" = "latest"
 "pipx:ansible/ansible-lint" = "latest"
 "pipx:yamllint" = "latest"
 
