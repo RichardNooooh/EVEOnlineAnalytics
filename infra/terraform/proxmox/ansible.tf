@@ -16,7 +16,7 @@ resource "ansible_host" "k3s_nodes" {
   groups = ["k3s_servers"]
 
   variables = {
-    ansible_host = split("/", each.value.ip_addr)[0]  # Remove CIDR suffix
+    ansible_host = split("/", each.value.ip_addr)[0] # Remove CIDR suffix
     ansible_user = var.ansible_user
   }
 }

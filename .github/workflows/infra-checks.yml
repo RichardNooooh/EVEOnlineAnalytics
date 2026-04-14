@@ -1,0 +1,99 @@
+name: Infra Checks
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "mise.toml"
+      - ".github/workflows/infra-checks.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "infra/**"
+      - "mise.toml"
+      - ".github/workflows/infra-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ansible:
+    name: Ansible
+    runs-on: [self-hosted, Linux, X64, eve, ci, python]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install toolchain with mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Ansible collections
+        working-directory: infra/ansible
+        run: ansible-galaxy collection install -r requirements.yml --collections-path ./collections
+
+      - name: Lint Ansible
+        working-directory: infra/ansible
+        run: ansible-lint .
+
+  terraform:
+    name: Terraform
+    runs-on: [self-hosted, Linux, X64, eve, ci, python]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install toolchain with mise
+        uses: jdx/mise-action@v2
+
+      - name: Check OpenTofu formatting
+        working-directory: infra/terraform/proxmox
+        run: tofu fmt -check -recursive
+
+      - name: Initialize OpenTofu providers
+        working-directory: infra/terraform/proxmox
+        run: tofu init -backend=false
+
+      - name: Validate OpenTofu configuration
+        working-directory: infra/terraform/proxmox
+        run: tofu validate
+
+  k8s-helm:
+    name: Kubernetes and Helm
+    runs-on: [self-hosted, Linux, X64, eve, ci, python]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install toolchain with mise
+        uses: jdx/mise-action@v2
+
+      - name: Check Kubernetes manifest YAML
+        run: >-
+          yamllint -d '{extends: relaxed, rules: {line-length: disable}}'
+          infra/k8s
+
+      - name: Lint Helm values against charts
+        run: make -C infra helm-lint
+
+      - name: Render Helm charts
+        run: make -C infra helm-render
+
+      - name: Verify monitoring chart wiring
+        working-directory: infra
+        run: |
+          set -euo pipefail
+          vm_render="$(mktemp)"
+          grafana_render="$(mktemp)"
+          trap 'rm -f "$vm_render" "$grafana_render"' EXIT
+
+          helm template victoriametrics vm/victoria-metrics-single --values helm/victoriametrics.yml --namespace monitoring >"$vm_render"
+          helm template grafana grafana-community/grafana --values helm/grafana.yml --namespace monitoring >"$grafana_render"
+
+          grep -q 'name: victoriametrics-victoria-metrics-single-server' "$vm_render"
+          grep -q 'namespace: monitoring' "$vm_render"
+          grep -q 'port: 8428' "$vm_render"
+          grep -q 'http://victoriametrics-victoria-metrics-single-server\.monitoring\.svc\.cluster\.local:8428' "$grafana_render"

@@ -248,10 +248,10 @@ resource "local_file" "k3s_cluster_key_file" {
 }
 
 resource "local_sensitive_file" "grafana_admin_env_file" {
-  content = <<-EOF
+  content         = <<-EOF
     admin-user=admin
     admin-password=${random_password.grafana_admin_password.result}
   EOF
-  filename          = "${path.module}/../../.grafana-admin.env"
-  file_permission   = "0600"
+  filename        = "${path.module}/../../.grafana-admin.env"
+  file_permission = "0600"
 }

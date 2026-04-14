@@ -78,7 +78,7 @@ variable "ssh_key_path_proxmox" {
 variable "ssh_key_path_ansible" {
   description = "Path to the SSH private key for Ansible to use when connecting to VMs. Defaults to the same key as Proxmox."
   type        = string
-  default     = null  # Will be resolved to ssh_key_path_proxmox in local values
+  default     = null # Will be resolved to ssh_key_path_proxmox in local values
 }
 
 variable "ansible_user" {
