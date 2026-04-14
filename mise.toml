@@ -15,7 +15,6 @@ helm = "latest"
 
 # Ansible
 "pipx:ansible" = "latest"
-"pipx:ansible-core" = "latest"
 "pipx:ansible/ansible-lint" = "latest"
 "pipx:yamllint" = "latest"
 
