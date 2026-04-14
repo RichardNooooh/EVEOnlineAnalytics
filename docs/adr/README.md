@@ -7,7 +7,7 @@ This directory contains the project's Architectural Decision Records (ADRs).
 - one Markdown file per decision
 - filenames in the form `adr-###-short-name.md`
 - decisions covering data sources, storage architecture, infrastructure sequencing,
-  and platform/tooling choices
+  validation workflow, and platform/tooling choices
 
 ## Current Scope
 

@@ -6,6 +6,7 @@ tags:
 amended:
   - 2026-04-10
   - 2026-04-13
+  - 2026-04-14
 ---
 
 # ADR 002 - Tools Used and Not Used
@@ -49,6 +50,8 @@ The stack is defined by the two tables below.
 | **Terraform State Backend** | Garage (self-hosted S3-compatible) | AGPLv3 S3-compatible object store; hosts Terraform remote state without cloud dependency. |
 | **Cloud Proof - Managed Warehouse** | Snowflake (via Terraform, trial only) | Cloud-readiness proof-of-concept; Terraform resource definitions are authored, `tofu plan` is screencasted during the trial window, then the trial is allowed to expire. |
 | **Tool Version Management** | mise | Manages pinned versions of OpenTofu, Helm, Python, dbt, Ansible, and other CLI tools via `mise.toml`. |
+| **Local Validation** | pre-commit | Runs repo-scoped infra checks before commit and wraps `make -C infra ...` targets for Ansible, Kubernetes YAML, and OpenTofu validation. |
+| **Infra CI/CD** | GitHub Actions + self-hosted runners | Runs `.github/workflows/infra-checks.yml` for shared infrastructure validation. Current runner fleet: 3 Debian 13 LXCs hosting GitHub Actions runners. Optional support infrastructure, not a requirement for local development. |
 
 ### Tools explicitly not used
 
@@ -61,7 +64,7 @@ The stack is defined by the two tables below.
 | **MetalLB** | ServiceLB (k3s built-in) handles the external `LoadBalancer` footprint needed here. See ADR-012. |
 | **Docker Compose** | All services deploy via Helm on k3s. See ADR-003. |
 | **Terratest** | IaC scope is limited to 3 VMs and a Snowflake proof-of-concept. `tofu plan` review and Ansible idempotency checks provide sufficient validation at this scale. |
-| **LXC containers** | Not officially supported by Proxmox for Docker workloads and provide no cloud portability story. See ADR-003. |
+| **LXC containers for project application workloads** | Not used for the deployed project stack. Docker-in-LXC is fragile and LXCs do not provide the portability target used for k3s-managed services. Auxiliary homelab services such as GitHub Actions runners may still use LXCs. See ADR-003. |
 
 ## Amendments
 
@@ -76,3 +79,10 @@ The stack is defined by the two tables below.
     Following ADR-016, the stack now distinguishes shared storage from local or
     transient compute. Parquet datasets on shared NFS are the persisted system of
     record. DuckDB remains in the stack as a local analytical engine only.
+
+- 2026-04-14 - Infra validation tooling was documented explicitly
+  - `pre-commit` is now part of the documented local validation path for
+    infrastructure changes.
+  - GitHub Actions running on self-hosted Debian 13 LXC runners is now recorded
+    as optional shared CI support infrastructure rather than as part of the
+    deployed application substrate.
