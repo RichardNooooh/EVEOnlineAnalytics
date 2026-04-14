@@ -70,7 +70,7 @@
 # Kernel Modules
 # -----------------------------------------------------------------------------
 - name: Load required kernel modules
-  ansible.builtin.modprobe:
+  community.general.modprobe:
     name: "{{ item }}"
     state: present
   loop: "{{ common_kernel_modules }}"
@@ -108,7 +108,7 @@
     src: 99-k3s.conf.j2
     dest: /etc/sysctl.d/99-k3s.conf
     mode: '0644'
-  notify: reload sysctl
+  notify: Reload sysctl
   tags:
     - common
     - sysctl

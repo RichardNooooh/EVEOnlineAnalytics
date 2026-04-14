@@ -13,21 +13,24 @@
 ---
 # Phase 1: Preflight Checks
 # Read-only validation of prerequisites, connectivity, and versions.
-- import_playbook: playbooks/preflight.yml
+- name: Import preflight playbook
+  import_playbook: playbooks/preflight.yml
   tags:
     - preflight
     - always
 
 # Phase 2: Common Node Configuration
 # Base OS setup: time sync, swap, sysctl, packages.
-- import_playbook: playbooks/common.yml
+- name: Import common playbook
+  import_playbook: playbooks/common.yml
   tags:
     - common
     - bootstrap
 
 # Phase 3: k3s Cluster Bootstrap
 # Install and configure k3s with embedded etcd HA.
-- import_playbook: playbooks/k3s-init.yml
+- name: Import k3s-init playbook
+  import_playbook: playbooks/k3s-init.yml
   tags:
     - k3s
     - install
@@ -35,7 +38,8 @@
 
 # Phase 4: NFS Client Configuration
 # Mount TrueNAS shared storage for PersistentVolumes.
-- import_playbook: playbooks/nfs-client.yml
+- name: Import nfs-client playbook
+  import_playbook: playbooks/nfs-client.yml
   tags:
     - nfs
     - storage
@@ -43,7 +47,8 @@
 
 # Phase 5: Post-Deployment Verification
 # Verify cluster health and display summary.
-- import_playbook: playbooks/verify.yml
+- name: Import verify playbook
+  import_playbook: playbooks/verify.yml
   tags:
     - verify
     - smoke
