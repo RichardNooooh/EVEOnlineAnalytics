@@ -24,6 +24,9 @@ jobs:
   ansible:
     name: Ansible
     runs-on: [self-hosted, Linux, X64, eve, ci, python]
+    env:
+      ANSIBLE_CONFIG: ${{ github.workspace }}/infra/ansible/ansible.cfg
+      ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}/infra/ansible/collections
 
     steps:
       - name: Checkout repository
@@ -34,7 +37,16 @@ jobs:
 
       - name: Install Ansible collections
         working-directory: infra/ansible
-        run: ansible-galaxy collection install -r requirements.yml --collections-path ./collections
+        run: ansible-galaxy collection install -r requirements.yml --collections-path "$ANSIBLE_COLLECTIONS_PATH"
+
+      - name: Show Ansible collection diagnostics
+        run: |
+          set -euo pipefail
+          ansible --version
+          ansible-config dump --only-changed
+          ansible-galaxy collection list
+          test -d "$GITHUB_WORKSPACE/infra/ansible/collections/ansible_collections/community/general"
+          printf '%s\n' 'present: infra/ansible/collections/ansible_collections/community/general'
 
       - name: Run Ansible checks
         working-directory: infra
