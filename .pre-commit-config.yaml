@@ -1,0 +1,28 @@
+---
+repos:
+  - repo: local
+    hooks:
+      - id: infra-ansible-lint
+        name: infra ansible lint
+        entry: make -C infra ansible-lint
+        language: system
+        files: ^infra/ansible/.*\.(yml|yaml)$|^infra/ansible/\.ansible-lint$|^infra/ansible/ansible\.cfg$|^infra/\.yamllint\.yml$
+        pass_filenames: false
+      - id: infra-k8s-yamllint
+        name: infra k8s yaml lint
+        entry: make -C infra yaml-lint-k8s
+        language: system
+        files: ^infra/k8s/.*\.(yml|yaml)$|^infra/\.yamllint\.yml$
+        pass_filenames: false
+      - id: infra-terraform-fmt
+        name: infra opentofu fmt
+        entry: make -C infra tf-fmt
+        language: system
+        files: ^infra/terraform/.*\.(tf|tfvars)$
+        pass_filenames: false
+      - id: infra-terraform-lint
+        name: infra opentofu lint
+        entry: make -C infra tf-lint
+        language: system
+        files: ^infra/terraform/.*\.(tf|tfvars)$
+        pass_filenames: false

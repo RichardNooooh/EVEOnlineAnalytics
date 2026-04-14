@@ -1,0 +1,9 @@
+---
+extends: relaxed
+
+ignore: |
+  ansible/.ansible_cache/
+  ansible/collections/
+
+rules:
+  line-length: disable

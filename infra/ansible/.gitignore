@@ -24,6 +24,9 @@ inventory/etcd-snapshots/
 # Fact caching directory
 .ansible_cache/
 
+# ansible-lint runtime workspace
+.ansible/
+
 # Retry files (created on playbook failure)
 *.retry
 
