@@ -7,6 +7,7 @@ tags:
   - docker
 amended:
   - 2026-04-10
+  - 2026-04-14
 ---
 
 # ADR 003 - k3s on Kubernetes over Docker Compose
@@ -36,8 +37,8 @@ Deploy all services on a 3-node k3s cluster managed via Helm charts. No Docker C
 - *Docker Compose in Proxmox VMs*: Simpler operationally and offers a direct translation path to AWS ECS via the Amazon
   ECS CLI. Rejected primarily because Airbyte no longer supported it as a production deployment path, and because it lacks
   native equivalents for pod scheduling, resource limits, health-check-based restarts, and the KubernetesPodOperator pattern.
-- *LXC containers*: Not officially supported by Proxmox for Docker workloads (nesting Docker inside LXC is fragile and may
-  break on updates). Offers no portability to cloud environments.
+- *LXC containers for project application workloads*: Not officially supported by Proxmox for Docker workloads (nesting Docker
+  inside LXC is fragile and may break on updates). Offers no portability to cloud environments.
 
 ## Amendments
 
@@ -54,3 +55,10 @@ Deploy all services on a 3-node k3s cluster managed via Helm charts. No Docker C
        k3s more viable than before, not less.
   - The Docker Compose alternative was re-evaluated and again rejected: the k3s IaC was already built, switching would represent
     regression rather than progress, and Docker Compose lacks the KubernetesPodOperator pattern the pipeline depends on.
+
+- 2026-04-14 - Scope the LXC rejection to application workloads
+  - The LXC rejection in this ADR applies to running the project application
+    stack as Docker or Compose workloads.
+  - It does not prohibit auxiliary homelab services from using LXCs. The current
+    infra validation runner fleet uses 3 Debian 13 LXCs hosting GitHub Actions
+    self-hosted runners while the project workloads still run on k3s VMs.

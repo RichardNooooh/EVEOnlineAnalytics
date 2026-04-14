@@ -4,10 +4,11 @@ date: 2026-04-07
 tags:
   - infra
   - iac
-amended: []
+amended:
+  - 2026-04-14
 ---
 
-# ADR 010 - Three-Layer IaC Sequence (Terraform -> Ansible -> Helm)
+# ADR 010 - Three-Layer IaC Sequence (OpenTofu -> Ansible -> Helm)
 
 ## Context
 
@@ -19,7 +20,7 @@ characteristics and tooling strengths.
 
 Infrastructure is provisioned in three sequential layers:
 
-1. **Terraform** (`bpg/proxmox` provider) provisions 3 Ubuntu VMs from a
+1. **OpenTofu** (`bpg/proxmox` provider) provisions 3 Debian 13 VMs from a
    cloud-init template, one per Proxmox node.
 2. **Ansible** (`k3s-io/k3s-ansible`) bootstraps the k3s cluster
    with embedded etcd HA.
@@ -44,3 +45,13 @@ Infrastructure is provisioned in three sequential layers:
 - *Single-tool approaches:* Using Terraform alone would require provisioners
   (anti-pattern). Using Ansible alone would lose declarative state management for
   VMs. The combination leverages each tool's strength.
+
+## Amendments
+
+- 2026-04-14 - Clarify OpenTofu runtime and validation path
+  - The checked-in implementation provisions Debian 13 VMs with OpenTofu, not
+    Ubuntu VMs.
+  - The three deployment layers remain unchanged. Infrastructure changes are also
+    validated before merge through repo-level `pre-commit` hooks and the optional
+    GitHub Actions workflow `.github/workflows/infra-checks.yml` running on
+    self-hosted homelab runners.

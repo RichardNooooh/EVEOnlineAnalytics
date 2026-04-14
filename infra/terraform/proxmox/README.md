@@ -31,6 +31,7 @@ artifacts, and Airflow logs. It does not use NFS as a shared mutable DuckDB ware
 
 - OpenTofu or Terraform >= 1.11
 - SSH key pair
+- `pre-commit` for repo-level local validation (optional but used in this repo)
 
 ## Setup
 
@@ -81,6 +82,25 @@ This configuration uses the `ansible/ansible` provider to:
 1. Create `ansible_host` resources for each VM.
 2. Create an `ansible_group` resource named `k3s_servers`.
 3. Generate a local INI inventory file at `../../ansible/inventory/hosts.ini`.
+
+## Validation
+
+OpenTofu changes can be validated locally with:
+
+```bash
+cd ../../
+make tf-fmt
+make tf-lint
+```
+
+The repo-level `pre-commit` hooks also cover this layer:
+
+- `infra-terraform-fmt` runs `make -C infra tf-fmt`
+- `infra-terraform-lint` runs `make -C infra tf-lint`
+
+The same `make tf-lint` target runs in `.github/workflows/infra-checks.yml` on the
+optional self-hosted runner fleet, which currently consists of 3 Debian 13 LXCs
+running GitHub Actions runners.
 
 ## Next Steps
 
