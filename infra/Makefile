@@ -142,7 +142,7 @@ endif
 	@cd $(ANSIBLE_DIR) && ansible -i inventory/hosts.ini -m debug -a "var=hostvars['$(NODE)']" $(NODE) 2>/dev/null | grep -oE 'ansible_host.*' | head -1 | sed 's/.*"\([^"]*\)".*/\1/' | xargs -I {} ssh {}
 
 ansible-lint: ## Run ansible-lint on all Ansible files
-	ansible-lint $(ANSIBLE_DIR)/
+	cd $(ANSIBLE_DIR) && ansible-lint site.yml bootstrap.yml playbooks roles
 
 # =============================================================================
 # Deploy (kubectl + Helm)

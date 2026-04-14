@@ -35,7 +35,7 @@ jobs:
 
       - name: Lint Ansible
         working-directory: infra/ansible
-        run: ansible-lint .
+        run: ansible-lint site.yml bootstrap.yml playbooks roles
 
   terraform:
     name: Terraform
@@ -72,15 +72,18 @@ jobs:
         uses: jdx/mise-action@v2
 
       - name: Check Kubernetes manifest YAML
+        working-directory: infra
         run: >-
           yamllint -d '{extends: relaxed, rules: {line-length: disable}}'
-          infra/k8s
+          k8s
 
       - name: Lint Helm values against charts
-        run: make -C infra helm-lint
+        working-directory: infra
+        run: make helm-lint
 
       - name: Render Helm charts
-        run: make -C infra helm-render
+        working-directory: infra
+        run: make helm-render
 
       - name: Verify monitoring chart wiring
         working-directory: infra

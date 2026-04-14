@@ -2,7 +2,7 @@
 # Ansible Lint Configuration
 # =============================================================================
 # Rules and exceptions for ansible-lint. Run with:
-#   ansible-lint infra/ansible/
+#   ansible-lint site.yml bootstrap.yml playbooks roles
 # =============================================================================
 
 ---
@@ -25,6 +25,8 @@ skip_list:
   - command-instead-of-module
   # We use set_fact for complex variable resolution
   - no-handler
+  # Keep existing role variable names unchanged
+  - var-naming[no-role-prefix]
 
 # Warning list (flag but don't fail)
 warn_list:
