@@ -19,7 +19,9 @@ helm = "latest"
 "pipx:ansible/ansible-lint" = "latest"
 "pipx:yamllint" = "latest"
 
-
 # Python linting/formatting
 ruff = "latest"
 pre-commit = "latest"
+
+# Pre-Commit Linting
+"pipx:pre-commit" = "latest"
