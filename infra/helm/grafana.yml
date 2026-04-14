@@ -10,6 +10,16 @@ admin:
   userKey: admin-user
   passwordKey: admin-password
 
+
+# ---------------------------------------------------------------------------
+# Grafana Init
+# Ensures correct callback URLs for OAuth/SAML-style auth flows, if used.
+# ---------------------------------------------------------------------------
+grafana.ini:
+  server:
+    root_url: https://eve-grafana.lab.answerisnoh.dev
+
+
 # ---------------------------------------------------------------------------
 # Resource limits
 # RAM budget: ~0.5 GB. Grafana is lightweight for dashboarding.
@@ -59,6 +69,7 @@ sidecar:
     label: grafana_dashboard
     labelValue: "1"
     searchNamespace: monitoring
+    resource: configmap
 
 # ---------------------------------------------------------------------------
 # Ingress: expose Grafana via k3s Traefik
