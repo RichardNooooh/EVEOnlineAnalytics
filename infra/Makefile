@@ -12,9 +12,12 @@ K8S_DIR       := k8s
 
 # Tools
 ANSIBLE       := ansible-playbook
+ANSIBLE_LINT  := ansible-lint
 TOFU          := tofu
 HELM          := helm
 KUBECTL       := kubectl
+YAMLLINT      := yamllint
+PRE_COMMIT    := pre-commit
 
 # Configuration
 EXPECTED_KUBE_CONTEXT := eve-market
@@ -40,8 +43,8 @@ GRAFANA_ADMIN_ENV_FILE := .grafana-admin.env
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-check-deps: ## Verify tofu, ansible-playbook, helm, kubectl are installed
-	@for bin in $(TOFU) ansible-playbook $(HELM) $(KUBECTL); do \
+check-deps: ## Verify core infra tooling is installed
+	@for bin in $(TOFU) $(ANSIBLE) $(ANSIBLE_LINT) $(YAMLLINT) $(HELM) $(KUBECTL) $(PRE_COMMIT); do \
 	  command -v $$bin >/dev/null || { echo "ERROR: missing: $$bin"; exit 1; }; done
 	@echo "All dependencies present"
 
@@ -78,7 +81,7 @@ kube-context: ## Assert current kubectl context matches expected
 # Provision (OpenTofu)
 # =============================================================================
 
-.PHONY: tf-init tf-fmt tf-validate vms-plan vms vms-destroy
+.PHONY: tf-init tf-fmt tf-fmt-check tf-init-check tf-validate tf-lint vms-plan vms vms-destroy
 
 tf-init: ## Initialize OpenTofu in Proxmox directory
 	$(TOFU) -chdir=$(PROXMOX_DIR) init
@@ -86,8 +89,16 @@ tf-init: ## Initialize OpenTofu in Proxmox directory
 tf-fmt: ## Format all OpenTofu files recursively
 	$(TOFU) -chdir=$(PROXMOX_DIR) fmt -recursive
 
-tf-validate: tf-init ## Validate OpenTofu configuration
+tf-fmt-check: ## Check OpenTofu formatting recursively
+	$(TOFU) -chdir=$(PROXMOX_DIR) fmt -check -recursive
+
+tf-init-check: ## Initialize OpenTofu providers without backend access
+	$(TOFU) -chdir=$(PROXMOX_DIR) init -backend=false
+
+tf-validate: tf-init-check ## Validate OpenTofu configuration
 	$(TOFU) -chdir=$(PROXMOX_DIR) validate
+
+tf-lint: tf-fmt-check tf-validate ## Run OpenTofu formatting and validation checks
 
 vms-plan: tf-init ## Plan infrastructure changes in Proxmox
 	$(TOFU) -chdir=$(PROXMOX_DIR) plan
@@ -108,7 +119,7 @@ endif
 # Configure (Ansible)
 # =============================================================================
 
-.PHONY: ping preflight cluster cluster-init cluster-reboot snapshot kubeconfig nfs ssh ansible-lint
+.PHONY: ping preflight cluster cluster-init cluster-reboot snapshot kubeconfig nfs ssh yaml-lint-ansible yaml-lint-k8s ansible-syntax-check ansible-lint
 
 ping: ## Ping all k3s servers to verify connectivity
 	cd $(ANSIBLE_DIR) && ansible -m ping k3s_servers
@@ -141,8 +152,22 @@ ifndef NODE
 endif
 	@cd $(ANSIBLE_DIR) && ansible -i inventory/hosts.ini -m debug -a "var=hostvars['$(NODE)']" $(NODE) 2>/dev/null | grep -oE 'ansible_host.*' | head -1 | sed 's/.*"\([^"]*\)".*/\1/' | xargs -I {} ssh {}
 
-ansible-lint: ## Run ansible-lint on all Ansible files
-	cd $(ANSIBLE_DIR) && ansible-lint site.yml bootstrap.yml playbooks roles
+yaml-lint-ansible: ## Lint Ansible YAML files
+	$(YAMLLINT) -c .yamllint.yml $(ANSIBLE_DIR)
+
+yaml-lint-k8s: ## Lint Kubernetes manifest YAML files
+	$(YAMLLINT) -c .yamllint.yml $(K8S_DIR)
+
+ansible-syntax-check: ## Run syntax checks for all Ansible playbooks
+	@tmp_inventory=$$(mktemp); trap 'rm -f "$$tmp_inventory"' EXIT; \
+	printf '%s\n' '[k3s_servers]' 'localhost ansible_connection=local' '' '[k3s_first_node]' 'localhost' '' '[k3s_other_nodes]' 'localhost' >"$$tmp_inventory"; \
+	cd $(ANSIBLE_DIR) && \
+	for playbook in site.yml bootstrap.yml playbooks/*.yml; do \
+	  $(ANSIBLE) -i "$$tmp_inventory" --syntax-check "$$playbook" || exit 1; \
+	done
+
+ansible-lint: ansible-syntax-check yaml-lint-ansible ## Run Ansible syntax, YAML, and lint checks
+	cd $(ANSIBLE_DIR) && $(ANSIBLE_LINT) site.yml bootstrap.yml playbooks roles
 
 # =============================================================================
 # Deploy (kubectl + Helm)
@@ -182,7 +207,7 @@ validate-monitoring: _helm-repos ## Render monitoring charts and verify wiring
 	rg -q 'port: 8428' "$$vm_render" || { echo "ERROR: VictoriaMetrics port 8428 missing"; exit 1; }; \
 	rg -q 'http://victoriametrics-victoria-metrics-single-server\.monitoring\.svc\.cluster\.local:8428' "$$grafana_render" || { echo "ERROR: Grafana datasource URL mismatch"; exit 1; }
 
-validate: tf-validate helm-lint helm-render validate-k8s validate-monitoring ## Run infrastructure validation checks
+validate: ansible-lint tf-lint helm-lint helm-render validate-k8s validate-monitoring ## Run infrastructure validation checks
 
 k8s-base: kube-context ## Apply base k8s manifests (namespaces, storage)
 	$(KUBECTL) apply -f $(K8S_DIR)/namespaces.yml
@@ -281,7 +306,13 @@ backup-state: ## Backup OpenTofu state, local secret files, and kubeconfig to ar
 # Cleanup
 # =============================================================================
 
-.PHONY: clean clean-state clean-secrets
+.PHONY: pre-commit-install pre-commit-run clean clean-state clean-secrets
+
+pre-commit-install: ## Install repository pre-commit hooks
+	$(PRE_COMMIT) install
+
+pre-commit-run: ## Run pre-commit hooks across all files
+	$(PRE_COMMIT) run --all-files
 
 clean: ## Remove local caches (.terraform, .ansible_cache, *.retry)
 ifneq ($(CONFIRM),yes)

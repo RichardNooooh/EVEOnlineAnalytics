@@ -5,6 +5,7 @@ on:
     paths:
       - "infra/**"
       - "mise.toml"
+      - ".pre-commit-config.yaml"
       - ".github/workflows/infra-checks.yml"
   push:
     branches:
@@ -12,6 +13,7 @@ on:
     paths:
       - "infra/**"
       - "mise.toml"
+      - ".pre-commit-config.yaml"
       - ".github/workflows/infra-checks.yml"
 
 permissions:
@@ -33,9 +35,9 @@ jobs:
         working-directory: infra/ansible
         run: ansible-galaxy collection install -r requirements.yml --collections-path ./collections
 
-      - name: Lint Ansible
-        working-directory: infra/ansible
-        run: ansible-lint site.yml bootstrap.yml playbooks roles
+      - name: Run Ansible checks
+        working-directory: infra
+        run: make ansible-lint
 
   terraform:
     name: Terraform
@@ -48,17 +50,9 @@ jobs:
       - name: Install toolchain with mise
         uses: jdx/mise-action@v2
 
-      - name: Check OpenTofu formatting
-        working-directory: infra/terraform/proxmox
-        run: tofu fmt -check -recursive
-
-      - name: Initialize OpenTofu providers
-        working-directory: infra/terraform/proxmox
-        run: tofu init -backend=false
-
-      - name: Validate OpenTofu configuration
-        working-directory: infra/terraform/proxmox
-        run: tofu validate
+      - name: Run OpenTofu checks
+        working-directory: infra
+        run: make tf-lint
 
   k8s-helm:
     name: Kubernetes and Helm
@@ -71,11 +65,9 @@ jobs:
       - name: Install toolchain with mise
         uses: jdx/mise-action@v2
 
-      - name: Check Kubernetes manifest YAML
+      - name: Lint Kubernetes manifest YAML
         working-directory: infra
-        run: >-
-          yamllint -d '{extends: relaxed, rules: {line-length: disable}}'
-          k8s
+        run: make yaml-lint-k8s
 
       - name: Lint Helm values against charts
         working-directory: infra
