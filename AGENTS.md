@@ -213,7 +213,8 @@ eve-market-analytics/
 2. **Ansible (`infra/ansible/`)** bootstraps k3s, installs NFS client utilities, and
    verifies shared storage connectivity.
 3. **kubectl + Helm (`infra/k8s/` and `infra/helm/`)** applies namespaces, shared NFS
-   storage contracts, and service deployments.
+   storage contracts, and service deployments. Helm values follow
+   `infra/helm/<service>.yml` naming such as `airflow.yml` and `mlflow.yml`.
 
 ### Snowflake Cloud-Readiness
 
@@ -236,7 +237,9 @@ eve-market-analytics/
 | Evidently | 0.5 GB | Periodic workload |
 | **Headroom** | **~26-32 GB** | Burst capacity and OS cache |
 
-Resource requests and limits must be set in every Helm values file.
+Resource requests and limits must be set in every Helm values file, including
+`infra/helm/airflow.yml` and `infra/helm/mlflow.yml` when those service values are
+checked in.
 
 ## Coding Conventions
 
@@ -260,8 +263,10 @@ Resource requests and limits must be set in every Helm values file.
 - **Update storage architecture** -> start with `docs/architecture.md`,
   `docs/storage_layout.md`, and ADRs before touching implementation.
 - **Set up a monitoring dashboard** -> update Grafana provisioning in
-  `infra/helm/grafana.yml` and add Kubernetes dashboard ConfigMaps/manifests under
-  `infra/k8s/` if the dashboard should be checked in.
+   `infra/helm/grafana.yml` and add Kubernetes dashboard ConfigMaps/manifests under
+   `infra/k8s/` if the dashboard should be checked in.
+- **Update Airflow or MLflow deployment values** -> use `infra/helm/airflow.yml` and
+  `infra/helm/mlflow.yml` as the expected Helm values filenames for those services.
 - **Write OpenTofu for Snowflake** -> create a new `infra/terraform/snowflake/`
   module only when the user explicitly asks for cloud-readiness IaC beyond the current
   Proxmox stack.
