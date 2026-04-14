@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-04-07
-tags: 
+tags:
   - infra
   - iac
 amended: []
@@ -29,4 +29,3 @@ Use Debian 13 (generic) OS image.
   configuring the pods more difficult since Alpine uses `musl libc` instead of `glibc`.
   Also makes it more difficult to use `nfs`. And compared to Debian, the memory benefit
   is minimal compared to the amount of work required to get every other component working.
-
