@@ -25,9 +25,11 @@ server:
     # TLS is terminated at the homelab reverse proxy, so no TLS block is set here.
     enabled: true
     ingressClassName: traefik
+    pathType: Prefix
     hosts:
       - name: "eve-vm.lab.answerisnoh.dev"
-        path: /
+        path:
+          - /
         port: http
 
   scrape:
