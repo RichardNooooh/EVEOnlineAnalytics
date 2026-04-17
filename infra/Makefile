@@ -25,13 +25,13 @@ AIRFLOW_NAMESPACE     := airflow
 ML_NAMESPACE          := ml
 MONITORING_NAMESPACE  := monitoring
 K3S_TOKEN_FILE        := $(ANSIBLE_DIR)/inventory/k3s_cluster.key
-GRAFANA_ADMIN_ENV_FILE := .grafana-admin.env
-AIRFLOW_APP_ENV_FILE  := .airflow-app.env
-ML_APP_ENV_FILE       := .ml-app.env
-MONITORING_APP_ENV_FILE := .monitoring-app.env
-AIRFLOW_APP_ENV_EXAMPLE_FILE := .airflow-app.env.example
-ML_APP_ENV_EXAMPLE_FILE := .ml-app.env.example
-MONITORING_APP_ENV_EXAMPLE_FILE := .monitoring-app.env.example
+GRAFANA_ADMIN_ENV_FILE := $(K8S_DIR)/.grafana-admin.env
+AIRFLOW_APP_ENV_FILE  := $(K8S_DIR)/.airflow-app.env
+ML_APP_ENV_FILE       := $(K8S_DIR)/.ml-app.env
+MONITORING_APP_ENV_FILE := $(K8S_DIR)/.monitoring-app.env
+AIRFLOW_APP_ENV_EXAMPLE_FILE := $(K8S_DIR)/.airflow-app.env.example
+ML_APP_ENV_EXAMPLE_FILE := $(K8S_DIR)/.ml-app.env.example
+MONITORING_APP_ENV_EXAMPLE_FILE := $(K8S_DIR)/.monitoring-app.env.example
 GRAFANA_ADMIN_SECRET_NAME := grafana-admin-credentials
 AIRFLOW_APP_SECRET_NAME := airflow-app-secrets
 ML_APP_SECRET_NAME    := ml-app-secrets
@@ -388,9 +388,9 @@ ifneq ($(CONFIRM),yes)
 endif
 	rm -f $(K3S_TOKEN_FILE) $(AIRFLOW_APP_ENV_FILE) $(ML_APP_ENV_FILE) $(MONITORING_APP_ENV_FILE) $(GRAFANA_ADMIN_ENV_FILE)
 	rm -f backup-*/k3s_cluster.key 2>/dev/null || true
-	rm -f backup-*/$(AIRFLOW_APP_ENV_FILE) 2>/dev/null || true
-	rm -f backup-*/$(ML_APP_ENV_FILE) 2>/dev/null || true
-	rm -f backup-*/$(MONITORING_APP_ENV_FILE) 2>/dev/null || true
+	rm -f backup-*/.airflow-app.env 2>/dev/null || true
+	rm -f backup-*/.ml-app.env 2>/dev/null || true
+	rm -f backup-*/.monitoring-app.env 2>/dev/null || true
 	rm -f backup-*/.grafana-admin.env 2>/dev/null || true
 	rm -f backup-*/kubeconfig 2>/dev/null || true
 	@echo "Secrets cleaned"

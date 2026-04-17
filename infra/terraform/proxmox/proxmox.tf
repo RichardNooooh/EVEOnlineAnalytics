@@ -252,6 +252,6 @@ resource "local_sensitive_file" "grafana_admin_env_file" {
     admin-user=admin
     admin-password=${random_password.grafana_admin_password.result}
   EOF
-  filename        = "${path.module}/../../.grafana-admin.env"
+  filename        = "${path.module}/../../k8s/.grafana-admin.env"
   file_permission = "0600"
 }

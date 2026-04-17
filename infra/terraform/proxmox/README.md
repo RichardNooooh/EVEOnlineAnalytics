@@ -61,7 +61,7 @@ After apply completes:
 
 1. The VMs boot and cloud-init runs.
 2. An Ansible inventory file is generated at `../../ansible/inventory/hosts.ini`.
-3. A local `../../.grafana-admin.env` file is generated for Grafana admin credential
+3. A local `../../k8s/.grafana-admin.env` file is generated for Grafana admin credential
    bootstrapping.
 
 ## Outputs
