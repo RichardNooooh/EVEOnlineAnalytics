@@ -25,8 +25,17 @@ AIRFLOW_NAMESPACE     := airflow
 ML_NAMESPACE          := ml
 MONITORING_NAMESPACE  := monitoring
 K3S_TOKEN_FILE        := $(ANSIBLE_DIR)/inventory/k3s_cluster.key
-LEGACY_K3S_TOKEN_FILE := $(ANSIBLE_DIR)/inventory/k3s-token.txt
 GRAFANA_ADMIN_ENV_FILE := .grafana-admin.env
+AIRFLOW_APP_ENV_FILE  := .airflow-app.env
+ML_APP_ENV_FILE       := .ml-app.env
+MONITORING_APP_ENV_FILE := .monitoring-app.env
+AIRFLOW_APP_ENV_EXAMPLE_FILE := .airflow-app.env.example
+ML_APP_ENV_EXAMPLE_FILE := .ml-app.env.example
+MONITORING_APP_ENV_EXAMPLE_FILE := .monitoring-app.env.example
+GRAFANA_ADMIN_SECRET_NAME := grafana-admin-credentials
+AIRFLOW_APP_SECRET_NAME := airflow-app-secrets
+ML_APP_SECRET_NAME    := ml-app-secrets
+MONITORING_APP_SECRET_NAME := monitoring-app-secrets
 
 # =============================================================================
 # Default Target
@@ -173,7 +182,7 @@ ansible-lint: ansible-syntax-check yaml-lint-ansible ## Run Ansible syntax, YAML
 # Deploy (kubectl + Helm)
 # =============================================================================
 
-.PHONY: _helm-repos helm-lint helm-render validate-k8s validate-monitoring validate k8s-base apply-monitoring-secrets deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
+.PHONY: _helm-repos helm-lint helm-render validate-k8s validate-monitoring validate k8s-base apply-generated-secrets apply-manual-secrets apply-secrets apply-airflow-secrets apply-ml-secrets apply-monitoring-app-secrets apply-monitoring-secrets deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
 
 _helm-repos: ## Add + update Helm repos (internal use)
 	$(HELM) repo add apache-airflow https://airflow.apache.org 3>/dev/null || true
@@ -213,9 +222,45 @@ k8s-base: kube-context ## Apply base k8s manifests (namespaces, storage)
 	$(KUBECTL) apply -f $(K8S_DIR)/namespaces.yml
 	$(KUBECTL) apply -f $(K8S_DIR)/nfs-pv.yml
 
-apply-monitoring-secrets: ## Apply generated monitoring secrets from local env files
+apply-generated-secrets: apply-monitoring-secrets ## Apply Terraform-generated secrets
+
+apply-manual-secrets: apply-airflow-secrets apply-ml-secrets apply-monitoring-app-secrets ## Apply manual env-backed app secrets
+
+apply-secrets: kube-context k8s-base apply-generated-secrets apply-manual-secrets ## Apply all generated and manual secrets
+
+apply-airflow-secrets: ## Apply manual airflow app secrets from local env file
+	@if [ ! -f $(AIRFLOW_APP_ENV_FILE) ]; then \
+	  echo "Skipping $(AIRFLOW_APP_SECRET_NAME): missing $(AIRFLOW_APP_ENV_FILE). Copy $(AIRFLOW_APP_ENV_EXAMPLE_FILE) to $(AIRFLOW_APP_ENV_FILE) to define Airflow app secrets."; \
+	else \
+	  $(KUBECTL) create secret generic $(AIRFLOW_APP_SECRET_NAME) \
+	      --namespace $(AIRFLOW_NAMESPACE) \
+	      --from-env-file=$(AIRFLOW_APP_ENV_FILE) \
+	      --dry-run=client -o yaml | $(KUBECTL) apply -f -; \
+	fi
+
+apply-ml-secrets: ## Apply manual ML app secrets from local env file
+	@if [ ! -f $(ML_APP_ENV_FILE) ]; then \
+	  echo "Skipping $(ML_APP_SECRET_NAME): missing $(ML_APP_ENV_FILE). Copy $(ML_APP_ENV_EXAMPLE_FILE) to $(ML_APP_ENV_FILE) to define ML app secrets."; \
+	else \
+	  $(KUBECTL) create secret generic $(ML_APP_SECRET_NAME) \
+	      --namespace $(ML_NAMESPACE) \
+	      --from-env-file=$(ML_APP_ENV_FILE) \
+	      --dry-run=client -o yaml | $(KUBECTL) apply -f -; \
+	fi
+
+apply-monitoring-app-secrets: ## Apply manual monitoring app secrets from local env file
+	@if [ ! -f $(MONITORING_APP_ENV_FILE) ]; then \
+	  echo "Skipping $(MONITORING_APP_SECRET_NAME): missing $(MONITORING_APP_ENV_FILE). Copy $(MONITORING_APP_ENV_EXAMPLE_FILE) to $(MONITORING_APP_ENV_FILE) to define monitoring app secrets."; \
+	else \
+	  $(KUBECTL) create secret generic $(MONITORING_APP_SECRET_NAME) \
+	      --namespace $(MONITORING_NAMESPACE) \
+	      --from-env-file=$(MONITORING_APP_ENV_FILE) \
+	      --dry-run=client -o yaml | $(KUBECTL) apply -f -; \
+	fi
+
+apply-monitoring-secrets: ## Apply generated monitoring secrets from Terraform output
 	@test -f $(GRAFANA_ADMIN_ENV_FILE) || { echo "ERROR: missing $(GRAFANA_ADMIN_ENV_FILE). Run 'make vms' or 'cd $(PROXMOX_DIR) && $(TOFU) apply' first."; exit 1; }
-	$(KUBECTL) create secret generic grafana-admin-credentials \
+	$(KUBECTL) create secret generic $(GRAFANA_ADMIN_SECRET_NAME) \
 	    --namespace $(MONITORING_NAMESPACE) \
 	    --from-env-file=$(GRAFANA_ADMIN_ENV_FILE) \
 	    --dry-run=client -o yaml | $(KUBECTL) apply -f -
@@ -225,17 +270,17 @@ deploy-all: kube-context _helm-repos k8s-base ## Deploy all services (full chain
 	@$(MAKE) deploy-mlflow
 	@$(MAKE) deploy-monitoring
 
-deploy-airflow: kube-context _helm-repos ## Deploy Airflow Helm chart
+deploy-airflow: kube-context _helm-repos k8s-base apply-airflow-secrets ## Deploy Airflow Helm chart
 	$(HELM) upgrade --install airflow apache-airflow/airflow \
 	    --values $(HELM_DIR)/airflow.yml \
 	    --namespace $(AIRFLOW_NAMESPACE) --create-namespace
 
-deploy-mlflow: kube-context _helm-repos ## Deploy MLflow Helm chart
+deploy-mlflow: kube-context _helm-repos k8s-base apply-ml-secrets ## Deploy MLflow Helm chart
 	$(HELM) upgrade --install mlflow community-charts/mlflow \
 	    --values $(HELM_DIR)/mlflow.yml \
 	    --namespace $(ML_NAMESPACE) --create-namespace
 
-deploy-monitoring: kube-context _helm-repos k8s-base apply-monitoring-secrets ## Deploy VictoriaMetrics + Grafana
+deploy-monitoring: kube-context _helm-repos k8s-base apply-monitoring-secrets apply-monitoring-app-secrets ## Deploy VictoriaMetrics + Grafana
 	$(HELM) upgrade --install victoriametrics vm/victoria-metrics-single \
 	    --values $(HELM_DIR)/victoriametrics.yml \
 	    --namespace $(MONITORING_NAMESPACE) --create-namespace
@@ -298,6 +343,9 @@ backup-state: ## Backup OpenTofu state, local secret files, and kubeconfig to ar
 	mkdir -p "$$backup_dir"; \
 	cp -r $(PROXMOX_DIR)/*.tfstate* "$$backup_dir"/ 2>/dev/null || true; \
 	cp $(K3S_TOKEN_FILE) "$$backup_dir"/ 2>/dev/null || true; \
+	cp $(AIRFLOW_APP_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
+	cp $(ML_APP_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
+	cp $(MONITORING_APP_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
 	cp $(GRAFANA_ADMIN_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
 	cp ~/.kube/config "$$backup_dir"/kubeconfig 2>/dev/null || true; \
 	echo "Backup created in $$backup_dir/"
@@ -338,8 +386,11 @@ ifneq ($(CONFIRM),yes)
 	@echo "ERROR: Refusing to delete secrets. Re-run with CONFIRM=yes"
 	@exit 1
 endif
-	rm -f $(K3S_TOKEN_FILE) $(LEGACY_K3S_TOKEN_FILE) $(GRAFANA_ADMIN_ENV_FILE)
+	rm -f $(K3S_TOKEN_FILE) $(AIRFLOW_APP_ENV_FILE) $(ML_APP_ENV_FILE) $(MONITORING_APP_ENV_FILE) $(GRAFANA_ADMIN_ENV_FILE)
 	rm -f backup-*/k3s_cluster.key 2>/dev/null || true
+	rm -f backup-*/$(AIRFLOW_APP_ENV_FILE) 2>/dev/null || true
+	rm -f backup-*/$(ML_APP_ENV_FILE) 2>/dev/null || true
+	rm -f backup-*/$(MONITORING_APP_ENV_FILE) 2>/dev/null || true
 	rm -f backup-*/.grafana-admin.env 2>/dev/null || true
 	rm -f backup-*/kubeconfig 2>/dev/null || true
 	@echo "Secrets cleaned"

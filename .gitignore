@@ -204,6 +204,9 @@ desktop.ini
 # ============================================
 hosts.ini
 infra/.grafana-admin.env
+infra/.airflow-app.env
+infra/.ml-app.env
+infra/.monitoring-app.env
 
 # ============================================
 # Secrets (NEVER commit these)
