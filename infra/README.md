@@ -28,9 +28,10 @@ Apply infrastructure in this sequence:
 3. kubectl/Helm (k8s/ + helm/)      -> base resources and monitoring services deployed
 ```
 
-`make bootstrap` exists for the eventual full stack, but the currently committed Helm
-values only cover Grafana and VictoriaMetrics. For the current repo state, use the
-layered workflow below instead of assuming every application service is ready to deploy.
+`make bootstrap` exists for the eventual full stack, but the currently committed repo
+does not yet include a complete end-to-end application deployment. For the current repo
+state, use the layered workflow below instead of assuming every application service is
+ready to deploy.
 
 ## Prerequisites
 
@@ -212,8 +213,17 @@ Local secret inputs are split by source:
 `make apply-secrets` applies both the generated Grafana secret and any manual
 app secrets whose local env files exist.
 
-Airflow and MLflow targets exist in `infra/Makefile`, but their Helm values files are
-not committed in this repo yet.
+The Airflow metadata database architecture is documented in
+`docs/adr/adr-018-airflow-external-postgresql-metadata.md`: Airflow should use an
+external PostgreSQL service rather than the chart's embedded PostgreSQL dependency when
+that deployment is rolled out.
+
+Connection strings and related credentials should stay in Kubernetes Secrets rather
+than plaintext values files. PgBouncer is tracked separately in deferred ADR-019 rather
+than as part of the currently accepted baseline.
+
+MLflow targets exist in `infra/Makefile`, but a full checked-in MLflow application
+deployment is not in place yet.
 
 Monitoring persistence for Grafana and VictoriaMetrics stays on local-path storage
 rather than NFS.
