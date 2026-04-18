@@ -1,0 +1,46 @@
+airflowVersion: "3.2.0"
+defaultAirflowTag: "3.2.0"
+executor: KubernetesExecutor
+
+dags:
+  persistence:
+    enabled: false
+  gitSync:
+    enabled: true
+    repo: https://github.com/RichardNooooh/EveOnlineAnalytics.git
+    branch: master
+    subPath: "orchestration/dags"
+    period: 60s
+#   credentialsSecret: airflow-app-secrets # only needed if repo requires auth
+
+data:
+  metadataSecretName: airflow-app-secrets
+
+# POLISH later
+# pgbouncer:
+#   enabled: true
+#   configSecretName: airflow-pgbouncer-config # TODO
+#   metricsExporterSidecar:
+#     statsSecretName: airflow-pgbouncer-stats # TODO
+
+postgresql:
+  enabled: false # we need Postgresql for MLFlow too; we'll have a dedicated helm chart separate from Airflow's helm
+
+redis:
+  enabled: false # Kubernetes Executor does not need redis
+
+fernetKeySecretName: airflow-app-secrets
+apiSecretKeySecretName: airflow-app-secrets
+
+createUserJob:
+  defaultUser:
+    enabled: true
+
+logs:
+  persistence:
+    enabled: false
+
+# POLISH later
+# databaseCleanup:
+#   enabled: true
+#   retentionDays: 90
