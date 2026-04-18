@@ -18,6 +18,7 @@ including:
 - dlt replacing Airbyte for ingestion
 - k3s on Proxmox homelab infrastructure
 - kube-vip and k3s networking choices
+- Airflow DAG delivery via `git-sync` in homelab `k3s`
 - Parquet on shared NFS as the system of record
 - the prohibition on a cluster-shared writable DuckDB file
 
