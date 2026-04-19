@@ -24,7 +24,7 @@ data:
 #     statsSecretName: airflow-pgbouncer-stats # TODO
 
 postgresql:
-  enabled: false # we need Postgresql for MLFlow too; we'll have a dedicated helm chart separate from Airflow's helm
+  enabled: false # Airflow metadata uses the external PostgreSQL Proxmox VM from ADR-018, not an in-cluster chart
 
 redis:
   enabled: false # Kubernetes Executor does not need redis

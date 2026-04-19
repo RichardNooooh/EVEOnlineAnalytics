@@ -7,6 +7,7 @@ amended:
   - 2026-04-10
   - 2026-04-13
   - 2026-04-14
+  - 2026-04-18
 ---
 
 # ADR 002 - Tools Used and Not Used
@@ -38,7 +39,7 @@ The stack is defined by the two tables below.
 | **Model Monitoring** | Evidently | Generates data drift and model performance reports; runs as Airflow-triggered pods rather than a persistent service. |
 | **Infra Monitoring** | VictoriaMetrics + Grafana | VictoriaMetrics is a high-performance, Prometheus-compatible metrics store; Grafana provides dashboards for cluster and pipeline health. |
 | **Container Platform** | k3s (Kubernetes) | Lightweight Kubernetes distribution appropriate for a 3-node homelab cluster; preserves full Kubernetes API compatibility. See ADR-003. |
-| **App Deployment** | Helm | Kubernetes-native package manager; used for application service deployments. |
+| **App Deployment** | Helm | Kubernetes-native package manager; used for workloads that are intentionally deployed inside `k3s`. |
 | **IaC - VM Provisioning** | OpenTofu + `bpg/proxmox` | Declarative VM provisioning via the actively maintained `bpg/proxmox` provider; OpenTofu is the open-source Terraform fork. See ADR-010. |
 | **IaC - Cluster Bootstrap** | Ansible (`k3s-io/k3s-ansible`) | Handles HA etcd bootstrap, node configuration, NFS client setup, and kubeconfig retrieval. See ADR-010. |
 | **Ingress** | Traefik (k3s built-in) | Bundled with k3s; routes all HTTP/S services by hostname. See ADR-012. |
@@ -62,7 +63,7 @@ The stack is defined by the two tables below.
 | **DVC** | Published Parquet datasets, manifests, and MLflow already cover persisted analytical data and model artifacts. DVC would add a parallel versioning system with no clear incremental benefit at this scale. |
 | **PowerBI** | Tableau is the sole BI tool. Adding a second BI tool provides no incremental portfolio value and splits effort. |
 | **MetalLB** | ServiceLB (k3s built-in) handles the external `LoadBalancer` footprint needed here. See ADR-012. |
-| **Docker Compose** | All services deploy via Helm on k3s. See ADR-003. |
+| **Docker Compose** | Kubernetes-managed application workloads deploy via Helm on k3s. External infrastructure services such as PostgreSQL may still run on separate Proxmox VMs. See ADR-003 and ADR-018. |
 | **Terratest** | IaC scope is limited to 3 VMs and a Snowflake proof-of-concept. `tofu plan` review and Ansible idempotency checks provide sufficient validation at this scale. |
 | **LXC containers for project application workloads** | Not used for the deployed project stack. Docker-in-LXC is fragile and LXCs do not provide the portability target used for k3s-managed services. Auxiliary homelab services such as GitHub Actions runners may still use LXCs. See ADR-003. |
 
@@ -86,3 +87,9 @@ The stack is defined by the two tables below.
   - GitHub Actions running on self-hosted Debian 13 LXC runners is now recorded
     as optional shared CI support infrastructure rather than as part of the
     deployed application substrate.
+
+- 2026-04-18 - Clarify k3s versus external infrastructure scope
+  - Helm is documented as the deployment path for Kubernetes-managed workloads,
+    not for every stateful dependency in the homelab.
+  - External PostgreSQL is now explicitly treated as a separate Proxmox VM
+    rather than another service deployed inside `k3s`.

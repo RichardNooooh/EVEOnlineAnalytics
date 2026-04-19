@@ -8,6 +8,7 @@ tags:
 amended:
   - 2026-04-10
   - 2026-04-14
+  - 2026-04-18
 ---
 
 # ADR 003 - k3s on Kubernetes over Docker Compose
@@ -20,7 +21,9 @@ supported Docker Compose as a production deployment path — making k3s the natu
 
 ## Decision
 
-Deploy all services on a 3-node k3s cluster managed via Helm charts. No Docker Compose files exist in the project.
+Deploy Kubernetes-managed application workloads on a 3-node k3s cluster managed via
+Helm charts. External infrastructure services may still run on separate Proxmox VMs.
+No Docker Compose files exist in the project.
 
 ## Rationale
 
@@ -62,3 +65,9 @@ Deploy all services on a 3-node k3s cluster managed via Helm charts. No Docker C
   - It does not prohibit auxiliary homelab services from using LXCs. The current
     infra validation runner fleet uses 3 Debian 13 LXCs hosting GitHub Actions
     self-hosted runners while the project workloads still run on k3s VMs.
+
+- 2026-04-18 - Clarify that external infrastructure can sit outside k3s
+  - The k3s decision remains the deployment path for Kubernetes-managed
+    workloads.
+  - It does not require every supporting infrastructure dependency to run inside
+    the cluster. The PostgreSQL direction in ADR-018 uses a separate Proxmox VM.

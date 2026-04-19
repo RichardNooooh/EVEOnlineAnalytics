@@ -4,6 +4,9 @@ This OpenTofu configuration provisions three k3s-ready VMs across a 3-node Proxm
 cluster using cloud-init. It also generates an Ansible inventory for cluster
 bootstrap.
 
+It does not currently provision the planned external PostgreSQL VM documented in
+ADR-018.
+
 ## What This Creates
 
 - **3 VMs** distributed across Proxmox nodes `pve1`, `pve2`, and `pve3`
@@ -14,6 +17,10 @@ bootstrap.
   - static IP configuration
 - **Specs per VM by default**: 4 CPU cores, 10 GB RAM, 40 GB disk
 - **Ansible inventory** auto-generated at `../../ansible/inventory/hosts.ini`
+
+These VMs are the k3s nodes only. The external PostgreSQL server for Airflow metadata
+and later possible MLflow use is planned as a separate Proxmox VM outside this checked-in
+module.
 
 ## Prerequisites
 
