@@ -6,6 +6,7 @@ tags:
   - iac
 amended:
   - 2026-04-14
+  - 2026-04-18
 ---
 
 # ADR 010 - Three-Layer IaC Sequence (OpenTofu -> Ansible -> Helm)
@@ -24,7 +25,7 @@ Infrastructure is provisioned in three sequential layers:
    cloud-init template, one per Proxmox node.
 2. **Ansible** (`k3s-io/k3s-ansible`) bootstraps the k3s cluster
    with embedded etcd HA.
-3. **Helm + kubectl** deploys all application services and raw Kubernetes
+3. **Helm + kubectl** deploys Kubernetes-managed workloads and raw Kubernetes
    manifests.
 
 ## Rationale
@@ -55,3 +56,9 @@ Infrastructure is provisioned in three sequential layers:
     validated before merge through repo-level `pre-commit` hooks and the optional
     GitHub Actions workflow `.github/workflows/infra-checks.yml` running on
     self-hosted homelab runners.
+
+- 2026-04-18 - Clarify k3s layer scope
+  - The Helm and kubectl layer is scoped to Kubernetes-managed workloads and
+    cluster resources.
+  - Supporting infrastructure such as the external PostgreSQL server in ADR-018
+    may run on separate Proxmox VMs outside the cluster.

@@ -2,7 +2,9 @@
 
 Infrastructure-as-code for the homelab deployment of the eve-market-analytics
 platform. The checked-in repo currently covers Proxmox VM provisioning, Ansible-based
-k3s bootstrap, shared NFS storage wiring, and the monitoring stack.
+k3s bootstrap, shared NFS storage wiring, and the monitoring stack. The planned
+external PostgreSQL server for Airflow metadata is a separate Proxmox VM outside the
+cluster, not another checked-in Kubernetes service.
 
 ## Directory Structure
 
@@ -25,13 +27,13 @@ Apply infrastructure in this sequence:
 ```text
 1. OpenTofu     (terraform/proxmox) -> VMs created, inventory generated
 2. Ansible      (ansible/)          -> k3s bootstrapped, NFS mounted, kubeconfig copied
-3. kubectl/Helm (k8s/ + helm/)      -> base resources and monitoring services deployed
+3. kubectl/Helm (k8s/ + helm/)      -> base resources and Kubernetes-managed services deployed
 ```
 
 `make bootstrap` exists for the eventual full stack, but the currently committed repo
 does not yet include a complete end-to-end application deployment. For the current repo
-state, use the layered workflow below instead of assuming every application service is
-ready to deploy.
+state, use the layered workflow below instead of assuming every Kubernetes-managed
+service is ready to deploy.
 
 ## Prerequisites
 
@@ -145,8 +147,8 @@ make pre-commit-run
 
 ### Layer 1 - OpenTofu (`terraform/proxmox/`)
 
-Provisions three Debian 13 VMs with static IPs, SSH keys, and hostnames. See
-`terraform/proxmox/README.md` for variables and outputs.
+Provisions three Debian 13 VMs with static IPs, SSH keys, and hostnames for the k3s
+cluster. See `terraform/proxmox/README.md` for variables and outputs.
 
 This layer also writes local helper files consumed later in the workflow, including the
 generated Ansible inventory and `k8s/.grafana-admin.env` for Grafana admin secret
@@ -215,11 +217,14 @@ app secrets whose local env files exist.
 
 The Airflow metadata database architecture is documented in
 `docs/adr/adr-018-airflow-external-postgresql-metadata.md`: Airflow should use an
-external PostgreSQL service rather than the chart's embedded PostgreSQL dependency when
-that deployment is rolled out.
+external PostgreSQL server running on its own Proxmox VM rather than the chart's
+embedded PostgreSQL dependency or another in-cluster database service when that
+deployment is rolled out.
 
 Connection strings and related credentials should stay in Kubernetes Secrets rather
-than plaintext values files. PgBouncer is tracked separately in deferred ADR-019 rather
+than plaintext values files. Airflow should read the external PostgreSQL connection from
+`airflow-app-secrets`, and MLflow may later use the same server with separate
+databases and credentials. PgBouncer is tracked separately in deferred ADR-019 rather
 than as part of the currently accepted baseline.
 
 MLflow targets exist in `infra/Makefile`, but a full checked-in MLflow application

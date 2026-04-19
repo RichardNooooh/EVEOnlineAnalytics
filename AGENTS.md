@@ -198,12 +198,16 @@ eve-market-analytics/
 
 ### Platform
 
-- Everything runs on a 3-node k3s cluster deployed across a Proxmox homelab.
+- Kubernetes-managed application workloads run on a 3-node k3s cluster deployed across
+  a Proxmox homelab.
 - All 3 nodes are k3s server nodes with workload scheduling enabled.
 - Shared storage is provided by TrueNAS NFS and exposed to the cluster through RWX
   PersistentVolumes.
 - Shared NFS stores published Parquet datasets, manifests, MLflow artifacts, and
   Airflow logs.
+- Airflow metadata uses an external PostgreSQL server on its own Proxmox VM rather than
+  another service inside `k3s`. That same server may later host MLflow in separate
+  databases and credentials.
 - DuckDB work databases are local or transient scratch only and must not be shared
   across pods through RWX storage.
 
@@ -213,7 +217,7 @@ eve-market-analytics/
 2. **Ansible (`infra/ansible/`)** bootstraps k3s, installs NFS client utilities, and
    verifies shared storage connectivity.
 3. **kubectl + Helm (`infra/k8s/` and `infra/helm/`)** applies namespaces, shared NFS
-   storage contracts, and service deployments. Helm values follow
+   storage contracts, and Kubernetes-managed service deployments. Helm values follow
    `infra/helm/<service>.yml` naming such as `airflow.yml` and `mlflow.yml`.
 
 ### Snowflake Cloud-Readiness

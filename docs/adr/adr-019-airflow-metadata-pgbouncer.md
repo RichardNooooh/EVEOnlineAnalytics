@@ -15,6 +15,9 @@ amended: []
 ADR-018 establishes external PostgreSQL as the baseline architecture for the Airflow
 metadata database.
 
+That baseline means a PostgreSQL server running on a separate Proxmox VM outside the
+`k3s` cluster, not another in-cluster database service.
+
 Airflow is a distributed system with multiple components that can create significant
 database connection fan-out. The [Apache Airflow Helm chart production
 guide](https://airflow.apache.org/docs/helm-chart/stable/production-guide.html)
@@ -36,15 +39,16 @@ pooling has compatibility trade-offs for session-oriented PostgreSQL behavior.
 
 Defer the PgBouncer layer for the Airflow metadata database.
 
-The accepted baseline remains external PostgreSQL on its own. PgBouncer is documented
-as a future architectural enhancement that may be adopted once the external metadata
-database deployment is in place and its connection behavior is understood well enough
-to choose and validate an appropriate pooling mode.
+The accepted baseline remains the external PostgreSQL server on its own. PgBouncer is
+documented as a future architectural enhancement that may be adopted once the external
+metadata database deployment is in place and its connection behavior is understood well
+enough to choose and validate an appropriate pooling mode.
 
 ## Rationale
 
 - The project should first establish the external PostgreSQL metadata database as the
-  baseline architecture before adding another critical component in front of it.
+  baseline architecture on its separate Proxmox VM before adding another critical
+  component in front of it.
 - Deferring PgBouncer keeps the accepted architecture narrower while still documenting
   the likely next step for database protection and connection management.
 - Pooling mode should be chosen deliberately rather than assumed. Transaction pooling in
@@ -53,3 +57,5 @@ to choose and validate an appropriate pooling mode.
 - PgBouncer remains a strong candidate for a later production hardening step if Airflow
   metadata traffic creates enough connection pressure to justify the extra operational
   complexity.
+- If PgBouncer is adopted later, it should be evaluated against this external database VM
+  model rather than treated as part of an in-cluster PostgreSQL deployment.
