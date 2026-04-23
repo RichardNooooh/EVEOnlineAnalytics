@@ -147,34 +147,49 @@ eve-market-analytics/
 │   └── adr/
 │
 ├── ingestion/
-│   ├── everef_historical/
-│   │   ├── download_market_history.py
-│   │   ├── download_market_orders.py
-│   │   ├── publish_market_history_dataset.py
-│   │   └── publish_market_orders_dataset.py
-│   ├── esi_live/
-│   │   ├── publish_market_history_dataset.py
-│   │   ├── publish_market_orders_dataset.py
-│   │   └── rate_limiter.py
-│   └── README.md
+│   ├── README.md
+│   ├── dlt.yml                         # optional later
+│   ├── eve_market_ingestion/
+│   │   ├── sources/
+│   │   ├── clients/
+│   │   ├── pipelines/
+│   │   ├── publishers/
+│   │   ├── contracts/
+│   │   └── cli.py
+│   └── tests/
 │
 ├── datasets/
+│   ├── README.md
 │   ├── contracts/
-│   ├── manifests/
+│   ├── schemas/
 │   ├── reference/
-│   └── README.md
+│   └── examples/
+│       └── manifests/
 │
 ├── transform/
+│   ├── README.md
 │   ├── dbt_project.yml
-│   ├── profiles.yml
+│   ├── profiles.example.yml
 │   ├── models/
 │   │   ├── staging/
+│   │   │   ├── everef/
+│   │   │   └── esi/
 │   │   ├── intermediate/
 │   │   ├── marts/
 │   │   └── ml_features/
-│   ├── tests/
 │   ├── macros/
-│   └── README.md
+│   ├── tests/
+│   ├── seeds/
+│   └── analyses/
+│
+├── orchestration/
+│   ├── README.md
+│   ├── dags/
+│   │   ├── ingestion/
+│   │   ├── transform/
+│   │   └── ml/
+│   ├── include/
+│   └── plugins/
 │
 ├── ml/
 │   ├── training/
@@ -182,10 +197,6 @@ eve-market-analytics/
 │   ├── serving/
 │   ├── monitoring/
 │   └── README.md
-│
-├── orchestration/
-│   ├── dags/
-│   └── plugins/
 │
 ├── dashboards/
 ├── monitoring/
