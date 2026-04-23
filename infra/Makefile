@@ -215,20 +215,22 @@ helm-render: _helm-repos ## Render Helm charts with available values files
 
 render-monitoring-manifests: ## Render Grafana dashboard ConfigMaps as JSON via Kustomize
 	@mkdir -p $(MONITORING_RENDER_DIR)
-	@tmp_render=$$(mktemp); trap 'rm -f "$$tmp_render"' EXIT; \
-	$(KUBECTL) create --dry-run=client -k $(MONITORING_K8S_DIR) -o json | \
-	$(JQ) -s '{apiVersion: "v1", kind: "List", items: .}' >"$$tmp_render"; \
+	@tmp_kustomize=$$(mktemp); tmp_objects=$$(mktemp); tmp_render=$$(mktemp); trap 'rm -f "$$tmp_kustomize" "$$tmp_objects" "$$tmp_render"' EXIT; set -e; \
+	$(KUBECTL) kustomize $(MONITORING_K8S_DIR) >"$$tmp_kustomize"; \
+	$(KUBECTL) patch --local --type merge -p '{}' -f "$$tmp_kustomize" -o json >"$$tmp_objects"; \
+	$(JQ) -s '{apiVersion: "v1", kind: "List", items: .}' "$$tmp_objects" >"$$tmp_render"; \
 	mv "$$tmp_render" $(MONITORING_DASHBOARD_RENDER_FILE)
 
 validate-k8s: ## Validate raw k8s manifests with kubectl client dry-run
 	$(KUBECTL) apply --dry-run=client -f $(K8S_DIR)/namespaces.yml >/dev/null
 	$(KUBECTL) apply --dry-run=client -f $(K8S_DIR)/nfs-pv.yml >/dev/null
 
-validate-monitoring: kube-context _helm-repos render-monitoring-manifests ## Render monitoring charts and verify wiring
-	@vm_render=$$(mktemp); grafana_render=$$(mktemp); trap 'rm -f "$$vm_render" "$$grafana_render"' EXIT; \
+validate-monitoring: _helm-repos render-monitoring-manifests ## Render monitoring charts and verify wiring
+	@vm_render=$$(mktemp); grafana_render=$$(mktemp); monitoring_render=$$(mktemp); trap 'rm -f "$$vm_render" "$$grafana_render" "$$monitoring_render"' EXIT; set -e; \
 	$(HELM) template victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace $(MONITORING_NAMESPACE) >"$$vm_render"; \
 	$(HELM) template grafana grafana-community/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) >"$$grafana_render"; \
-	$(KUBECTL) apply --server-side --dry-run=server -k $(MONITORING_K8S_DIR) >/dev/null; \
+	$(KUBECTL) kustomize $(MONITORING_K8S_DIR) >"$$monitoring_render"; \
+	$(KUBECTL) patch --local --type merge -p '{}' -f "$$monitoring_render" -o yaml >/dev/null; \
 	rg -q 'name: victoriametrics-victoria-metrics-single-server' "$$vm_render" || { echo "ERROR: VictoriaMetrics service name mismatch"; exit 1; }; \
 	rg -q 'namespace: monitoring' "$$vm_render" || { echo "ERROR: VictoriaMetrics namespace mismatch"; exit 1; }; \
 	rg -q 'port: 8428' "$$vm_render" || { echo "ERROR: VictoriaMetrics port 8428 missing"; exit 1; }; \
