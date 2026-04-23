@@ -224,11 +224,11 @@ validate-k8s: ## Validate raw k8s manifests with kubectl client dry-run
 	$(KUBECTL) apply --dry-run=client -f $(K8S_DIR)/namespaces.yml >/dev/null
 	$(KUBECTL) apply --dry-run=client -f $(K8S_DIR)/nfs-pv.yml >/dev/null
 
-validate-monitoring: _helm-repos render-monitoring-manifests ## Render monitoring charts and verify wiring
+validate-monitoring: kube-context _helm-repos render-monitoring-manifests ## Render monitoring charts and verify wiring
 	@vm_render=$$(mktemp); grafana_render=$$(mktemp); trap 'rm -f "$$vm_render" "$$grafana_render"' EXIT; \
 	$(HELM) template victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace $(MONITORING_NAMESPACE) >"$$vm_render"; \
 	$(HELM) template grafana grafana-community/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) >"$$grafana_render"; \
-	$(KUBECTL) apply --dry-run=client -k $(MONITORING_K8S_DIR) >/dev/null; \
+	$(KUBECTL) apply --server-side --dry-run=server -k $(MONITORING_K8S_DIR) >/dev/null; \
 	rg -q 'name: victoriametrics-victoria-metrics-single-server' "$$vm_render" || { echo "ERROR: VictoriaMetrics service name mismatch"; exit 1; }; \
 	rg -q 'namespace: monitoring' "$$vm_render" || { echo "ERROR: VictoriaMetrics namespace mismatch"; exit 1; }; \
 	rg -q 'port: 8428' "$$vm_render" || { echo "ERROR: VictoriaMetrics port 8428 missing"; exit 1; }; \
@@ -304,7 +304,7 @@ apply-monitoring-secrets: ## Apply generated monitoring secrets from Terraform o
 	    --dry-run=client -o yaml | $(KUBECTL) apply -f -
 
 apply-monitoring-manifests: render-monitoring-manifests ## Apply Kustomize-generated monitoring manifests such as Grafana dashboards
-	$(KUBECTL) apply -k $(MONITORING_K8S_DIR)
+	$(KUBECTL) apply --server-side -k $(MONITORING_K8S_DIR)
 
 deploy-all: kube-context _helm-repos k8s-base ## Deploy all checked-in ready services
 	@$(MAKE) deploy-airflow

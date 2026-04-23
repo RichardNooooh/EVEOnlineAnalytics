@@ -259,7 +259,9 @@ Kustomize renders those files into dashboard ConfigMaps via
 `k8s/monitoring/kustomization.yaml`, `make render-monitoring-manifests` writes
 the generated JSON file to `k8s/monitoring/rendered/grafana-dashboards.json`,
 and `make deploy-monitoring` applies the same Kustomize source with
-`kubectl apply -k`. The rendered JSON is a generated local artifact, while
+`kubectl apply --server-side -k` so large dashboard ConfigMaps do not exceed
+client-side apply annotation limits. The rendered JSON is a generated local
+artifact, while
 scoped upstream notices live under `third_party/grafana-dashboards/` so the
 repo is not relicensed as MIT or Apache-2.0 as a whole.
 
