@@ -53,14 +53,16 @@ ansible_user = "ansible"
 timezone     = "America/New_York" # adjust to your timezone
 
 # VM sizing — tuned for 16 GB Proxmox nodes (~13 GB usable)
-vm_cpu_cores    = 4
-vm_memory_mb    = 8000 # 8 GB per VM
-vm_disk_size_gb = 40
+vm_cpu_cores           = 4
+vm_dedicated_memory_mb = 8192 # 8 GB per VM
+vm_floating_memory_mb  = 6144 # match dedicated to keep ballooning enabled
+vm_disk_size_gb        = 40
 
 # PostgreSQL VM sizing
-postgresql_vm_cpu_cores   = 2
-postgresql_vm_memory_mb   = 4096
-postgresql_vm_disk_size_gb = 40
+postgresql_vm_cpu_cores           = 2
+postgresql_vm_dedicated_memory_mb = 4096
+postgresql_vm_floating_memory_mb  = 3072
+postgresql_vm_disk_size_gb        = 40
 
 # Database identities for generated app credentials and Kubernetes env files
 postgresql_airflow_database_name = "airflow"
