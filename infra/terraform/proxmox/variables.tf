@@ -149,10 +149,16 @@ variable "vm_cpu_cores" {
   default     = 4
 }
 
-variable "vm_memory_mb" {
+variable "vm_dedicated_memory_mb" {
   description = "Dedicated memory in MB per k3s VM"
   type        = number
   default     = 10240 # ~10 GB — leaves ~3 GB for Proxmox + LXCs per 16 GB node
+}
+
+variable "vm_floating_memory_mb" {
+  description = "Floating memory in MB per k3s VM for ballooning"
+  type        = number
+  default     = 10240
 }
 
 variable "vm_disk_size_gb" {
@@ -167,8 +173,14 @@ variable "postgresql_vm_cpu_cores" {
   default     = 2
 }
 
-variable "postgresql_vm_memory_mb" {
+variable "postgresql_vm_dedicated_memory_mb" {
   description = "Dedicated memory in MB for the external PostgreSQL VM"
+  type        = number
+  default     = 4096
+}
+
+variable "postgresql_vm_floating_memory_mb" {
+  description = "Floating memory in MB for the external PostgreSQL VM ballooning"
   type        = number
   default     = 4096
 }

@@ -167,8 +167,8 @@ resource "proxmox_virtual_environment_vm" "k3s" {
   }
 
   memory {
-    dedicated = var.vm_memory_mb
-    floating  = var.vm_memory_mb # enable ballooning
+    dedicated = var.vm_dedicated_memory_mb
+    floating  = var.vm_floating_memory_mb
   }
 
   # --------------------------------------------------------------------------
@@ -258,8 +258,8 @@ resource "proxmox_virtual_environment_vm" "postgresql" {
   }
 
   memory {
-    dedicated = var.postgresql_vm_memory_mb
-    floating  = var.postgresql_vm_memory_mb
+    dedicated = var.postgresql_vm_dedicated_memory_mb
+    floating  = var.postgresql_vm_floating_memory_mb
   }
 
   disk {
