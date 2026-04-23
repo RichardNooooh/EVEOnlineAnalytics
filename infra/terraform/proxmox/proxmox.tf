@@ -181,7 +181,6 @@ resource "proxmox_virtual_environment_vm" "k3s" {
     iothread     = true
     discard      = "on"
     size         = var.vm_disk_size_gb
-    ssd          = true
   }
 
   # --------------------------------------------------------------------------
@@ -269,7 +268,6 @@ resource "proxmox_virtual_environment_vm" "postgresql" {
     iothread     = true
     discard      = "on"
     size         = var.postgresql_vm_disk_size_gb
-    ssd          = true
   }
 
   serial_device {}
