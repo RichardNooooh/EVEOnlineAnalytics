@@ -16,6 +16,27 @@ dags:
 data:
   metadataSecretName: airflow-app-secrets
 
+config:
+  api:
+    base_url: "https://eve-airflow.lab.answerisnoh.dev"
+
+apiServer:
+  args: ["bash", "-c", "exec airflow api-server --proxy-headers"]
+  env:
+    - name: FORWARDED_ALLOW_IPS
+      value: "*"
+  service:
+    type: ClusterIP
+
+ingress:
+  apiServer:
+    enabled: true
+    ingressClassName: traefik
+    path: /
+    pathType: ImplementationSpecific
+    hosts:
+      - name: eve-airflow.lab.answerisnoh.dev
+
 # POLISH later
 # pgbouncer:
 #   enabled: true
