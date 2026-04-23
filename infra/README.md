@@ -17,7 +17,9 @@ infra/
 ├── helm/                       # Layer 3: Helm values overrides committed today
 │   ├── grafana.yml
 │   └── victoriametrics.yml
-└── k8s/                        # Layer 3: Raw manifests (namespaces, NFS PersistentVolumes)
+├── k8s/                        # Layer 3: Raw manifests plus Kustomize dashboard sources
+│   └── monitoring/             # Grafana dashboard JSON, kustomization, and rendered JSON
+└── third_party/                # Scoped licenses and provenance for vendored assets
 ```
 
 ## Bootstrap Order
@@ -53,6 +55,7 @@ Required local tools:
 | `ansible-playbook` | Cluster configuration | Required |
 | `helm` | Helm chart rendering and deployment | Required |
 | `kubectl` | Cluster interaction | Required |
+| `jq` | Render dashboard Kustomize output to JSON files | Required |
 | `pre-commit` | Local infra validation hooks | Optional but used in this repo |
 
 The repo uses both local `pre-commit` hooks and a GitHub Actions workflow at
@@ -190,6 +193,7 @@ The checked-in manifests and values files currently support:
 - shared namespaces and NFS persistent volumes
 - VictoriaMetrics in `monitoring`
 - Grafana in `monitoring`
+- Grafana sidecar dashboard ConfigMaps generated from `k8s/monitoring/dashboards/`
 
 Deploy the current stack with:
 
@@ -201,6 +205,7 @@ cp k8s/.monitoring-app.env.example k8s/.monitoring-app.env
 kubectl apply -f k8s/namespaces.yml
 kubectl apply -f k8s/nfs-pv.yml
 make apply-secrets
+make render-monitoring-manifests
 make deploy-monitoring
 ```
 
@@ -243,6 +248,21 @@ deployment is not in place yet. `make deploy-mlflow` currently skips when
 Monitoring persistence for Grafana and VictoriaMetrics stays on local-path storage
 rather than NFS.
 
+The checked-in Grafana dashboards are intentionally limited to assets with clear
+upstream licensing:
+
+- dashboard 315, Kubernetes cluster monitoring via Prometheus (MIT)
+- dashboard 10229, VictoriaMetrics single-node (Apache-2.0)
+
+Vendored dashboard JSON lives under `k8s/monitoring/dashboards/`. `kubectl`
+Kustomize renders those files into dashboard ConfigMaps via
+`k8s/monitoring/kustomization.yaml`, `make render-monitoring-manifests` writes
+the generated JSON file to `k8s/monitoring/rendered/grafana-dashboards.json`,
+and `make deploy-monitoring` applies the same Kustomize source with
+`kubectl apply -k`. The rendered JSON is a generated local artifact, while
+scoped upstream notices live under `third_party/grafana-dashboards/` so the
+repo is not relicensed as MIT or Apache-2.0 as a whole.
+
 ## Sensitive Files
 
 These files are gitignored and must not be committed:
@@ -277,6 +297,7 @@ make postgresql
 make tf-fmt
 make validate
 make validate-k8s
+make render-monitoring-manifests
 make validate-monitoring
 make apply-secrets
 make deploy-monitoring
