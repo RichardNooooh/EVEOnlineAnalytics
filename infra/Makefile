@@ -9,6 +9,9 @@ PROXMOX_DIR   := terraform/proxmox
 ANSIBLE_DIR   := ansible
 HELM_DIR      := helm
 K8S_DIR       := k8s
+MONITORING_K8S_DIR := $(K8S_DIR)/monitoring
+MONITORING_RENDER_DIR := $(MONITORING_K8S_DIR)/rendered
+MONITORING_DASHBOARD_RENDER_FILE := $(MONITORING_RENDER_DIR)/grafana-dashboards.json
 
 # Tools
 ANSIBLE       := ansible-playbook
@@ -16,6 +19,7 @@ ANSIBLE_LINT  := ansible-lint
 TOFU          := tofu
 HELM          := helm
 KUBECTL       := kubectl
+JQ            := jq
 YAMLLINT      := yamllint
 PRE_COMMIT    := pre-commit
 
@@ -56,7 +60,7 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 check-deps: ## Verify core infra tooling is installed
-	@for bin in $(TOFU) $(ANSIBLE) $(ANSIBLE_LINT) $(YAMLLINT) $(HELM) $(KUBECTL) $(PRE_COMMIT); do \
+	@for bin in $(TOFU) $(ANSIBLE) $(ANSIBLE_LINT) $(YAMLLINT) $(HELM) $(KUBECTL) $(JQ) $(PRE_COMMIT); do \
 	  command -v $$bin >/dev/null || { echo "ERROR: missing: $$bin"; exit 1; }; done
 	@echo "All dependencies present"
 
@@ -188,7 +192,7 @@ ansible-lint: ansible-syntax-check yaml-lint-ansible ## Run Ansible syntax, YAML
 # Deploy (kubectl + Helm)
 # =============================================================================
 
-.PHONY: _helm-repos helm-lint helm-render validate-k8s validate-monitoring validate k8s-base apply-generated-secrets apply-manual-secrets apply-secrets apply-airflow-secrets apply-ml-secrets apply-monitoring-app-secrets apply-monitoring-secrets deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
+.PHONY: _helm-repos helm-lint helm-render render-monitoring-manifests validate-k8s validate-monitoring validate k8s-base apply-generated-secrets apply-manual-secrets apply-secrets apply-airflow-secrets apply-ml-secrets apply-monitoring-app-secrets apply-monitoring-secrets apply-monitoring-manifests deploy-all deploy-airflow deploy-mlflow deploy-monitoring plan-helm uninstall-services
 
 _helm-repos: ## Add + update Helm repos (internal use)
 	$(HELM) repo add apache-airflow https://airflow.apache.org 3>/dev/null || true
@@ -209,18 +213,30 @@ helm-render: _helm-repos ## Render Helm charts with available values files
 	@test ! -f $(HELM_DIR)/victoriametrics.yml || $(HELM) template victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace $(MONITORING_NAMESPACE) >/dev/null
 	@test ! -f $(HELM_DIR)/grafana.yml || $(HELM) template grafana grafana-community/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) >/dev/null
 
+render-monitoring-manifests: ## Render Grafana dashboard ConfigMaps as JSON via Kustomize
+	@mkdir -p $(MONITORING_RENDER_DIR)
+	@tmp_render=$$(mktemp); trap 'rm -f "$$tmp_render"' EXIT; \
+	$(KUBECTL) create --dry-run=client -k $(MONITORING_K8S_DIR) -o json | \
+	$(JQ) -s '{apiVersion: "v1", kind: "List", items: .}' >"$$tmp_render"; \
+	mv "$$tmp_render" $(MONITORING_DASHBOARD_RENDER_FILE)
+
 validate-k8s: ## Validate raw k8s manifests with kubectl client dry-run
 	$(KUBECTL) apply --dry-run=client -f $(K8S_DIR)/namespaces.yml >/dev/null
 	$(KUBECTL) apply --dry-run=client -f $(K8S_DIR)/nfs-pv.yml >/dev/null
 
-validate-monitoring: _helm-repos ## Render monitoring charts and verify wiring
+validate-monitoring: _helm-repos render-monitoring-manifests ## Render monitoring charts and verify wiring
 	@vm_render=$$(mktemp); grafana_render=$$(mktemp); trap 'rm -f "$$vm_render" "$$grafana_render"' EXIT; \
 	$(HELM) template victoriametrics vm/victoria-metrics-single --values $(HELM_DIR)/victoriametrics.yml --namespace $(MONITORING_NAMESPACE) >"$$vm_render"; \
 	$(HELM) template grafana grafana-community/grafana --values $(HELM_DIR)/grafana.yml --namespace $(MONITORING_NAMESPACE) >"$$grafana_render"; \
+	$(KUBECTL) apply --dry-run=client -k $(MONITORING_K8S_DIR) >/dev/null; \
 	rg -q 'name: victoriametrics-victoria-metrics-single-server' "$$vm_render" || { echo "ERROR: VictoriaMetrics service name mismatch"; exit 1; }; \
 	rg -q 'namespace: monitoring' "$$vm_render" || { echo "ERROR: VictoriaMetrics namespace mismatch"; exit 1; }; \
 	rg -q 'port: 8428' "$$vm_render" || { echo "ERROR: VictoriaMetrics port 8428 missing"; exit 1; }; \
-	rg -q 'http://victoriametrics-victoria-metrics-single-server\.monitoring\.svc\.cluster\.local:8428' "$$grafana_render" || { echo "ERROR: Grafana datasource URL mismatch"; exit 1; }
+	rg -q 'http://victoriametrics-victoria-metrics-single-server\.monitoring\.svc\.cluster\.local:8428' "$$grafana_render" || { echo "ERROR: Grafana datasource URL mismatch"; exit 1; }; \
+	rg -q 'uid: victoriametrics' "$$grafana_render" || { echo "ERROR: Grafana datasource UID mismatch"; exit 1; }; \
+	rg -q '"grafana_dashboard": "1"' $(MONITORING_DASHBOARD_RENDER_FILE) || { echo "ERROR: Grafana dashboard label missing"; exit 1; }; \
+	rg -q '"grafana-dashboard-10229-victoriametrics-single-node.json":' $(MONITORING_DASHBOARD_RENDER_FILE) || { echo "ERROR: VictoriaMetrics dashboard JSON missing from render"; exit 1; }; \
+	rg -q '"grafana-dashboard-315-kubernetes-cluster-monitoring-via-prometheus.json":' $(MONITORING_DASHBOARD_RENDER_FILE) || { echo "ERROR: Kubernetes dashboard JSON missing from render"; exit 1; }
 
 validate: ansible-lint tf-lint helm-lint helm-render validate-k8s validate-monitoring ## Run infrastructure validation checks
 
@@ -287,6 +303,9 @@ apply-monitoring-secrets: ## Apply generated monitoring secrets from Terraform o
 	    --from-env-file=$(GRAFANA_ADMIN_ENV_FILE) \
 	    --dry-run=client -o yaml | $(KUBECTL) apply -f -
 
+apply-monitoring-manifests: render-monitoring-manifests ## Apply Kustomize-generated monitoring manifests such as Grafana dashboards
+	$(KUBECTL) apply -k $(MONITORING_K8S_DIR)
+
 deploy-all: kube-context _helm-repos k8s-base ## Deploy all checked-in ready services
 	@$(MAKE) deploy-airflow
 	@$(MAKE) deploy-mlflow
@@ -308,7 +327,7 @@ deploy-mlflow: kube-context _helm-repos k8s-base ## Deploy MLflow Helm chart whe
 	      --namespace $(ML_NAMESPACE) --create-namespace; \
 	fi
 
-deploy-monitoring: kube-context _helm-repos k8s-base apply-monitoring-secrets apply-monitoring-app-secrets ## Deploy VictoriaMetrics + Grafana
+deploy-monitoring: kube-context _helm-repos k8s-base apply-monitoring-secrets apply-monitoring-app-secrets apply-monitoring-manifests ## Deploy VictoriaMetrics + Grafana
 	$(HELM) upgrade --install victoriametrics vm/victoria-metrics-single \
 	    --values $(HELM_DIR)/victoriametrics.yml \
 	    --namespace $(MONITORING_NAMESPACE) --create-namespace

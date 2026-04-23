@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+
+configMapGenerator:
+  - name: grafana-dashboard-10229-victoriametrics-single-node
+    files:
+      - grafana-dashboard-10229-victoriametrics-single-node.json=dashboards/grafana-dashboard-10229-victoriametrics-single-node.json
+  - name: grafana-dashboard-315-kubernetes-cluster
+    files:
+      - grafana-dashboard-315-kubernetes-cluster-monitoring-via-prometheus.json=dashboards/grafana-dashboard-315-kubernetes-cluster-monitoring-via-prometheus.json

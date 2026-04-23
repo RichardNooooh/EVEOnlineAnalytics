@@ -51,6 +51,7 @@ datasources:
     apiVersion: 1
     datasources:
       - name: VictoriaMetrics
+        uid: victoriametrics
         type: prometheus
         access: proxy
         url: http://victoriametrics-victoria-metrics-single-server.monitoring.svc.cluster.local:8428
@@ -61,7 +62,9 @@ datasources:
 # Dashboard provisioning via sidecar
 # Grafana's sidecar watches for ConfigMaps with the label
 # "grafana_dashboard: '1'" and loads them as dashboards.
-# Create ConfigMaps in the monitoring namespace with your dashboard JSON.
+# Kustomize turns `infra/k8s/monitoring/dashboards/*.json` into ConfigMaps.
+# `make render-monitoring-manifests` writes the rendered JSON file locally.
+# The stable datasource UID keeps vendored community dashboards portable.
 # ---------------------------------------------------------------------------
 sidecar:
   dashboards:
