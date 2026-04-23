@@ -164,7 +164,7 @@ docker-compose.override.yml
 data/
 *.csv
 *.parquet
-*.json
+# *.json
 !transform/**/*.yml
 !transform/**/*.yaml
 *.xlsx
