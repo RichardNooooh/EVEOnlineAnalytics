@@ -16,6 +16,16 @@ output "k3s_vm_ids" {
   }
 }
 
+output "postgresql_vm_ip" {
+  description = "IPv4 address for the external PostgreSQL VM"
+  value       = var.postgresql_vm_enabled ? local.postgresql_vm_ip : null
+}
+
+output "postgresql_vm_id" {
+  description = "Proxmox VM ID for the external PostgreSQL VM"
+  value       = var.postgresql_vm_enabled ? proxmox_virtual_environment_vm.postgresql[var.postgresql_vm_name].vm_id : null
+}
+
 output "ansible_user" {
   description = "SSH user for Ansible to connect with"
   value       = var.ansible_user
@@ -34,6 +44,21 @@ output "ssh_key_path_ansible" {
 output "ansible_inventory_path" {
   description = "Path to the generated Ansible inventory file (INI format)"
   value       = local_file.ansible_inventory.filename
+}
+
+output "postgresql_ansible_vars_path" {
+  description = "Path to the generated Ansible host vars file for PostgreSQL credentials"
+  value       = var.postgresql_vm_enabled ? local_sensitive_file.postgresql_ansible_vars_file[0].filename : null
+}
+
+output "airflow_db_env_path" {
+  description = "Path to the generated Airflow database env file"
+  value       = var.postgresql_vm_enabled ? local_sensitive_file.airflow_db_env_file[0].filename : null
+}
+
+output "ml_db_env_path" {
+  description = "Path to the generated MLflow database env file"
+  value       = var.postgresql_vm_enabled ? local_sensitive_file.ml_db_env_file[0].filename : null
 }
 
 output "ansible_inventory_snippet" {

@@ -1,0 +1,233 @@
+# =============================================================================
+# PostgreSQL Server Role Tasks
+# =============================================================================
+
+---
+- name: Validate generated PostgreSQL credentials are present
+  ansible.builtin.assert:
+    that:
+      - postgresql_airflow_password | length > 0
+      - postgresql_mlflow_password | length > 0
+    fail_msg: >-
+      PostgreSQL application passwords are missing. Run OpenTofu first so it can
+      generate inventory/host_vars for the PostgreSQL VM.
+  tags:
+    - postgresql
+    - config
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  tags:
+    - postgresql
+    - packages
+
+- name: Install PostgreSQL packages
+  ansible.builtin.apt:
+    name: "{{ postgresql_packages }}"
+    state: present
+  tags:
+    - postgresql
+    - packages
+
+- name: Ensure PostgreSQL service is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ postgresql_service_name }}"
+    state: started
+    enabled: true
+  tags:
+    - postgresql
+    - service
+
+- name: Discover PostgreSQL cluster config file
+  ansible.builtin.find:
+    paths: "{{ postgresql_config_root }}"
+    patterns: "postgresql.conf"
+    file_type: file
+    recurse: true
+  register: postgresql_conf_files
+  tags:
+    - postgresql
+    - config
+
+- name: Validate a single PostgreSQL cluster is installed
+  ansible.builtin.assert:
+    that:
+      - postgresql_conf_files.matched == 1
+    fail_msg: >-
+      Expected exactly one PostgreSQL cluster config under {{ postgresql_config_root }}
+      but found {{ postgresql_conf_files.matched }}.
+  tags:
+    - postgresql
+    - config
+
+- name: Set PostgreSQL config paths
+  ansible.builtin.set_fact:
+    postgresql_conf_file: "{{ postgresql_conf_files.files[0].path }}"
+    postgresql_hba_file: "{{ postgresql_conf_files.files[0].path | regex_replace('/postgresql\\.conf$', '/pg_hba.conf') }}"
+  tags:
+    - postgresql
+    - config
+
+- name: Configure PostgreSQL listen addresses
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_conf_file }}"
+    regexp: '^#?listen_addresses\s*='
+    line: "listen_addresses = '{{ postgresql_listen_addresses }}'"
+  notify: Restart postgresql
+  tags:
+    - postgresql
+    - config
+
+- name: Configure PostgreSQL password encryption
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_conf_file }}"
+    regexp: '^#?password_encryption\s*='
+    line: "password_encryption = '{{ postgresql_password_encryption }}'"
+  notify: Restart postgresql
+  tags:
+    - postgresql
+    - config
+
+- name: Allow remote application access in pg_hba.conf
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_hba_file }}"
+    contype: host
+    databases: "{{ item.0.database }}"
+    users: "{{ item.0.user }}"
+    source: "{{ item.1 }}"
+    method: "{{ postgresql_password_encryption }}"
+    create: true
+  loop: "{{ postgresql_application_access | product(postgresql_allowed_cidrs) | list }}"
+  loop_control:
+    label: "{{ item.0.database }} {{ item.0.user }} {{ item.1 }}"
+  vars:
+    postgresql_application_access:
+      - database: "{{ postgresql_airflow_database_name }}"
+        user: "{{ postgresql_airflow_username }}"
+      - database: "{{ postgresql_mlflow_database_name }}"
+        user: "{{ postgresql_mlflow_username }}"
+  notify: Restart postgresql
+  tags:
+    - postgresql
+    - config
+
+- name: Flush PostgreSQL service restart
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - postgresql
+    - config
+
+- name: Ensure Airflow PostgreSQL user exists
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    login_unix_socket: "{{ postgresql_socket_dir }}"
+    name: "{{ postgresql_airflow_username }}"
+    password: "{{ postgresql_airflow_password }}"
+    encrypted: true
+    role_attr_flags: "NOSUPERUSER,NOCREATEDB,NOCREATEROLE,LOGIN"
+    state: present
+  no_log: true
+  tags:
+    - postgresql
+    - users
+
+- name: Ensure MLflow PostgreSQL user exists
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    login_unix_socket: "{{ postgresql_socket_dir }}"
+    name: "{{ postgresql_mlflow_username }}"
+    password: "{{ postgresql_mlflow_password }}"
+    encrypted: true
+    role_attr_flags: "NOSUPERUSER,NOCREATEDB,NOCREATEROLE,LOGIN"
+    state: present
+  no_log: true
+  tags:
+    - postgresql
+    - users
+
+- name: Ensure Airflow database exists
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    login_unix_socket: "{{ postgresql_socket_dir }}"
+    name: "{{ postgresql_airflow_database_name }}"
+    owner: "{{ postgresql_airflow_username }}"
+    encoding: UTF-8
+    state: present
+  tags:
+    - postgresql
+    - databases
+
+- name: Ensure MLflow database exists
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    login_unix_socket: "{{ postgresql_socket_dir }}"
+    name: "{{ postgresql_mlflow_database_name }}"
+    owner: "{{ postgresql_mlflow_username }}"
+    encoding: UTF-8
+    state: present
+  tags:
+    - postgresql
+    - databases
+
+- name: Check PostgreSQL service status
+  ansible.builtin.systemd:
+    name: "{{ postgresql_service_name }}"
+  register: postgresql_service_status
+  tags:
+    - postgresql
+    - verify
+
+- name: Verify PostgreSQL is active
+  ansible.builtin.assert:
+    that:
+      - postgresql_service_status.status.ActiveState == "active"
+    fail_msg: "PostgreSQL service is not active on {{ inventory_hostname }}"
+    success_msg: "PostgreSQL service is active"
+  tags:
+    - postgresql
+    - verify
+
+- name: Verify provisioned databases exist
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    login_unix_socket: "{{ postgresql_socket_dir }}"
+    query: >-
+      select datname
+      from pg_database
+      where datname in ('{{ postgresql_airflow_database_name }}', '{{ postgresql_mlflow_database_name }}')
+      order by datname
+  register: postgresql_database_check
+  changed_when: false
+  tags:
+    - postgresql
+    - verify
+
+- name: Validate provisioned databases are present
+  ansible.builtin.assert:
+    that:
+      - postgresql_database_check.query_result | length == 2
+    fail_msg: >-
+      Expected Airflow and MLflow databases to exist but found
+      {{ postgresql_database_check.query_result | map(attribute='datname') | list }}.
+    success_msg: "Airflow and MLflow databases are present"
+  tags:
+    - postgresql
+    - verify
+
+- name: Display PostgreSQL configuration summary
+  ansible.builtin.debug:
+    msg: |
+      PostgreSQL configuration complete for {{ inventory_hostname }}:
+        - Listen addresses: {{ postgresql_listen_addresses }}
+        - Allowed CIDRs: {{ postgresql_allowed_cidrs | join(', ') }}
+        - Databases: {{ postgresql_airflow_database_name }}, {{ postgresql_mlflow_database_name }}
+  tags:
+    - postgresql
+    - summary

@@ -1,0 +1,15 @@
+galaxy_info:
+  role_name: postgresql_server
+  namespace: eve_market
+  author: Ansible Automation
+  description: Install and configure the external PostgreSQL server for Airflow and MLflow
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - trixie
+
+dependencies:
+  - role: common
+    when: false

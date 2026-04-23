@@ -27,6 +27,12 @@ k3s_nodes = {
   }
 }
 
+postgresql_vm_enabled   = true
+postgresql_vm_name      = "postgresql-1"
+postgresql_vm_node_name = "pve3"
+postgresql_vm_id        = 204
+postgresql_vm_ip_addr   = "10.218.20.204/24"
+
 gateway = "10.218.20.1"
 
 # -----------------------------------------------------------------------------
@@ -43,13 +49,24 @@ proxmox_ssh_user     = "root"
 ssh_key_path_proxmox = "/home/USER/.ssh/id_ed25519"
 # ssh_key_path_ansible = "/home/USER/.ssh/id_ed25519"  # Optional: defaults to ssh_key_path_proxmox
 
-ansible_user        = "ansible"
-timezone            = "America/New_York" # adjust to your timezone
+ansible_user = "ansible"
+timezone     = "America/New_York" # adjust to your timezone
 
 # VM sizing — tuned for 16 GB Proxmox nodes (~13 GB usable)
-vm_cpu_cores   = 4
-vm_memory_mb   = 8000 # 8 GB per VM
+vm_cpu_cores    = 4
+vm_memory_mb    = 8000 # 8 GB per VM
 vm_disk_size_gb = 40
+
+# PostgreSQL VM sizing
+postgresql_vm_cpu_cores   = 2
+postgresql_vm_memory_mb   = 4096
+postgresql_vm_disk_size_gb = 40
+
+# Database identities for generated app credentials and Kubernetes env files
+postgresql_airflow_database_name = "airflow"
+postgresql_airflow_username      = "airflow"
+postgresql_mlflow_database_name  = "mlflow"
+postgresql_mlflow_username       = "mlflow"
 
 # Networking — adjust to your VLAN setup
 vm_network_bridge = "vmbr0"

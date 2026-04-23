@@ -1,0 +1,47 @@
+#!/usr/bin/env ansible-playbook
+# =============================================================================
+# postgresql.yml - External PostgreSQL Server Bootstrap
+# =============================================================================
+# Installs and configures the external PostgreSQL VM used by Airflow metadata and
+# MLflow backend storage.
+#
+# Usage:
+#   ansible-playbook playbooks/postgresql.yml
+# =============================================================================
+
+---
+- name: Bootstrap external PostgreSQL server
+  hosts: postgresql
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Display playbook start message
+      ansible.builtin.debug:
+        msg: |
+          Starting PostgreSQL bootstrap
+          Host: {{ inventory_hostname }}
+          Airflow DB: {{ postgresql_airflow_database_name }}
+          MLflow DB: {{ postgresql_mlflow_database_name }}
+      tags:
+        - always
+
+  roles:
+    - role: postgresql_server
+      tags:
+        - postgresql
+        - install
+        - config
+
+  post_tasks:
+    - name: Display completion summary
+      ansible.builtin.debug:
+        msg: |
+          PostgreSQL bootstrap complete!
+
+          Host: {{ inventory_hostname }} ({{ ansible_host | default('unknown') }})
+          Port: {{ postgresql_port }}
+          Databases: {{ postgresql_airflow_database_name }}, {{ postgresql_mlflow_database_name }}
+      tags:
+        - summary
+        - always

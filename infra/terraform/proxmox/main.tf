@@ -48,4 +48,15 @@ provider "proxmox" {
 # -----------------------------------------------------------------------------
 locals {
   ssh_key_path_ansible = coalesce(var.ssh_key_path_ansible, var.ssh_key_path_proxmox)
+
+  postgresql_nodes = var.postgresql_vm_enabled ? {
+    (var.postgresql_vm_name) = {
+      node_name = var.postgresql_vm_node_name
+      vm_id     = var.postgresql_vm_id
+      ip_addr   = var.postgresql_vm_ip_addr
+    }
+  } : {}
+
+  all_cloud_init_nodes = merge(var.k3s_nodes, local.postgresql_nodes)
+  postgresql_vm_ip     = split("/", var.postgresql_vm_ip_addr)[0]
 }

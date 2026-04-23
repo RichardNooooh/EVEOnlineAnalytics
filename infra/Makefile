@@ -27,11 +27,14 @@ MONITORING_NAMESPACE  := monitoring
 K3S_TOKEN_FILE        := $(ANSIBLE_DIR)/inventory/k3s_cluster.key
 GRAFANA_ADMIN_ENV_FILE := $(K8S_DIR)/.grafana-admin.env
 AIRFLOW_APP_ENV_FILE  := $(K8S_DIR)/.airflow-app.env
+AIRFLOW_DB_ENV_FILE   := $(K8S_DIR)/.airflow-db.env
 ML_APP_ENV_FILE       := $(K8S_DIR)/.ml-app.env
+ML_DB_ENV_FILE        := $(K8S_DIR)/.ml-db.env
 MONITORING_APP_ENV_FILE := $(K8S_DIR)/.monitoring-app.env
 AIRFLOW_APP_ENV_EXAMPLE_FILE := $(K8S_DIR)/.airflow-app.env.example
 ML_APP_ENV_EXAMPLE_FILE := $(K8S_DIR)/.ml-app.env.example
 MONITORING_APP_ENV_EXAMPLE_FILE := $(K8S_DIR)/.monitoring-app.env.example
+POSTGRESQL_HOST_VARS_DIR := $(ANSIBLE_DIR)/inventory/host_vars
 GRAFANA_ADMIN_SECRET_NAME := grafana-admin-credentials
 AIRFLOW_APP_SECRET_NAME := airflow-app-secrets
 ML_APP_SECRET_NAME    := ml-app-secrets
@@ -59,7 +62,7 @@ check-deps: ## Verify core infra tooling is installed
 
 status: ## Full view: VMs, k3s nodes, pods per namespace (no truncation)
 	@echo "=== Proxmox VMs ==="
-	@vms="$$($(TOFU) -chdir=$(PROXMOX_DIR) state list 2>/dev/null | grep '^proxmox_virtual_environment_vm\.k3s')"; \
+	@vms="$$($(TOFU) -chdir=$(PROXMOX_DIR) state list 2>/dev/null | grep '^proxmox_virtual_environment_vm\.')"; \
 	if [ -z "$$vms" ]; then \
 	  echo "No VMs deployed yet"; \
 	else \
@@ -122,13 +125,13 @@ ifneq ($(CONFIRM),yes)
 	@echo "ERROR: Refusing to destroy VMs. Re-run with CONFIRM=yes"
 	@exit 1
 endif
-	$(TOFU) -chdir=$(PROXMOX_DIR) destroy -target proxmox_virtual_environment_vm.k3s
+	$(TOFU) -chdir=$(PROXMOX_DIR) destroy -target proxmox_virtual_environment_vm.k3s -target proxmox_virtual_environment_vm.postgresql
 
 # =============================================================================
 # Configure (Ansible)
 # =============================================================================
 
-.PHONY: ping preflight cluster cluster-init cluster-reboot snapshot kubeconfig nfs ssh yaml-lint-ansible yaml-lint-k8s ansible-syntax-check ansible-lint
+.PHONY: ping preflight cluster cluster-init cluster-reboot snapshot kubeconfig nfs postgresql ssh yaml-lint-ansible yaml-lint-k8s ansible-syntax-check ansible-lint
 
 ping: ## Ping all k3s servers to verify connectivity
 	cd $(ANSIBLE_DIR) && ansible -m ping k3s_servers
@@ -154,6 +157,9 @@ kubeconfig: ## Refresh ~/.kube/config from k3s server
 nfs: ## Configure NFS client on all nodes
 	cd $(ANSIBLE_DIR) && $(ANSIBLE) playbooks/nfs-client.yml
 
+postgresql: ## Configure the external PostgreSQL VM
+	cd $(ANSIBLE_DIR) && $(ANSIBLE) playbooks/postgresql.yml
+
 ssh: ## SSH to a node: make ssh NODE=k3s-01
 ifndef NODE
 	@echo "ERROR: NODE variable required. Usage: make ssh NODE=k3s-01"
@@ -169,7 +175,7 @@ yaml-lint-k8s: ## Lint Kubernetes manifest YAML files
 
 ansible-syntax-check: ## Run syntax checks for all Ansible playbooks
 	@tmp_inventory=$$(mktemp); trap 'rm -f "$$tmp_inventory"' EXIT; \
-	printf '%s\n' '[k3s_servers]' 'localhost ansible_connection=local' '' '[k3s_first_node]' 'localhost' '' '[k3s_other_nodes]' 'localhost' >"$$tmp_inventory"; \
+	printf '%s\n' '[k3s_servers]' 'localhost ansible_connection=local' '' '[k3s_first_node]' 'localhost' '' '[k3s_other_nodes]' 'localhost' '' '[postgresql]' 'localhost ansible_connection=local' >"$$tmp_inventory"; \
 	cd $(ANSIBLE_DIR) && \
 	for playbook in site.yml bootstrap.yml playbooks/*.yml; do \
 	  $(ANSIBLE) -i "$$tmp_inventory" --syntax-check "$$playbook" || exit 1; \
@@ -228,24 +234,40 @@ apply-manual-secrets: apply-airflow-secrets apply-ml-secrets apply-monitoring-ap
 
 apply-secrets: kube-context k8s-base apply-generated-secrets apply-manual-secrets ## Apply all generated and manual secrets
 
-apply-airflow-secrets: ## Apply manual airflow app secrets from local env file
-	@if [ ! -f $(AIRFLOW_APP_ENV_FILE) ]; then \
-	  echo "Skipping $(AIRFLOW_APP_SECRET_NAME): missing $(AIRFLOW_APP_ENV_FILE). Copy $(AIRFLOW_APP_ENV_EXAMPLE_FILE) to $(AIRFLOW_APP_ENV_FILE) to define Airflow app secrets."; \
+apply-airflow-secrets: ## Apply Airflow secrets when DB and app inputs are complete
+	@if [ ! -f $(AIRFLOW_DB_ENV_FILE) ] && [ ! -f $(AIRFLOW_APP_ENV_FILE) ]; then \
+	  echo "Skipping $(AIRFLOW_APP_SECRET_NAME): missing $(AIRFLOW_DB_ENV_FILE) and $(AIRFLOW_APP_ENV_FILE)."; \
+	elif [ ! -f $(AIRFLOW_APP_ENV_FILE) ]; then \
+	  echo "ERROR: missing $(AIRFLOW_APP_ENV_FILE). Airflow also requires fernet-key and api-secret-key."; \
+	  exit 1; \
+	elif [ ! -f $(AIRFLOW_DB_ENV_FILE) ] && ! rg -q '^connection=' $(AIRFLOW_APP_ENV_FILE); then \
+	  echo "ERROR: missing $(AIRFLOW_DB_ENV_FILE) and no connection= entry found in $(AIRFLOW_APP_ENV_FILE)."; \
+	  exit 1; \
 	else \
-	  $(KUBECTL) create secret generic $(AIRFLOW_APP_SECRET_NAME) \
-	      --namespace $(AIRFLOW_NAMESPACE) \
-	      --from-env-file=$(AIRFLOW_APP_ENV_FILE) \
-	      --dry-run=client -o yaml | $(KUBECTL) apply -f -; \
+	  set -- $(KUBECTL) create secret generic $(AIRFLOW_APP_SECRET_NAME) --namespace $(AIRFLOW_NAMESPACE); \
+	  if [ -f $(AIRFLOW_DB_ENV_FILE) ]; then \
+	    set -- "$$@" --from-env-file=$(AIRFLOW_DB_ENV_FILE); \
+	  else \
+	    echo "Note: using connection= from $(AIRFLOW_APP_ENV_FILE) for $(AIRFLOW_APP_SECRET_NAME)."; \
+	  fi; \
+	  set -- "$$@" --from-env-file=$(AIRFLOW_APP_ENV_FILE); \
+	  "$$@" --dry-run=client -o yaml | $(KUBECTL) apply -f -; \
 	fi
 
-apply-ml-secrets: ## Apply manual ML app secrets from local env file
-	@if [ ! -f $(ML_APP_ENV_FILE) ]; then \
-	  echo "Skipping $(ML_APP_SECRET_NAME): missing $(ML_APP_ENV_FILE). Copy $(ML_APP_ENV_EXAMPLE_FILE) to $(ML_APP_ENV_FILE) to define ML app secrets."; \
+apply-ml-secrets: ## Apply merged ML DB and app secrets
+	@if [ ! -f $(ML_DB_ENV_FILE) ] && [ ! -f $(ML_APP_ENV_FILE) ]; then \
+	  echo "Skipping $(ML_APP_SECRET_NAME): missing $(ML_DB_ENV_FILE) and $(ML_APP_ENV_FILE)."; \
 	else \
-	  $(KUBECTL) create secret generic $(ML_APP_SECRET_NAME) \
-	      --namespace $(ML_NAMESPACE) \
-	      --from-env-file=$(ML_APP_ENV_FILE) \
-	      --dry-run=client -o yaml | $(KUBECTL) apply -f -; \
+	  set -- $(KUBECTL) create secret generic $(ML_APP_SECRET_NAME) --namespace $(ML_NAMESPACE); \
+	  if [ -f $(ML_DB_ENV_FILE) ]; then \
+	    set -- "$$@" --from-env-file=$(ML_DB_ENV_FILE); \
+	  fi; \
+	  if [ -f $(ML_APP_ENV_FILE) ]; then \
+	    set -- "$$@" --from-env-file=$(ML_APP_ENV_FILE); \
+	  else \
+	    echo "Note: $(ML_APP_ENV_FILE) not present; applying only generated database keys for $(ML_APP_SECRET_NAME)."; \
+	  fi; \
+	  "$$@" --dry-run=client -o yaml | $(KUBECTL) apply -f -; \
 	fi
 
 apply-monitoring-app-secrets: ## Apply manual monitoring app secrets from local env file
@@ -265,20 +287,26 @@ apply-monitoring-secrets: ## Apply generated monitoring secrets from Terraform o
 	    --from-env-file=$(GRAFANA_ADMIN_ENV_FILE) \
 	    --dry-run=client -o yaml | $(KUBECTL) apply -f -
 
-deploy-all: kube-context _helm-repos k8s-base ## Deploy all services (full chain)
+deploy-all: kube-context _helm-repos k8s-base ## Deploy all checked-in ready services
 	@$(MAKE) deploy-airflow
 	@$(MAKE) deploy-mlflow
 	@$(MAKE) deploy-monitoring
 
 deploy-airflow: kube-context _helm-repos k8s-base apply-airflow-secrets ## Deploy Airflow Helm chart
+	@test -f $(HELM_DIR)/airflow.yml || { echo "ERROR: missing $(HELM_DIR)/airflow.yml"; exit 1; }
 	$(HELM) upgrade --install airflow apache-airflow/airflow \
 	    --values $(HELM_DIR)/airflow.yml \
 	    --namespace $(AIRFLOW_NAMESPACE) --create-namespace
 
-deploy-mlflow: kube-context _helm-repos k8s-base apply-ml-secrets ## Deploy MLflow Helm chart
-	$(HELM) upgrade --install mlflow community-charts/mlflow \
-	    --values $(HELM_DIR)/mlflow.yml \
-	    --namespace $(ML_NAMESPACE) --create-namespace
+deploy-mlflow: kube-context _helm-repos k8s-base ## Deploy MLflow Helm chart when values are checked in
+	@if [ ! -f $(HELM_DIR)/mlflow.yml ]; then \
+	  echo "Skipping mlflow: missing $(HELM_DIR)/mlflow.yml."; \
+	else \
+	  $(MAKE) apply-ml-secrets && \
+	  $(HELM) upgrade --install mlflow community-charts/mlflow \
+	      --values $(HELM_DIR)/mlflow.yml \
+	      --namespace $(ML_NAMESPACE) --create-namespace; \
+	fi
 
 deploy-monitoring: kube-context _helm-repos k8s-base apply-monitoring-secrets apply-monitoring-app-secrets ## Deploy VictoriaMetrics + Grafana
 	$(HELM) upgrade --install victoriametrics vm/victoria-metrics-single \
@@ -311,7 +339,7 @@ endif
 
 .PHONY: bootstrap teardown backup-state cluster-uninstall
 
-bootstrap: check-deps vms cluster nfs deploy-all ## Full bootstrap: VMs → cluster → NFS → deploy-all
+bootstrap: check-deps vms cluster postgresql deploy-all ## Full bootstrap: VMs → cluster → postgresql → deploy-all
 	@echo ""
 	@echo "Full bootstrap complete!"
 	@echo ""
@@ -343,7 +371,10 @@ backup-state: ## Backup OpenTofu state, local secret files, and kubeconfig to ar
 	mkdir -p "$$backup_dir"; \
 	cp -r $(PROXMOX_DIR)/*.tfstate* "$$backup_dir"/ 2>/dev/null || true; \
 	cp $(K3S_TOKEN_FILE) "$$backup_dir"/ 2>/dev/null || true; \
+	cp $(POSTGRESQL_HOST_VARS_DIR)/*.yml "$$backup_dir"/ 2>/dev/null || true; \
+	cp $(AIRFLOW_DB_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
 	cp $(AIRFLOW_APP_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
+	cp $(ML_DB_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
 	cp $(ML_APP_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
 	cp $(MONITORING_APP_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
 	cp $(GRAFANA_ADMIN_ENV_FILE) "$$backup_dir"/ 2>/dev/null || true; \
@@ -386,9 +417,12 @@ ifneq ($(CONFIRM),yes)
 	@echo "ERROR: Refusing to delete secrets. Re-run with CONFIRM=yes"
 	@exit 1
 endif
-	rm -f $(K3S_TOKEN_FILE) $(AIRFLOW_APP_ENV_FILE) $(ML_APP_ENV_FILE) $(MONITORING_APP_ENV_FILE) $(GRAFANA_ADMIN_ENV_FILE)
+	rm -f $(K3S_TOKEN_FILE) $(POSTGRESQL_HOST_VARS_DIR)/*.yml $(AIRFLOW_DB_ENV_FILE) $(AIRFLOW_APP_ENV_FILE) $(ML_DB_ENV_FILE) $(ML_APP_ENV_FILE) $(MONITORING_APP_ENV_FILE) $(GRAFANA_ADMIN_ENV_FILE)
+	rm -f backup-*/*.yml 2>/dev/null || true
 	rm -f backup-*/k3s_cluster.key 2>/dev/null || true
+	rm -f backup-*/.airflow-db.env 2>/dev/null || true
 	rm -f backup-*/.airflow-app.env 2>/dev/null || true
+	rm -f backup-*/.ml-db.env 2>/dev/null || true
 	rm -f backup-*/.ml-app.env 2>/dev/null || true
 	rm -f backup-*/.monitoring-app.env 2>/dev/null || true
 	rm -f backup-*/.grafana-admin.env 2>/dev/null || true

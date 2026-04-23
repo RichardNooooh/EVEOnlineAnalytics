@@ -32,6 +32,36 @@ variable "k3s_nodes" {
   }
 }
 
+variable "postgresql_vm_enabled" {
+  description = "Whether to provision the external PostgreSQL VM"
+  type        = bool
+  default     = true
+}
+
+variable "postgresql_vm_name" {
+  description = "Hostname and inventory name for the external PostgreSQL VM"
+  type        = string
+  default     = "postgresql-1"
+}
+
+variable "postgresql_vm_node_name" {
+  description = "Proxmox node where the external PostgreSQL VM should run"
+  type        = string
+  default     = "pve3"
+}
+
+variable "postgresql_vm_id" {
+  description = "Proxmox VM ID for the external PostgreSQL VM"
+  type        = number
+  default     = 204
+}
+
+variable "postgresql_vm_ip_addr" {
+  description = "Static IPv4/CIDR for the external PostgreSQL VM"
+  type        = string
+  default     = "10.218.20.204/24"
+}
+
 variable "gateway" {
   description = "Default gateway for k3s VMs"
   type        = string
@@ -129,6 +159,48 @@ variable "vm_disk_size_gb" {
   description = "Boot disk size in GB per k3s VM"
   type        = number
   default     = 40
+}
+
+variable "postgresql_vm_cpu_cores" {
+  description = "Number of CPU cores for the external PostgreSQL VM"
+  type        = number
+  default     = 2
+}
+
+variable "postgresql_vm_memory_mb" {
+  description = "Dedicated memory in MB for the external PostgreSQL VM"
+  type        = number
+  default     = 4096
+}
+
+variable "postgresql_vm_disk_size_gb" {
+  description = "Boot disk size in GB for the external PostgreSQL VM"
+  type        = number
+  default     = 40
+}
+
+variable "postgresql_airflow_database_name" {
+  description = "Database name for Airflow metadata"
+  type        = string
+  default     = "airflow"
+}
+
+variable "postgresql_airflow_username" {
+  description = "Database user name for Airflow metadata"
+  type        = string
+  default     = "airflow"
+}
+
+variable "postgresql_mlflow_database_name" {
+  description = "Database name for MLflow backend storage"
+  type        = string
+  default     = "mlflow"
+}
+
+variable "postgresql_mlflow_username" {
+  description = "Database user name for MLflow backend storage"
+  type        = string
+  default     = "mlflow"
 }
 
 # -----------------------------------------------------------------------------

@@ -1,0 +1,27 @@
+# =============================================================================
+# PostgreSQL Server Role - Default Variables
+# =============================================================================
+
+---
+postgresql_service_name: "postgresql"
+postgresql_port: 5432
+postgresql_config_root: "/etc/postgresql"
+postgresql_socket_dir: "/var/run/postgresql"
+postgresql_listen_addresses: "*"
+postgresql_password_encryption: "scram-sha-256"
+
+postgresql_packages:
+  - postgresql
+  - postgresql-client
+  - python3-psycopg2
+
+postgresql_allowed_cidrs:
+  - "10.218.20.0/24"
+
+postgresql_airflow_database_name: "airflow"
+postgresql_airflow_username: "airflow"
+postgresql_airflow_password: ""
+
+postgresql_mlflow_database_name: "mlflow"
+postgresql_mlflow_username: "mlflow"
+postgresql_mlflow_password: ""

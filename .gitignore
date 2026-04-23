@@ -205,8 +205,12 @@ desktop.ini
 hosts.ini
 infra/k8s/.grafana-admin.env
 infra/k8s/.airflow-app.env
+infra/k8s/.airflow-db.env
 infra/k8s/.ml-app.env
+infra/k8s/.ml-db.env
 infra/k8s/.monitoring-app.env
+infra/ansible/inventory/host_vars/*.yml
+!infra/ansible/inventory/host_vars/.gitkeep
 
 # ============================================
 # Secrets (NEVER commit these)
