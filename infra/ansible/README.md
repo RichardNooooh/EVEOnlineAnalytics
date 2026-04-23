@@ -1,7 +1,7 @@
-# Ansible Configuration - k3s Cluster
+# Ansible Configuration - k3s Cluster and PostgreSQL
 
 Production-grade Ansible automation for bootstrapping and managing a 3-node HA k3s
-cluster with embedded etcd.
+cluster with embedded etcd plus the external PostgreSQL VM used by Airflow and MLflow.
 
 ## Architecture Overview
 
@@ -10,6 +10,7 @@ This layer uses a role-based architecture with clear separation of concerns:
 - **Preflight role:** read-only validation checks
 - **Common role:** base OS configuration
 - **k3s_server role:** cluster bootstrap and node joining
+- **postgresql_server role:** external PostgreSQL server install and DB provisioning
 - **nfs_client role:** shared NFS mount configuration
 
 The repo also contains a `k3s_upgrade` role for future upgrade-specific workflows, but
@@ -27,6 +28,7 @@ NFS.
 ```bash
 ansible-galaxy collection install -r requirements.yml
 ansible-playbook bootstrap.yml
+ansible-playbook playbooks/postgresql.yml
 ```
 
 For repo-level local validation, install the root `pre-commit` hooks and run:
@@ -42,6 +44,7 @@ ansible-playbook playbooks/preflight.yml
 ansible-playbook playbooks/common.yml
 ansible-playbook playbooks/k3s-init.yml
 ansible-playbook playbooks/nfs-client.yml
+ansible-playbook playbooks/postgresql.yml
 ansible-playbook playbooks/verify.yml
 ```
 
@@ -57,6 +60,7 @@ it manually.
 | `k3s_servers` | All 3 k3s nodes |
 | `k3s_first_node` | First node, runs `--cluster-init` |
 | `k3s_other_nodes` | Remaining nodes, join the cluster |
+| `postgresql` | External PostgreSQL VM |
 
 ## Configuration
 
@@ -136,6 +140,7 @@ Existing clusters need a `k3s` server restart after enabling this feature so new
 | `playbooks/common.yml` | Base OS configuration |
 | `playbooks/k3s-init.yml` | Bootstrap the k3s cluster |
 | `playbooks/nfs-client.yml` | Configure the shared NFS mount |
+| `playbooks/postgresql.yml` | Configure the external PostgreSQL VM |
 | `playbooks/verify.yml` | Post-deployment verification |
 | `playbooks/k3s-etcd-snapshot.yml` | On-demand etcd backup |
 | `playbooks/k3s-uninstall.yml` | Destructive cluster removal |

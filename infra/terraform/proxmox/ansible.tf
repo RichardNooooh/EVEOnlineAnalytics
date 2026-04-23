@@ -21,11 +21,33 @@ resource "ansible_host" "k3s_nodes" {
   }
 }
 
+resource "ansible_host" "postgresql_nodes" {
+  for_each = local.postgresql_nodes
+
+  name   = each.key
+  groups = ["postgresql"]
+
+  variables = {
+    ansible_host = split("/", each.value.ip_addr)[0]
+    ansible_user = var.ansible_user
+  }
+}
+
 # -----------------------------------------------------------------------------
 # Ansible Group Resource — k3s_servers
 # -----------------------------------------------------------------------------
 resource "ansible_group" "k3s_servers" {
   name = "k3s_servers"
+
+  variables = {
+    ansible_ssh_private_key_file = local.ssh_key_path_ansible
+  }
+}
+
+resource "ansible_group" "postgresql" {
+  count = var.postgresql_vm_enabled ? 1 : 0
+
+  name = "postgresql"
 
   variables = {
     ansible_ssh_private_key_file = local.ssh_key_path_ansible
@@ -55,6 +77,16 @@ resource "local_file" "ansible_inventory" {
     [k3s_servers:vars]
     ansible_ssh_private_key_file=${local.ssh_key_path_ansible}
     ansible_python_interpreter=/usr/bin/python3
+
+    %{if var.postgresql_vm_enabled~}
+    [postgresql]
+    ${var.postgresql_vm_name} ansible_host=${local.postgresql_vm_ip} ansible_user=${var.ansible_user}
+
+    [postgresql:vars]
+    ansible_ssh_private_key_file=${local.ssh_key_path_ansible}
+    ansible_python_interpreter=/usr/bin/python3
+
+    %{endif~}
 
     # =============================================================================
     # Host Groups for Convenience

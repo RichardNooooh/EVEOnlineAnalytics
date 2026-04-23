@@ -45,7 +45,7 @@ resource "proxmox_virtual_environment_file" "user_data" {
   node_name    = "pve1" # Upload via pve1, but file is on shared storage
 
   source_raw {
-    file_name = "k3s-user-data.yaml"
+    file_name = "debian-user-data.yaml"
     data      = <<-EOF
       #cloud-config
 
@@ -109,7 +109,7 @@ resource "proxmox_virtual_environment_file" "user_data" {
 # Stored on TrueNAS shared storage.
 
 resource "proxmox_virtual_environment_file" "meta_data" {
-  for_each = var.k3s_nodes
+  for_each = local.all_cloud_init_nodes
 
   content_type = "snippets"
   datastore_id = "TrueNAS"
@@ -231,12 +231,96 @@ resource "proxmox_virtual_environment_vm" "k3s" {
   }
 }
 
+resource "proxmox_virtual_environment_vm" "postgresql" {
+  for_each = local.postgresql_nodes
+
+  name        = each.key
+  description = "PostgreSQL server - managed by OpenTofu"
+  tags        = ["postgresql", "opentofu", "eve-market"]
+  node_name   = each.value.node_name
+  vm_id       = each.value.vm_id
+
+  agent {
+    enabled = true
+  }
+
+  stop_on_destroy = true
+
+  startup {
+    order      = "4"
+    up_delay   = "60"
+    down_delay = "60"
+  }
+
+  cpu {
+    cores = var.postgresql_vm_cpu_cores
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = var.postgresql_vm_memory_mb
+    floating  = var.postgresql_vm_memory_mb
+  }
+
+  disk {
+    datastore_id = "local-lvm"
+    import_from  = proxmox_download_file.debian_generic_image.id
+    interface    = "virtio0"
+    iothread     = true
+    discard      = "on"
+    size         = var.postgresql_vm_disk_size_gb
+    ssd          = true
+  }
+
+  serial_device {}
+
+  network_device {
+    bridge  = var.vm_network_bridge
+    vlan_id = var.vm_vlan_id
+  }
+
+  initialization {
+    datastore_id = "local-lvm"
+
+    ip_config {
+      ipv4 {
+        address = each.value.ip_addr
+        gateway = var.gateway
+      }
+    }
+
+    dns {
+      servers = var.dns_servers
+      domain  = var.dns_search_domain
+    }
+
+    user_data_file_id = proxmox_virtual_environment_file.user_data.id
+    meta_data_file_id = proxmox_virtual_environment_file.meta_data[each.key].id
+  }
+
+  lifecycle {
+    ignore_changes = [
+      disk[0].size,
+    ]
+  }
+}
+
 resource "random_password" "k3s_cluster_key" {
   length  = 32
   special = false
 }
 
 resource "random_password" "grafana_admin_password" {
+  length  = 32
+  special = false
+}
+
+resource "random_password" "postgresql_airflow_password" {
+  length  = 32
+  special = false
+}
+
+resource "random_password" "postgresql_mlflow_password" {
   length  = 32
   special = false
 }
@@ -253,5 +337,43 @@ resource "local_sensitive_file" "grafana_admin_env_file" {
     admin-password=${random_password.grafana_admin_password.result}
   EOF
   filename        = "${path.module}/../../k8s/.grafana-admin.env"
+  file_permission = "0600"
+}
+
+resource "local_sensitive_file" "postgresql_ansible_vars_file" {
+  count = var.postgresql_vm_enabled ? 1 : 0
+
+  content = yamlencode({
+    postgresql_airflow_database_name = var.postgresql_airflow_database_name
+    postgresql_airflow_username      = var.postgresql_airflow_username
+    postgresql_airflow_password      = random_password.postgresql_airflow_password.result
+    postgresql_mlflow_database_name  = var.postgresql_mlflow_database_name
+    postgresql_mlflow_username       = var.postgresql_mlflow_username
+    postgresql_mlflow_password       = random_password.postgresql_mlflow_password.result
+  })
+
+  filename        = "${path.module}/../../ansible/inventory/host_vars/${var.postgresql_vm_name}.yml"
+  file_permission = "0600"
+}
+
+resource "local_sensitive_file" "airflow_db_env_file" {
+  count = var.postgresql_vm_enabled ? 1 : 0
+
+  content = <<-EOF
+    connection=postgresql://${var.postgresql_airflow_username}:${random_password.postgresql_airflow_password.result}@${local.postgresql_vm_ip}:5432/${var.postgresql_airflow_database_name}
+  EOF
+
+  filename        = "${path.module}/../../k8s/.airflow-db.env"
+  file_permission = "0600"
+}
+
+resource "local_sensitive_file" "ml_db_env_file" {
+  count = var.postgresql_vm_enabled ? 1 : 0
+
+  content = <<-EOF
+    MLFLOW_BACKEND_STORE_URI=postgresql://${var.postgresql_mlflow_username}:${random_password.postgresql_mlflow_password.result}@${local.postgresql_vm_ip}:5432/${var.postgresql_mlflow_database_name}
+  EOF
+
+  filename        = "${path.module}/../../k8s/.ml-db.env"
   file_permission = "0600"
 }

@@ -1,15 +1,13 @@
-# Proxmox k3s VM Provisioning
+# Proxmox VM Provisioning
 
-This OpenTofu configuration provisions three k3s-ready VMs across a 3-node Proxmox
-cluster using cloud-init. It also generates an Ansible inventory for cluster
-bootstrap.
-
-It does not currently provision the planned external PostgreSQL VM documented in
-ADR-018.
+This OpenTofu configuration provisions three k3s-ready VMs plus the external
+PostgreSQL VM across a 3-node Proxmox cluster using cloud-init. It also generates an
+Ansible inventory and local secret files consumed by later automation.
 
 ## What This Creates
 
-- **3 VMs** distributed across Proxmox nodes `pve1`, `pve2`, and `pve3`
+- **3 k3s VMs** distributed across Proxmox nodes `pve1`, `pve2`, and `pve3`
+- **1 PostgreSQL VM** on `pve3` by default, configurable and disableable by flag
 - **Cloud-init enabled** Debian 13 VMs with:
   - `ansible` user with passwordless sudo
   - SSH key authentication
@@ -17,10 +15,8 @@ ADR-018.
   - static IP configuration
 - **Specs per VM by default**: 4 CPU cores, 10 GB RAM, 40 GB disk
 - **Ansible inventory** auto-generated at `../../ansible/inventory/hosts.ini`
-
-These VMs are the k3s nodes only. The external PostgreSQL server for Airflow metadata
-and later possible MLflow use is planned as a separate Proxmox VM outside this checked-in
-module.
+- **Generated PostgreSQL host vars** auto-written under `../../ansible/inventory/host_vars/`
+- **Generated Kubernetes env files** for Airflow and MLflow database secrets under `../../k8s/`
 
 ## Prerequisites
 
@@ -68,16 +64,22 @@ After apply completes:
 
 1. The VMs boot and cloud-init runs.
 2. An Ansible inventory file is generated at `../../ansible/inventory/hosts.ini`.
-3. A local `../../k8s/.grafana-admin.env` file is generated for Grafana admin credential
-   bootstrapping.
+3. A PostgreSQL host vars file is generated under `../../ansible/inventory/host_vars/`.
+4. Local `../../k8s/.airflow-db.env`, `../../k8s/.ml-db.env`, and
+   `../../k8s/.grafana-admin.env` files are generated for secret bootstrapping.
 
 ## Outputs
 
 | Output | Description |
 |---|---|
-| `k3s_vm_ips` | Map of VM names to IP addresses |
-| `k3s_vm_ids` | Proxmox VM IDs |
+| `k3s_vm_ips` | Map of k3s VM names to IP addresses |
+| `k3s_vm_ids` | Map of k3s VM names to Proxmox VM IDs |
+| `postgresql_vm_ip` | External PostgreSQL VM IPv4 address |
+| `postgresql_vm_id` | External PostgreSQL Proxmox VM ID |
 | `ansible_inventory_path` | Path to generated INI inventory |
+| `postgresql_ansible_vars_path` | Path to generated PostgreSQL host vars file |
+| `airflow_db_env_path` | Path to generated Airflow DB env file |
+| `ml_db_env_path` | Path to generated MLflow DB env file |
 | `ssh_key_path_proxmox` | SSH private key used for cloud-init |
 | `ssh_key_path_ansible` | SSH private key used for Ansible |
 | `ansible_inventory_snippet` | YAML-formatted reference for k3s-ansible |
@@ -87,7 +89,7 @@ After apply completes:
 This configuration uses the `ansible/ansible` provider to:
 
 1. Create `ansible_host` resources for each VM.
-2. Create an `ansible_group` resource named `k3s_servers`.
+2. Create `ansible_group` resources for `k3s_servers` and `postgresql`.
 3. Generate a local INI inventory file at `../../ansible/inventory/hosts.ini`.
 
 ## Validation
@@ -117,6 +119,7 @@ Once VMs are running and the inventory is generated:
 cd ../../ansible
 ansible-galaxy collection install -r requirements.yml
 ansible-playbook bootstrap.yml
+ansible-playbook playbooks/postgresql.yml
 ```
 
 ## Troubleshooting

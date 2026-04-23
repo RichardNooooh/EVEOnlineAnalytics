@@ -8,8 +8,8 @@ The platform uses a **single-writer Parquet architecture**.
 - **Shared durable state:** Parquet data files, dataset manifests, schema contracts,
   MLflow artifacts, and Airflow logs.
 - **Compute state:** local or transient execution state such as DuckDB work databases.
-- **Service boundary:** Kubernetes runs the application workloads, while PostgreSQL is
-  planned as an external infrastructure dependency on its own Proxmox VM.
+- **Service boundary:** Kubernetes runs the application workloads, while PostgreSQL runs
+  as an external infrastructure dependency on its own Proxmox VM.
 - **Forbidden pattern:** no cluster-shared writable `.duckdb` file.
 
 ## Storage vs Compute
