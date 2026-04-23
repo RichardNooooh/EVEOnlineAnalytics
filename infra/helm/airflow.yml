@@ -11,6 +11,7 @@ dags:
     branch: master
     subPath: "orchestration/dags"
     period: 60s
+    recommendedProbeSetting: true
 #   credentialsSecret: airflow-app-secrets # only needed if repo requires auth
 
 data:
@@ -37,13 +38,6 @@ ingress:
     hosts:
       - name: eve-airflow.lab.answerisnoh.dev
 
-# POLISH later
-# pgbouncer:
-#   enabled: true
-#   configSecretName: airflow-pgbouncer-config # TODO
-#   metricsExporterSidecar:
-#     statsSecretName: airflow-pgbouncer-stats # TODO
-
 postgresql:
   enabled: false # Airflow metadata uses the external PostgreSQL Proxmox VM from ADR-018, not an in-cluster chart
 
@@ -60,6 +54,16 @@ createUserJob:
 logs:
   persistence:
     enabled: false
+    # TODO: Enable later on
+    # enabled: true
+    # existingClaim: eve-airflow-logs-pvc
+
+# POLISH later
+# pgbouncer:
+#   enabled: true
+#   configSecretName: airflow-pgbouncer-config # TODO
+#   metricsExporterSidecar:
+#     statsSecretName: airflow-pgbouncer-stats # TODO
 
 # POLISH later
 # databaseCleanup:
