@@ -5,9 +5,9 @@ x-airflow-common: &airflow-common
     context: ../..
     dockerfile: infra/local/Dockerfile.airflow
     args:
-      AIRFLOW_VERSION: ${AIRFLOW_VERSION:?Set AIRFLOW_VERSION in infra/local/versions.env}
-      PYTHON_VERSION: ${PYTHON_VERSION:?Set PYTHON_VERSION in infra/local/versions.env}
-  image: eve-market-airflow-local:${AIRFLOW_VERSION:?Set AIRFLOW_VERSION in infra/local/versions.env}
+      AIRFLOW_VERSION: ${AIRFLOW_VERSION:?Set AIRFLOW_VERSION in infra/local/versions.txt}
+      PYTHON_VERSION: ${PYTHON_VERSION:?Set PYTHON_VERSION in infra/local/versions.txt}
+  image: eve-market-airflow-local:${AIRFLOW_VERSION:?Set AIRFLOW_VERSION in infra/local/versions.txt}
   environment: &airflow-common-env
     AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY:?Set AIRFLOW_API_SECRET_KEY in infra/local/.env}
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags

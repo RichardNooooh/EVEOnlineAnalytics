@@ -1,0 +1,8 @@
+apache-airflow-providers-postgres
+dlt[duckdb]
+dbt-core
+dbt-duckdb
+duckdb
+pandas
+pyarrow
+requests
