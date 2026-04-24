@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "infra/**"
+      - "!infra/local/**"
       - "mise.toml"
       - ".pre-commit-config.yaml"
       - ".github/workflows/infra-checks.yml"
@@ -13,6 +14,7 @@ on:
       - master
     paths:
       - "infra/**"
+      - "!infra/local/**"
       - "mise.toml"
       - ".pre-commit-config.yaml"
       - ".github/workflows/infra-checks.yml"
