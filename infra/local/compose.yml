@@ -1,0 +1,102 @@
+name: eve-market-local
+
+x-airflow-common: &airflow-common
+  build:
+    context: ../..
+    dockerfile: infra/local/Dockerfile.airflow
+    args:
+      AIRFLOW_VERSION: ${AIRFLOW_VERSION:-3.2.1}
+      PYTHON_VERSION: ${PYTHON_VERSION:-3.14}
+  image: eve-market-airflow-local:${AIRFLOW_VERSION:-3.2.1}
+  environment: &airflow-common-env
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY:?Set AIRFLOW_API_SECRET_KEY in infra/local/.env}
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?Set AIRFLOW_FERNET_KEY in infra/local/.env}
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/local/.env}@postgres:5432/${POSTGRES_DB:-airflow}
+    AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+    EVE_MARKET_DATA_ROOT: /opt/eve-market/data
+    EVE_MARKET_DATASETS_ROOT: /opt/eve-market/datasets
+    EVE_MARKET_DBT_PROJECT_DIR: /opt/eve-market/transform
+    PYTHONPATH: /opt/eve-market/ingestion
+  user: "${AIRFLOW_UID:-50000}:0"
+  volumes:
+    - ../../orchestration/dags:/opt/airflow/dags
+    - ../../ingestion:/opt/eve-market/ingestion
+    - ../../transform:/opt/eve-market/transform
+    - ../../datasets:/opt/eve-market/datasets
+    - ../../.local/data:/opt/eve-market/data
+    - ../../.local/logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/local/.env}
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-airflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    user: "0:0"
+    command:
+      - -c
+      - |
+        set -e
+        mkdir -p /opt/airflow/logs /opt/eve-market/data
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/logs /opt/eve-market/data
+        exec /entrypoint bash -c 'set -e; airflow db migrate; airflow users create --username "${AIRFLOW_ADMIN_USERNAME:-admin}" --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" --firstname Local --lastname Admin --role Admin --email "${AIRFLOW_ADMIN_EMAIL:-admin@example.com}" || true'
+
+  airflow-api-server:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  airflow-cli:
+    <<: *airflow-common
+    profiles: ["cli"]
+    command: bash
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
