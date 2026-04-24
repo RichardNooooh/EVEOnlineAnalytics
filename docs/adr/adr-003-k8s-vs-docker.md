@@ -9,6 +9,7 @@ amended:
   - 2026-04-10
   - 2026-04-14
   - 2026-04-18
+  - 2026-04-24
 ---
 
 # ADR 003 - k3s on Kubernetes over Docker Compose
@@ -23,7 +24,8 @@ supported Docker Compose as a production deployment path — making k3s the natu
 
 Deploy Kubernetes-managed application workloads on a 3-node k3s cluster managed via
 Helm charts. External infrastructure services may still run on separate Proxmox VMs.
-No Docker Compose files exist in the project.
+Docker Compose files may exist only as local development harnesses or demo runtimes;
+they are not production deployment targets.
 
 ## Rationale
 
@@ -71,3 +73,10 @@ No Docker Compose files exist in the project.
     workloads.
   - It does not require every supporting infrastructure dependency to run inside
     the cluster. The PostgreSQL direction in ADR-018 uses a separate Proxmox VM.
+
+- 2026-04-24 - Allow Compose for local development and demos
+  - The rejection of Docker Compose applies to production application workloads.
+  - Local Compose files may exist for fast Airflow + dlt iteration and portfolio
+    demos without Proxmox, k3s, TrueNAS, or Helm.
+  - Local Compose remains a development harness only and does not replace the
+    k3s + Helm architecture.

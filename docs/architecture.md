@@ -42,6 +42,34 @@ Airflow
   -> ML training, dashboards, and APIs consume published datasets
 ```
 
+## Local Development/Demo Runtime
+
+The repository includes a local Docker Compose Airflow + dlt runtime for fast
+iteration and portfolio demos without Proxmox, k3s, TrueNAS, or Helm.
+
+This runtime is a development harness only. It is not production and does not replace
+the canonical k3s + Helm architecture. Production workloads still target k3s, Helm,
+TrueNAS-backed RWX storage for published datasets, and the external Airflow metadata
+PostgreSQL service described by ADR-018.
+
+Local-to-production mapping:
+
+- `.local/data` approximates TrueNAS NFS dataset storage for published Parquet data
+- local Postgres approximates the Airflow metadata database
+- bind-mounted DAGs and source code approximate the deployed Airflow image or DAG/code
+  sync mechanism
+
+Local commands:
+
+```bash
+make local-airflow-up
+make local-airflow-down
+make local-airflow-reset
+make local-pipeline-smoke
+```
+
+See `infra/local/README.md` for service and mount details.
+
 ## Single-Writer Rule
 
 For any publication scope, exactly one writer is responsible for producing the next
