@@ -72,3 +72,22 @@ dbt will eventually:
 - materialize curated outputs as Parquet datasets and/or use a transient local DuckDB
   work database during execution
 - never depend on a cluster-shared writable DuckDB warehouse file
+
+## Local Development Lifecycle
+
+Local Compose Airflow + dlt supports the same publication-oriented development loop on
+a single workstation. It is for fast iteration and demos, not production deployment.
+
+Expected loop:
+
+1. edit ingestion and dlt code
+2. run locally against `.local/data`
+3. validate DAG behavior and outputs through local Airflow
+4. commit code and contracts
+5. let CI build and test the deployable image/artifacts
+6. deploy to k3s with Helm
+
+Local storage remains an approximation of production storage. `.local/data` stands in
+for TrueNAS NFS dataset storage, local Postgres stands in for the Airflow metadata
+database, and bind-mounted DAGs/code stand in for the deployed Airflow image or sync
+mechanism.
