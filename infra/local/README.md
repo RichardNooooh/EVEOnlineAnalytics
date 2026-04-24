@@ -16,7 +16,7 @@ or the TrueNAS-backed Parquet storage contract.
 
 ## Services
 
-- Airflow `3.2.1` with `LocalExecutor`
+- Airflow version from `infra/local/versions.env` with `LocalExecutor`
 - Postgres metadata database
 - Mounted repo directories for DAGs, ingestion, dbt, contracts, local published data, and logs
 
@@ -39,6 +39,7 @@ make local-airflow-up
 ```
 
 Open Airflow at <http://localhost:8080>. Default local login is `admin` / `admin` unless changed in `infra/local/.env`.
+Change local Airflow and Python image versions in `infra/local/versions.env`.
 
 ## Stop
 
