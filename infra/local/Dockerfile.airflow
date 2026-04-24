@@ -12,14 +12,9 @@ RUN apt-get update \
 
 USER airflow
 
-ENV PIP_NO_CACHE_DIR=1
+COPY infra/local/requirements.txt /requirements.txt
 
 RUN pip install \
-    apache-airflow-providers-postgres \
-    "dlt[duckdb]" \
-    dbt-core \
-    dbt-duckdb \
-    duckdb \
-    pandas \
-    pyarrow \
-    requests
+    --no-cache-dir \
+    "apache-airflow==${AIRFLOW_VERSION}" \
+    -r /requirements.txt

@@ -1,7 +1,7 @@
 # Local development entrypoints.
 
 LOCAL_AIRFLOW_ENV := infra/local/.env
-LOCAL_AIRFLOW_VERSIONS := infra/local/versions.env
+LOCAL_AIRFLOW_VERSIONS := infra/local/versions.txt
 LOCAL_COMPOSE := docker compose --env-file $(LOCAL_AIRFLOW_ENV) --env-file $(LOCAL_AIRFLOW_VERSIONS) -f infra/local/compose.yml
 
 .DEFAULT_GOAL := help
