@@ -1,0 +1,29 @@
+ARG AIRFLOW_VERSION=3.2.1
+ARG PYTHON_VERSION=3.14
+
+FROM apache/airflow:${AIRFLOW_VERSION}-python${PYTHON_VERSION}
+
+ARG AIRFLOW_VERSION=3.2.1
+ARG PYTHON_VERSION=3.14
+
+USER root
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+
+ENV PIP_NO_CACHE_DIR=1
+
+RUN pip install \
+    --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt" \
+    apache-airflow-providers-postgres \
+    "dlt[duckdb]" \
+    dbt-core \
+    dbt-duckdb \
+    duckdb \
+    pandas \
+    pyarrow \
+    requests
