@@ -1,6 +1,18 @@
 # Local Airflow Development
 
-Local-only Airflow + dlt demo stack. It does not replace k3s or Helm deployment.
+Local-only Airflow + dlt development and demo stack. It supports fast ingestion
+iteration and portfolio demos without Proxmox, k3s, TrueNAS, or Helm.
+
+This stack is not production. It does not replace the canonical k3s + Helm deployment
+or the TrueNAS-backed Parquet storage contract.
+
+## Production Mapping
+
+| Local runtime | Production approximation |
+|---|---|
+| `.local/data` | TrueNAS NFS dataset storage |
+| local Postgres service | Airflow metadata PostgreSQL |
+| bind-mounted DAGs and project code | deployed Airflow image or DAG/code sync mechanism |
 
 ## Services
 
@@ -49,6 +61,15 @@ make local-pipeline-smoke
 ```
 
 Smoke check verifies Airflow metadata DB connectivity, importable Airflow/dlt/dbt/DuckDB dependencies, and expected mount roots.
+
+## Development Loop
+
+1. edit ingestion and dlt code
+2. run locally
+3. validate through local Airflow
+4. commit
+5. build and test in CI
+6. deploy to k3s
 
 ## Notes
 
