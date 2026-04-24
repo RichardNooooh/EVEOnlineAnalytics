@@ -1,7 +1,8 @@
 # Local development entrypoints.
 
 LOCAL_AIRFLOW_ENV := infra/local/.env
-LOCAL_COMPOSE := docker compose --env-file $(LOCAL_AIRFLOW_ENV) -f infra/local/compose.yml
+LOCAL_AIRFLOW_VERSIONS := infra/local/versions.env
+LOCAL_COMPOSE := docker compose --env-file $(LOCAL_AIRFLOW_ENV) --env-file $(LOCAL_AIRFLOW_VERSIONS) -f infra/local/compose.yml
 
 .DEFAULT_GOAL := help
 
@@ -12,6 +13,7 @@ help: ## Show this help
 
 local-airflow-env:
 	@test -f $(LOCAL_AIRFLOW_ENV) || { echo "ERROR: missing $(LOCAL_AIRFLOW_ENV). Copy infra/local/.env.example first."; exit 1; }
+	@test -f $(LOCAL_AIRFLOW_VERSIONS) || { echo "ERROR: missing $(LOCAL_AIRFLOW_VERSIONS)."; exit 1; }
 
 local-airflow-up: local-airflow-env ## Start local Airflow + Postgres demo stack
 	@mkdir -p .local/data .local/logs
