@@ -17,7 +17,7 @@ local-airflow-env:
 
 local-airflow-up: local-airflow-env ## Start local Airflow + Postgres demo stack
 	@mkdir -p .local/data .local/logs
-	$(LOCAL_COMPOSE) up --build -d postgres airflow-init airflow-api-server airflow-scheduler airflow-dag-processor
+	$(LOCAL_COMPOSE) up --build -d
 
 local-airflow-down: local-airflow-env ## Stop local Airflow demo stack
 	$(LOCAL_COMPOSE) down --remove-orphans

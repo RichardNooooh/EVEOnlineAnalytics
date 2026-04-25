@@ -9,9 +9,11 @@ x-airflow-common: &airflow-common
       PYTHON_VERSION: ${PYTHON_VERSION:?Set PYTHON_VERSION in infra/local/versions.txt}
   image: eve-market-airflow-local:${AIRFLOW_VERSION:?Set AIRFLOW_VERSION in infra/local/versions.txt}
   environment: &airflow-common-env
-    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY:?Set AIRFLOW_API_SECRET_KEY in infra/local/.env}
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_SECRET_KEY:?Set AIRFLOW_API_SECRET_KEY in infra/local/.env}
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?Set AIRFLOW_FERNET_KEY in infra/local/.env}
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/local/.env}@postgres:5432/${POSTGRES_DB:-airflow}
