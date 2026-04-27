@@ -40,10 +40,12 @@ Use both sources in combination.
 **Known constraints and processing considerations:**
 
 - **ESI rate limit:** 300 requests/minute. Ingestion scripts must implement rate limiting and backoff.
-- **ESI `average` field bug:** The `average` field in ESI's market history response is actually a **median**,
-  not a mean. This is a confirmed bug documented in [esi-issues #451](https://github.com/esi/esi-issues/issues/451).
-  The field is named `average` in the API response and must be aliased/documented internally to avoid misleading
-  downstream consumers and model features.
+- **ESI `average` field semantics:** The `average` field in ESI's market history response should be treated as a
+  **volume-weighted average price (VWAP)**. The in-game client labels the corresponding value as `median`, and
+  [esi-issues #451](https://github.com/esi/esi-issues/issues/451) tracks the long-standing client/API naming
+  discrepancy. The local Gleaned Static validation sample in `experiments/esi-average-field-validation/` is the
+  primary project evidence for the VWAP interpretation. The API field name should be preserved at ingest and
+  documented internally as VWAP to avoid misleading downstream consumers and model features.
 - **everef.net historical data validation:** The bulk CSV and JSON archives from everef.net require careful
   validation on ingest. Records can be malformed or contain structurally invalid JSON (e.g., truncated files,
   encoding issues, schema drift across archive epochs). A validation step - checking structural integrity, required

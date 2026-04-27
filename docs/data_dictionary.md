@@ -11,7 +11,7 @@ Fields returned by `GET /markets/{region_id}/history/?type_id={type_id}`:
 
 | Field | Type | Notes |
 |---|---|---|
-| `average` | numeric | Actually the source median, not the arithmetic mean |
+| `average` | numeric | Volume-weighted average price (VWAP), despite in-game client median labeling |
 | `date` | date | Observation date |
 | `highest` | numeric | Highest observed price |
 | `lowest` | numeric | Lowest observed price |
@@ -20,8 +20,11 @@ Fields returned by `GET /markets/{region_id}/history/?type_id={type_id}`:
 
 ## Critical Quirk
 
-The ESI `average` field is a known source bug and should be documented as the **median**
-throughout the project.
+The ESI `average` field should be documented as a **volume-weighted average price
+(VWAP)** throughout the project. The in-game client labels the corresponding value as
+`median`, but this project treats the API field semantics as VWAP. See
+`experiments/esi-average-field-validation/` for the Gleaned Static sample that
+validates `average = total ISK traded / total units traded` on low-volume rows.
 
 ## Planned Raw Dataset Contracts
 
