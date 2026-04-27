@@ -51,8 +51,11 @@ ADR-016 for the current contract.
 - **Rate limit:** 300 requests/minute globally. Respect `Expires` headers. Too many
   errors can trigger a temporary ban.
 - **No auth required** for market endpoints.
-- **Critical data quirk:** the `average` field in market history is actually the
-  **median**, not the mean. Document this everywhere a schema contract is written.
+- **Critical data quirk:** the `average` field in market history should be treated as
+  a **volume-weighted average price (VWAP)**. The in-game client labels the
+  corresponding value as `median`, but project schema contracts should document the
+  API field semantics as VWAP. The primary local evidence is the Gleaned Static
+  sample under `experiments/esi-average-field-validation/`.
 
 ### ESI Market History Fields
 
