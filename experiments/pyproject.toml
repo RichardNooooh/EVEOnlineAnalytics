@@ -10,6 +10,7 @@ dependencies = [
     "jupyter-client>=8.8.0",
     "pandas>=3.0.2",
     "pip>=26.1",
+    "pyarrow>=24.0.0",
     "pynvim>=0.6.0",
     "requests>=2.33.1",
 ]
