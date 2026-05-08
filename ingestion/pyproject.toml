@@ -5,7 +5,19 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "dlt[duckdb]>=1.25.0",
+    "dlt[http]>=1.26.0",
     "pandas>=3.0.2",
+    "pyarrow>=24.0.0",
     "requests>=2.33.1",
 ]
+
+[project.scripts]
+eve-market-ingest = "eve_market_ingestion.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
