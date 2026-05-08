@@ -8,6 +8,7 @@ secrets.toml
 .dlt/.var
 # ignore default local dir (loaded data)
 _local
+.local/
 # ignore duckdb
 *.duckdb
 *.wal
