@@ -7,6 +7,9 @@ import logging
 
 from eve_market_ingestion.pipelines.everef import run_everef_market_history_pipeline
 from eve_market_ingestion.pipelines.everef import BUCKET_URL_ENV_VAR
+from eve_market_ingestion.pipelines.everef import DATA_ROOT_ENV_VAR
+from eve_market_ingestion.pipelines.everef import LOCAL_STORAGE_TARGET
+from eve_market_ingestion.pipelines.everef import STORAGE_TARGETS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,7 +30,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Filesystem destination URL, for example file:///tmp/eve-market/raw. "
-            f"Defaults to {BUCKET_URL_ENV_VAR}."
+            f"Overrides {BUCKET_URL_ENV_VAR}, which overrides --storage-target defaults."
+        ),
+    )
+    everef_parser.add_argument(
+        "--storage-target",
+        choices=STORAGE_TARGETS,
+        default=LOCAL_STORAGE_TARGET,
+        help="Default filesystem storage target when --bucket-url and env override are unset.",
+    )
+    everef_parser.add_argument(
+        "--data-root",
+        default=None,
+        help=(
+            "Mounted storage root used with --storage-target mounted; "
+            f"env fallback {DATA_ROOT_ENV_VAR}."
         ),
     )
     everef_parser.add_argument("--base-url", default=None)
@@ -51,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
             dataset_name=args.dataset_name,
             destination=args.destination,
             bucket_url=args.bucket_url,
+            storage_target=args.storage_target,
+            data_root=args.data_root,
             base_url=args.base_url,
             chunksize=args.chunksize,
             loader_file_format=args.loader_file_format,
