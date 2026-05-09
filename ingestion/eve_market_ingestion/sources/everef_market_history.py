@@ -115,6 +115,11 @@ def list_market_history_urls(
 @dlt.transformer(name="market_history_files", selected=False, parallelized=True)
 def probe_market_history_file(item: dict[str, str]) -> Iterator[dict[str, Any]]:
     """Probe an Everef file URL and keep only readable files."""
+    yield from _probe_market_history_file(item)
+
+
+def _probe_market_history_file(item: dict[str, str]) -> Iterator[dict[str, Any]]:
+    """Probe one Everef file URL without dlt parallel wrapper."""
     try:
         response = _PROBE_CLIENT.head(item["url"], allow_redirects=True)
     except requests.RequestException as exc:
@@ -152,6 +157,14 @@ def read_market_history_csv(
     chunksize: int = DEFAULT_CHUNKSIZE,
 ) -> Iterator[pd.DataFrame]:
     """Stream an Everef market history CSV into dlt as pandas chunks."""
+    yield from _read_market_history_csv(item, chunksize=chunksize)
+
+
+def _read_market_history_csv(
+    item: dict[str, Any],
+    chunksize: int = DEFAULT_CHUNKSIZE,
+) -> Iterator[pd.DataFrame]:
+    """Stream one Everef market history CSV without dlt parallel wrapper."""
     if chunksize <= 0:
         msg = "chunksize must be greater than 0"
         raise ValueError(msg)

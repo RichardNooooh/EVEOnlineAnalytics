@@ -62,7 +62,7 @@ def test_probe_market_history_file_yields_enriched_item(monkeypatch: pytest.Monk
     monkeypatch.setattr(source, "_PROBE_CLIENT", fake_client)
     item = {"market_date": "2025-01-01", "url": "https://example.test/file.csv.bz2"}
 
-    assert list(source.probe_market_history_file._pipe.gen(item)) == [
+    assert list(source._probe_market_history_file(item)) == [
         {
             "market_date": "2025-01-01",
             "url": "https://example.test/file.csv.bz2",
@@ -77,7 +77,7 @@ def test_probe_market_history_file_yields_enriched_item(monkeypatch: pytest.Monk
 def test_probe_market_history_file_skips_404(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(source, "_PROBE_CLIENT", FakeProbeClient(FakeResponse(404)))
 
-    assert list(source.probe_market_history_file._pipe.gen(_probe_item())) == []
+    assert list(source._probe_market_history_file(_probe_item())) == []
 
 
 def test_probe_market_history_file_raises_on_unexpected_status(
@@ -86,7 +86,7 @@ def test_probe_market_history_file_raises_on_unexpected_status(
     monkeypatch.setattr(source, "_PROBE_CLIENT", FakeProbeClient(FakeResponse(500)))
 
     with pytest.raises(RuntimeError, match="Unexpected Everef status HTTP 500"):
-        list(source.probe_market_history_file._pipe.gen(_probe_item()))
+        list(source._probe_market_history_file(_probe_item()))
 
 
 def test_probe_market_history_file_raises_on_request_exception(
@@ -99,7 +99,7 @@ def test_probe_market_history_file_raises_on_request_exception(
     )
 
     with pytest.raises(RuntimeError, match="Everef probe failed"):
-        list(source.probe_market_history_file._pipe.gen(_probe_item()))
+        list(source._probe_market_history_file(_probe_item()))
 
 
 def test_read_market_history_csv_yields_chunks_with_source_metadata(tmp_path: Path) -> None:
@@ -111,7 +111,7 @@ def test_read_market_history_csv_yields_chunks_with_source_metadata(tmp_path: Pa
         "last_modified": "2025-01-01T12:00:00+00:00",
     }
 
-    chunks = list(source.read_market_history_csv._pipe.gen(item, chunksize=1))
+    chunks = list(source._read_market_history_csv(item, chunksize=1))
 
     assert len(chunks) == 2
     assert list(chunks[0]["_source_market_date"]) == ["2025-01-01"]
@@ -125,7 +125,7 @@ def test_read_market_history_csv_rejects_non_positive_chunksize(tmp_path: Path) 
     csv_path = _write_market_history_fixture(tmp_path, _valid_market_history_frame())
 
     with pytest.raises(ValueError, match="chunksize must be greater than 0"):
-        list(source.read_market_history_csv._pipe.gen(_read_item(csv_path), chunksize=0))
+        list(source._read_market_history_csv(_read_item(csv_path), chunksize=0))
 
 
 def test_read_market_history_csv_raises_on_missing_required_column(tmp_path: Path) -> None:
@@ -133,7 +133,7 @@ def test_read_market_history_csv_raises_on_missing_required_column(tmp_path: Pat
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
     with pytest.raises(RuntimeError, match="missing columns: volume"):
-        list(source.read_market_history_csv._pipe.gen(_read_item(csv_path), chunksize=10))
+        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
 
 
 def test_read_market_history_csv_raises_on_null_primary_key(tmp_path: Path) -> None:
@@ -142,7 +142,7 @@ def test_read_market_history_csv_raises_on_null_primary_key(tmp_path: Path) -> N
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
     with pytest.raises(RuntimeError, match="null primary-key"):
-        list(source.read_market_history_csv._pipe.gen(_read_item(csv_path), chunksize=10))
+        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
 
 
 def test_read_market_history_csv_raises_on_duplicate_primary_key(tmp_path: Path) -> None:
@@ -153,7 +153,7 @@ def test_read_market_history_csv_raises_on_duplicate_primary_key(tmp_path: Path)
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
     with pytest.raises(RuntimeError, match="duplicate primary-key"):
-        list(source.read_market_history_csv._pipe.gen(_read_item(csv_path), chunksize=10))
+        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
 
 
 def test_read_market_history_csv_raises_on_date_mismatch(tmp_path: Path) -> None:
@@ -162,7 +162,7 @@ def test_read_market_history_csv_raises_on_date_mismatch(tmp_path: Path) -> None
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
     with pytest.raises(RuntimeError, match="do not match source market_date"):
-        list(source.read_market_history_csv._pipe.gen(_read_item(csv_path), chunksize=10))
+        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
 
 
 def test_read_market_history_csv_raises_on_negative_numeric_value(tmp_path: Path) -> None:
@@ -171,7 +171,7 @@ def test_read_market_history_csv_raises_on_negative_numeric_value(tmp_path: Path
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
     with pytest.raises(RuntimeError, match="negative numeric"):
-        list(source.read_market_history_csv._pipe.gen(_read_item(csv_path), chunksize=10))
+        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
 
 
 def test_read_market_history_csv_raises_on_read_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,7 +181,7 @@ def test_read_market_history_csv_raises_on_read_error(monkeypatch: pytest.Monkey
     monkeypatch.setattr(source.pd, "read_csv", fail_read_csv)
 
     with pytest.raises(RuntimeError, match="Could not read Everef CSV"):
-        list(source.read_market_history_csv._pipe.gen(_read_item(Path("missing.csv.bz2"))))
+        list(source._read_market_history_csv(_read_item(Path("missing.csv.bz2"))))
 
 
 def _probe_item() -> dict[str, str]:
