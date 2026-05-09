@@ -16,15 +16,12 @@ import dlt
 from dlt.sources.helpers import requests
 import pandas as pd
 
+from eve_market_ingestion.contracts.market_history import MARKET_HISTORY_COLUMNS
+from eve_market_ingestion.contracts.market_history import MARKET_HISTORY_PRIMARY_KEY
+from eve_market_ingestion.contracts.market_history import validate_market_history_chunk
+
 BASE_URL = "https://data.everef.net/market-history"
 DEFAULT_CHUNKSIZE = 20_000
-
-MARKET_HISTORY_PRIMARY_KEY = ["date", "region_id", "type_id"]
-MARKET_HISTORY_COLUMNS = {
-    "date": {"nullable": False},
-    "region_id": {"nullable": False},
-    "type_id": {"nullable": False},
-}
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +118,8 @@ def probe_market_history_file(item: dict[str, str]) -> Iterator[dict[str, Any]]:
     try:
         response = _PROBE_CLIENT.head(item["url"], allow_redirects=True)
     except requests.RequestException as exc:
-        logger.warning("Everef probe failed at %s: %s", item["url"], exc)
-        return
+        msg = f"Everef probe failed at {item['url']}: {exc}"
+        raise RuntimeError(msg) from exc
 
     if response.status_code == 404:
         logger.warning(
@@ -133,12 +130,8 @@ def probe_market_history_file(item: dict[str, str]) -> Iterator[dict[str, Any]]:
         return
 
     if response.status_code >= 400:
-        logger.warning(
-            "Unexpected Everef status HTTP %s for %s",
-            response.status_code,
-            item["url"],
-        )
-        return
+        msg = f"Unexpected Everef status HTTP {response.status_code} for {item['url']}"
+        raise RuntimeError(msg)
 
     enriched_item: dict[str, Any] = dict(item)
     _update_content_length(enriched_item, response)
@@ -159,21 +152,23 @@ def read_market_history_csv(
     chunksize: int = DEFAULT_CHUNKSIZE,
 ) -> Iterator[pd.DataFrame]:
     """Stream an Everef market history CSV into dlt as pandas chunks."""
+    if chunksize <= 0:
+        msg = "chunksize must be greater than 0"
+        raise ValueError(msg)
+
     file_url = item["url"]
     ingested_at = datetime.now(UTC).isoformat()
-    key_columns = MARKET_HISTORY_PRIMARY_KEY
 
     try:
         chunks = pd.read_csv(file_url, compression="bz2", chunksize=chunksize)
-        for chunk in chunks:
-            key_nulls = chunk[key_columns].isna().sum()
-            if key_nulls.any():
-                logger.warning(
-                    "Skipping chunk from %s because primary-key columns contain nulls: %s",
-                    file_url,
-                    key_nulls.to_dict(),
-                )
-                continue
+        yielded_rows = 0
+        for chunk_index, chunk in enumerate(chunks, start=1):
+            validate_market_history_chunk(
+                chunk,
+                file_url=file_url,
+                market_date=item["market_date"],
+                chunk_index=chunk_index,
+            )
 
             chunk["_source_market_date"] = item["market_date"]
             chunk["_source_url"] = file_url
@@ -181,10 +176,14 @@ def read_market_history_csv(
             chunk["_source_last_modified"] = item.get("last_modified")
             chunk["_ingested_at"] = ingested_at
 
+            yielded_rows += len(chunk)
             yield chunk
+        if yielded_rows == 0:
+            msg = f"Everef CSV contained no rows: {file_url}"
+            raise ValueError(msg)
     except Exception as exc:
-        logger.warning("Could not read Everef CSV %s: %s", file_url, exc)
-        return
+        msg = f"Could not read Everef CSV {file_url}: {exc}"
+        raise RuntimeError(msg) from exc
 
 
 @dlt.source(name="everef")
