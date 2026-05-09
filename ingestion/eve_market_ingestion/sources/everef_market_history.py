@@ -171,6 +171,7 @@ def _read_market_history_csv(
 
     file_url = item["url"]
     ingested_at = datetime.now(UTC).isoformat()
+    seen_primary_keys: set[tuple[Any, ...]] = set()
 
     try:
         chunks = pd.read_csv(file_url, compression="bz2", chunksize=chunksize)
@@ -182,6 +183,17 @@ def _read_market_history_csv(
                 market_date=item["market_date"],
                 chunk_index=chunk_index,
             )
+            chunk_keys = set(
+                chunk[MARKET_HISTORY_PRIMARY_KEY].itertuples(index=False, name=None)
+            )
+            duplicate_keys = seen_primary_keys.intersection(chunk_keys)
+            if duplicate_keys:
+                msg = (
+                    f"Everef CSV chunk {chunk_index} from {file_url} contains "
+                    "duplicate primary-key rows across chunks"
+                )
+                raise ValueError(msg)
+            seen_primary_keys.update(chunk_keys)
 
             chunk["_source_market_date"] = item["market_date"]
             chunk["_source_url"] = file_url

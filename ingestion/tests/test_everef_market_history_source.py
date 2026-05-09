@@ -156,6 +156,19 @@ def test_read_market_history_csv_raises_on_duplicate_primary_key(tmp_path: Path)
         list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
 
 
+def test_read_market_history_csv_raises_on_duplicate_primary_key_across_chunks(
+    tmp_path: Path,
+) -> None:
+    frame = pd.concat(
+        [_valid_market_history_frame(), _valid_market_history_frame().iloc[[0]]],
+        ignore_index=True,
+    )
+    csv_path = _write_market_history_fixture(tmp_path, frame)
+
+    with pytest.raises(RuntimeError, match="duplicate primary-key rows across chunks"):
+        list(source._read_market_history_csv(_read_item(csv_path), chunksize=2))
+
+
 def test_read_market_history_csv_raises_on_date_mismatch(tmp_path: Path) -> None:
     frame = _valid_market_history_frame()
     frame.loc[0, "date"] = "2025-01-02"
