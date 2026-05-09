@@ -4,26 +4,29 @@ Standalone Python project for source-specific ingestion while the wider repo is 
 being assembled. The current implementation turns the Everef market history notebook
 probe into reusable `dlt` code.
 
+Commands below assume they are run from the repository root with `uv --project
+ingestion`. If you are already in `ingestion/`, use `uv run` instead.
+
 ## Everef Market History
 
 The Everef source lists expected daily CSV archives, probes each URL with `HEAD`, then
 streams readable `.csv.bz2` files into `dlt` in pandas chunks.
 
 ```bash
-uv run eve-market-ingest everef-market-history \
+uv --project ingestion run eve-market-ingest everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --dev-mode
 ```
 
-By default, local filesystem output is written under
+By default, standalone CLI filesystem output is written under
 `ingestion/.local/dlt-staging/everef/market_history`.
 
 For Airflow or Kubernetes, mount the shared NFS PVC into the worker/pod and use the
 mounted storage target:
 
 ```bash
-uv run eve-market-ingest everef-market-history \
+uv --project ingestion run eve-market-ingest everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --storage-target mounted
@@ -37,7 +40,7 @@ Use `--data-root` to change the mounted storage root while keeping the standard 
 staging path below it:
 
 ```bash
-uv run eve-market-ingest everef-market-history \
+uv --project ingestion run eve-market-ingest everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --storage-target mounted \
@@ -61,10 +64,15 @@ export EVE_MARKET_INGESTION_BUCKET_URL=file:///opt/eve-market/data/dlt-staging/e
 The same command can be run through the module entrypoint:
 
 ```bash
-uv run python -m eve_market_ingestion.cli everef-market-history \
+uv --project ingestion run python -m eve_market_ingestion.cli everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31
 ```
+
+Before loading each chunk, the source validates the expected market history contract:
+required columns, non-null and unique `(date, region_id, type_id)` keys, source date
+matching the CSV filename date, numeric values, non-negative numeric fields, and
+`highest >= lowest`.
 
 Useful options:
 
