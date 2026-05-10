@@ -22,7 +22,7 @@ including:
 - external PostgreSQL on a separate Proxmox VM for Airflow metadata, with possible
   later MLflow use
 - deferred PgBouncer decision for Airflow metadata
-- Parquet on shared NFS as the system of record
+- DuckLake as the canonical lakehouse table format over Parquet data files
 - the prohibition on a cluster-shared writable DuckDB file
 
 ## Reading Order
@@ -30,7 +30,8 @@ including:
 Start with the higher-impact architecture records if you need project context quickly:
 
 1. `adr-014-replace-airbyte-dlt.md`
-2. `adr-015-kube-vip-daemon-endpoint.md`
-3. `adr-016-parquet-system-of-record.md`
+2. `adr-020-ducklake-canonical-table-format.md`
+3. `adr-015-kube-vip-daemon-endpoint.md`
+4. `adr-016-parquet-system-of-record.md`
 
 Earlier ADRs provide the historical decision trail that led to the current contract.
