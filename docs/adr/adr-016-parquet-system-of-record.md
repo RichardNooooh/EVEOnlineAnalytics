@@ -5,7 +5,8 @@ tags:
   - data
   - storage
   - compute
-amended: []
+amended:
+  - 2026-05-10
 ---
 
 # ADR 016 - Parquet Datasets as the System of Record
@@ -93,3 +94,10 @@ boundary between unpublished scratch output and published dataset state.
 - *Use object storage first and NFS later:* Rejected for now because the homelab already
   has shared NFS, and this ADR is about the persistence contract rather than the
   backing protocol.
+
+## Amendments
+
+- 2026-05-10 - Refined by ADR-020
+  - ADR-020 adopts DuckLake as the canonical lakehouse table format. Parquet remains
+    the physical data file format, but plain filesystem Parquet alone is no longer the
+    long-term canonical table storage contract.
