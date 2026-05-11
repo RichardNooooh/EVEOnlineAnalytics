@@ -10,7 +10,9 @@ ingestion`. If you are already in `ingestion/`, use `uv run` instead.
 ## Everef Market History
 
 The Everef source lists expected daily CSV archives, probes each URL with `HEAD`, then
-streams readable `.csv.bz2` files into `dlt` in pandas chunks.
+streams readable `.csv.bz2` files into `dlt` in pandas chunks. By default, the dlt
+source still reads source URLs directly. Raw source-file acquisition is available as a
+separate SQLite-backed cache step.
 
 ```bash
 uv --project ingestion run eve-market-ingest everef-market-history \
@@ -64,6 +66,81 @@ export EVE_MARKET_DUCKLAKE_STORAGE=file:///opt/eve-market/data/ducklake/everef/m
 Set `EVE_MARKET_DUCKLAKE_NAME` and `EVE_MARKET_DUCKLAKE_CATALOG` to override the
 DuckLake attach name and catalog URL for scheduled workloads.
 
+## Raw Source-File Cache
+
+Raw source-file acquisition is separate from dlt loading. It downloads Everef CSV
+archives into a local or mounted raw cache, records checksums and source headers in a
+SQLite ledger, and lets dlt read the cached file paths later.
+
+Sync raw Everef market history files locally:
+
+```bash
+uv --project ingestion run eve-market-ingest raw-files sync-everef-market-history \
+  --start-date 2025-01-01 \
+  --end-date 2025-01-31
+```
+
+Local raw cache defaults to `ingestion/.local/raw`. The SQLite ledger defaults to
+`ingestion/.local/raw/raw_files.sqlite`.
+
+For Airflow or Kubernetes, use the mounted target so raw files live under the shared
+data root:
+
+```bash
+uv --project ingestion run eve-market-ingest raw-files sync-everef-market-history \
+  --start-date 2025-01-01 \
+  --end-date 2025-01-31 \
+  --storage-target mounted
+```
+
+The mounted raw cache target resolves to `/opt/eve-market/data/raw`. Override with
+`--raw-root` or `EVE_MARKET_RAW_FILES_ROOT`. Override the SQLite ledger path with
+`--raw-ledger-db` or `EVE_MARKET_RAW_FILES_DB`.
+
+SQLite is the first local-development ledger backend. Treat it as a single-writer
+ledger, especially when placed on mounted storage. A later local Compose phase should
+move the ledger to Postgres before running concurrent scheduler/worker workloads
+against the same metadata store.
+
+Load dlt from the raw cache:
+
+```bash
+uv --project ingestion run eve-market-ingest everef-market-history \
+  --start-date 2025-01-01 \
+  --end-date 2025-01-31 \
+  --input-source raw-cache
+```
+
+When using the mounted cache, use the same storage target for both sync and load:
+
+```bash
+uv --project ingestion run eve-market-ingest everef-market-history \
+  --start-date 2025-01-01 \
+  --end-date 2025-01-31 \
+  --input-source raw-cache \
+  --storage-target mounted
+```
+
+Or do both in one local command:
+
+```bash
+uv --project ingestion run eve-market-ingest everef-market-history \
+  --start-date 2025-01-01 \
+  --end-date 2025-01-31 \
+  --sync-raw
+```
+
+`--sync-raw` downloads changed files first, then loads dlt from the raw cache. The raw
+cache is a source acquisition ledger, not the dataset publication manifest. Published
+analytical state remains DuckLake-backed.
+
+Everef source files are considered fresh when the source `content-length` and
+`last-modified` headers match the latest valid cached file. If the source changes in
+place while preserving both headers, this first SQLite-only implementation will not
+detect the change. If neither header is available, the file is downloaded again rather
+than treated as fresh. A later Postgres/local-compose phase should add stronger source
+metadata such as Everef `totals.json`, `ETag`, or an explicit force-refresh option.
+
 The same command can be run through the module entrypoint:
 
 ```bash
@@ -90,6 +167,10 @@ Useful options:
 - `--loader-file-format`: dlt loader file format, defaults to `parquet`.
 - `--chunksize`: pandas CSV chunk size, defaults to `20000`.
 - `--base-url`: override the Everef market history base URL for testing.
+- `--input-source`: CSV read source, `url` or `raw-cache`, defaults to `url`.
+- `--sync-raw`: download raw source files first, then load from `raw-cache`.
+- `--raw-root`: raw source-file cache root override.
+- `--raw-ledger-db`: raw source-file SQLite ledger override.
 
 DuckLake storage URL precedence is explicit `--ducklake-storage`, then
 `EVE_MARKET_DUCKLAKE_STORAGE`, then the selected `--storage-target` default. For
