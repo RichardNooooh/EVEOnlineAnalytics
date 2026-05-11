@@ -121,6 +121,17 @@ def test_read_market_history_csv_yields_chunks_with_source_metadata(tmp_path: Pa
     assert chunks[0]["_ingested_at"].iloc[0] == chunks[1]["_ingested_at"].iloc[0]
 
 
+def test_read_market_history_csv_uses_ducklake_merge_hints() -> None:
+    table_schema = source.read_market_history_csv.compute_table_schema()
+
+    assert table_schema["write_disposition"] == "merge"
+    assert table_schema["x-merge-strategy"] == "delete-insert"
+    assert table_schema["columns"]["date"]["merge_key"] is True
+    assert table_schema["columns"]["date"]["primary_key"] is True
+    assert table_schema["columns"]["region_id"]["primary_key"] is True
+    assert table_schema["columns"]["type_id"]["primary_key"] is True
+
+
 def test_read_market_history_csv_rejects_non_positive_chunksize(tmp_path: Path) -> None:
     csv_path = _write_market_history_fixture(tmp_path, _valid_market_history_frame())
 
