@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, date, datetime
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -17,6 +16,7 @@ from eve_market_ingestion.everef_market_history_files import (
     market_history_file_name,
     market_history_file_url,
     parse_market_history_date,
+    update_market_history_file_metadata,
 )
 from eve_market_ingestion.raw_files.config import (
     RawFilesConfig,
@@ -142,8 +142,7 @@ def _probe_market_history_file(
         raise RuntimeError(msg)
 
     item: dict[str, Any] = {"market_date": market_date.isoformat(), "url": url}
-    _update_content_length(item, response)
-    _update_last_modified(item, response)
+    update_market_history_file_metadata(item, response.headers, logger=logger)
     return item
 
 
@@ -267,39 +266,6 @@ def _local_file_matches(
     if downloaded_size is not None and path.stat().st_size != downloaded_size:
         return False
     return sha256_file(path) == sha256
-
-
-def _update_content_length(item: dict[str, Any], response: requests.Response) -> None:
-    content_length = response.headers.get("content-length")
-    if content_length is None:
-        return
-    try:
-        parsed_length = int(content_length)
-    except ValueError:
-        logger.warning(
-            "Everef returned invalid content-length=%r for %s",
-            content_length,
-            item["url"],
-        )
-        return
-    if parsed_length > 0:
-        item["content_length"] = parsed_length
-
-
-def _update_last_modified(item: dict[str, Any], response: requests.Response) -> None:
-    last_modified = response.headers.get("last-modified")
-    if last_modified is None:
-        return
-    try:
-        last_modified_dt = parsedate_to_datetime(last_modified)
-    except ValueError:
-        logger.warning(
-            "Everef returned invalid last-modified=%r for %s",
-            last_modified,
-            item["url"],
-        )
-        return
-    item["last_modified"] = last_modified_dt.astimezone(UTC).isoformat()
 
 
 def _utc_now() -> str:
