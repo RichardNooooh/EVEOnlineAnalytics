@@ -31,7 +31,9 @@ The current contract is:
 
 - Shared NFS storage holds DuckLake data files, dataset manifests/contracts, Airflow
   logs, and MLflow artifacts.
-- DuckLake catalog metadata is durable state and must be managed with the data files.
+- DuckLake catalog metadata is durable state and must be managed with the data files;
+  mounted/shared deployments require non-local durable catalog storage such as
+  PostgreSQL.
 - Published DuckLake table state is the persisted analytical source of truth.
 - Each dataset publication has a **single writer** for the affected publication scope.
 - Writers publish through DuckLake table commits or merge/delete-insert semantics rather
@@ -39,6 +41,8 @@ The current contract is:
 - DuckDB is allowed only as **local or transient compute** for development and
   single-writer batch jobs.
 - There is **no cluster-shared writable `.duckdb` file**.
+- Mounted/shared DuckLake storage with a SQLite catalog is rejected; SQLite DuckLake
+  catalogs are only for local smoke tests.
 - Any DuckDB database used by dbt or a batch job must live on pod-local scratch such
   as `emptyDir` or node-local `ReadWriteOnce` storage.
 

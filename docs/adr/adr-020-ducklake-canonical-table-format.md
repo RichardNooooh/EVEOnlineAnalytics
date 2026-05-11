@@ -61,8 +61,12 @@ and transaction semantics over data files.
 
 ## Operational Notes
 
-- A local DuckLake catalog is acceptable for smoke testing and early local development.
-- A PostgreSQL DuckLake catalog is preferred for a production-style homelab deployment.
+- A local SQLite DuckLake catalog is acceptable only for local smoke testing and early
+  local development.
+- A PostgreSQL DuckLake catalog is required for production-style or mounted/shared
+  DuckLake storage runs.
+- Mounted/shared DuckLake storage with a SQLite catalog is rejected by ingestion
+  publisher configuration.
 - Data files remain Parquet files stored under the lakehouse table format.
 - Production-style data files may live on TrueNAS/NFS initially, with MinIO or another
   S3-compatible store remaining a possible later backing store.
