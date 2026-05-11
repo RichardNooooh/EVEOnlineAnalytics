@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 DATA_ROOT_ENV_VAR = "EVE_MARKET_DATA_ROOT"

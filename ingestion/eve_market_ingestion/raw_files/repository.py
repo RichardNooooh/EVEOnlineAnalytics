@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from eve_market_ingestion.raw_files.models import RawFileRecord
