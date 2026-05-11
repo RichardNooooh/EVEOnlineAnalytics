@@ -335,6 +335,10 @@ wheels = [
 duckdb = [
     { name = "duckdb" },
 ]
+ducklake = [
+    { name = "duckdb" },
+    { name = "pyarrow" },
+]
 http = [
     { name = "aiohttp" },
 ]
@@ -375,7 +379,8 @@ name = "experiments"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "dlt", extra = ["duckdb", "http"] },
+    { name = "dlt", extra = ["duckdb", "ducklake", "http"] },
+    { name = "duckdb" },
     { name = "ipykernel" },
     { name = "jupyter-client" },
     { name = "pandas" },
@@ -387,7 +392,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dlt", extras = ["duckdb", "http"], specifier = ">=1.26.0" },
+    { name = "dlt", extras = ["duckdb", "ducklake", "http"], specifier = ">=1.26.0" },
+    { name = "duckdb", specifier = ">=1.5.2" },
     { name = "ipykernel", specifier = ">=7.2.0" },
     { name = "jupyter-client", specifier = ">=8.8.0" },
     { name = "pandas", specifier = ">=3.0.2" },
