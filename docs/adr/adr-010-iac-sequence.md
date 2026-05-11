@@ -7,6 +7,7 @@ tags:
 amended:
   - 2026-04-14
   - 2026-04-18
+  - 2026-05-10
 ---
 
 # ADR 010 - Three-Layer IaC Sequence (OpenTofu -> Ansible -> Helm)
@@ -23,8 +24,8 @@ Infrastructure is provisioned in three sequential layers:
 
 1. **OpenTofu** (`bpg/proxmox` provider) provisions 3 Debian 13 VMs from a
    cloud-init template, one per Proxmox node.
-2. **Ansible** (`k3s-io/k3s-ansible`) bootstraps the k3s cluster
-   with embedded etcd HA.
+2. **Ansible** with project-specific roles bootstraps the k3s cluster with embedded
+   etcd HA.
 3. **Helm + kubectl** deploys Kubernetes-managed workloads and raw Kubernetes
    manifests.
 
@@ -33,9 +34,9 @@ Infrastructure is provisioned in three sequential layers:
 - The `bpg/proxmox` Terraform provider is the recommended choice - it is
   actively maintained with frequent releases and allows management of every
   aspect of a Proxmox environment. The older Telmate provider is more limited.
-- The official `k3s-io/k3s-ansible` repository automatically sets up k3s in
-  HA mode with embedded etcd when multiple hosts are in the server group, and
-  handles kubeconfig retrieval to the control node.
+- Project-specific Ansible roles keep k3s bootstrap, node configuration, NFS client
+  setup, and verification visible in this repo while preserving the three-layer
+  boundary.
 - Each layer has clear responsibility boundaries: Terraform creates the
   infrastructure, Ansible configures the OS and cluster, Helm manages the application
   lifecycle. This separation prevents configuration drift and allows each layer
@@ -62,3 +63,7 @@ Infrastructure is provisioned in three sequential layers:
     cluster resources.
   - Supporting infrastructure such as the external PostgreSQL server in ADR-018
     may run on separate Proxmox VMs outside the cluster.
+
+- 2026-05-10 - Clarify Ansible implementation
+  - The checked-in implementation uses custom Ansible roles rather than the upstream
+    k3s role repository.

@@ -4,13 +4,13 @@ Local-only Airflow + dlt development and demo stack. It supports fast ingestion
 iteration and portfolio demos without Proxmox, k3s, TrueNAS, or Helm.
 
 This stack is not production. It does not replace the canonical k3s + Helm deployment
-or the TrueNAS-backed Parquet storage contract.
+or the TrueNAS-backed DuckLake storage contract.
 
 ## Production Mapping
 
 | Local runtime | Production approximation |
 |---|---|
-| `.local/data` | TrueNAS NFS dataset storage |
+| `.local/data` | TrueNAS NFS DuckLake data-file storage |
 | local Postgres service | Airflow metadata PostgreSQL |
 | bind-mounted DAGs and project code | deployed Airflow image or DAG/code sync mechanism |
 
@@ -19,6 +19,9 @@ or the TrueNAS-backed Parquet storage contract.
 - Airflow version from `infra/local/versions.txt` with `LocalExecutor`
 - Postgres metadata database
 - Mounted repo directories for DAGs, ingestion, dbt, contracts, local published data, and logs
+
+`orchestration/dags` is mounted when present. The directory is part of the target repo
+layout, but no DAGs are tracked yet.
 
 ## Mounts
 
