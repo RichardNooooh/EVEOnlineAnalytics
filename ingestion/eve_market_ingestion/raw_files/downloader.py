@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
+from contextlib import closing
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,8 +37,7 @@ def download_with_sha256(
 ) -> DownloadResult:
     """Stream a URL to temp_path while computing sha256."""
     temp_path.parent.mkdir(parents=True, exist_ok=True)
-    response = http_client.get(url, stream=True)
-    try:
+    with closing(http_client.get(url, stream=True)) as response:
         if response.status_code >= 400:
             msg = f"Unexpected Everef download status HTTP {response.status_code} for {url}"
             raise RuntimeError(msg)
@@ -51,9 +51,5 @@ def download_with_sha256(
                 digest.update(chunk)
                 downloaded_size += len(chunk)
                 file_obj.write(chunk)
-    finally:
-        close = getattr(response, "close", None)
-        if close is not None:
-            close()
 
     return DownloadResult(sha256=digest.hexdigest(), downloaded_size=downloaded_size)
