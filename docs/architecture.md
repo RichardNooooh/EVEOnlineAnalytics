@@ -8,13 +8,15 @@ The platform uses **DuckLake tables as the canonical analytical table contract**
 - **Physical storage:** Parquet files stored on shared storage under the DuckLake table
   format.
 - **Catalog state:** DuckLake catalog metadata is durable state and must be backed up
-  with the data files.
+  with the data files. Production-style or mounted/shared deployments use PostgreSQL;
+  local SQLite catalogs are for local smoke tests only.
 - **Shared durable state:** DuckLake data files, catalog metadata, schema contracts,
   MLflow artifacts, and Airflow logs.
 - **Compute state:** local or transient execution state such as DuckDB work databases.
 - **Service boundary:** Kubernetes runs the application workloads, while PostgreSQL runs
   as an external infrastructure dependency on its own Proxmox VM.
 - **Forbidden pattern:** no cluster-shared writable `.duckdb` file.
+- **Guardrail:** mounted/shared DuckLake storage with a SQLite catalog is rejected.
 
 ## Storage vs Compute
 
@@ -47,6 +49,10 @@ Airflow
   -> ML training, dashboards, and APIs consume published table state
 ```
 
+Ingestion source and pipeline code extracts and validates records; DuckLake destination
+configuration and publication-specific storage/catalog policy live at the ingestion
+publisher boundary.
+
 ## Local Development/Demo Runtime
 
 The repository includes a local Docker Compose Airflow + dlt runtime for fast
@@ -63,6 +69,11 @@ Local-to-production mapping:
 - local Postgres approximates the Airflow metadata database
 - bind-mounted DAGs and source code approximate the deployed Airflow image or DAG/code
   sync mechanism
+
+Local smoke runs may use the default SQLite DuckLake catalog. Any run using mounted
+DuckLake storage, including `--storage-target mounted` or an explicit mounted
+`EVE_MARKET_DUCKLAKE_STORAGE`, must use a non-local catalog such as PostgreSQL through
+`--ducklake-catalog` or `EVE_MARKET_DUCKLAKE_CATALOG`.
 
 Local commands:
 

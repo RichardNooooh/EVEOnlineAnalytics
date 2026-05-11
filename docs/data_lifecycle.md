@@ -47,6 +47,10 @@ The writer commits the validated change into the canonical DuckLake table state.
 sources that can revise prior files, the replacement scope must be explicit, such as the
 Everef market-history source `date`.
 
+For ingestion jobs, DuckLake destination configuration is part of the publisher
+boundary: the publisher resolves the catalog, storage path, and publication guardrails
+before committing data.
+
 ### 5. Consume
 
 Downstream readers such as dbt, ML jobs, dashboards, and APIs consume only published
@@ -67,6 +71,8 @@ The architecture expects source corrections and replay.
 - readers may be concurrent
 - unpublished temporary output must not be treated as visible state
 - retry logic must preserve idempotent publication semantics
+- mounted/shared DuckLake storage must use a non-local durable catalog such as
+  PostgreSQL; local SQLite catalogs are limited to local smoke tests
 
 ## Planned dbt Lifecycle
 

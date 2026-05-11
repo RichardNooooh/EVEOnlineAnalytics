@@ -25,8 +25,9 @@ By default, standalone CLI output uses DuckLake with a local SQLite catalog and 
 DuckLake storage under `ingestion/.local/ducklake/everef_market_history`.
 
 For Airflow or Kubernetes, mount the shared NFS PVC into the worker/pod and use the
-mounted storage target. Production-style workloads should also use a PostgreSQL
-DuckLake catalog; otherwise the catalog still defaults to local SQLite for smoke tests.
+mounted storage target. Mounted/shared DuckLake storage requires a non-local durable
+catalog such as PostgreSQL. The local SQLite catalog default is only for local smoke
+tests, and mounted DuckLake storage with a SQLite catalog is rejected.
 
 ```bash
 uv --project ingestion run eve-market-ingest everef-market-history \
@@ -66,7 +67,14 @@ export EVE_MARKET_DUCKLAKE_STORAGE=file:///opt/eve-market/data/ducklake/everef/m
 ```
 
 Set `EVE_MARKET_DUCKLAKE_NAME` and `EVE_MARKET_DUCKLAKE_CATALOG` to override the
-DuckLake attach name and catalog URL for scheduled workloads.
+DuckLake attach name and catalog URL for scheduled workloads. Use
+`EVE_MARKET_DUCKLAKE_CATALOG` or `--ducklake-catalog` for the PostgreSQL catalog URL
+when `--storage-target mounted` or a mounted `EVE_MARKET_DUCKLAKE_STORAGE` path is used.
+
+DuckLake destination configuration is resolved by the ingestion publisher layer rather
+than by the source reader: the publisher applies the catalog and storage precedence,
+creates local smoke-test paths when appropriate, and enforces the mounted-storage
+catalog guardrail.
 
 Validate the locked ingestion environment and tests from the ingestion project root:
 
@@ -190,10 +198,11 @@ and local DuckLake storage stay under
 `ingestion/.local/ducklake/everef_market_history`. The mounted storage path is
 `/opt/eve-market/data/ducklake/everef/market_history`.
 
-Use a local SQLite DuckLake catalog for local development and smoke tests. Prefer a
+Use a local SQLite DuckLake catalog only for local development and smoke tests. Use a
 PostgreSQL DuckLake catalog for production-style Airflow or Kubernetes deployments, with
-DuckLake data files on mounted shared storage. Do not place a shared writable `.duckdb`
-file on RWX/NFS.
+DuckLake data files on mounted shared storage. Mounted DuckLake storage selected by
+`--storage-target mounted` or by an explicit/env mounted storage path is rejected when
+the resolved catalog is SQLite. Do not place a shared writable `.duckdb` file on RWX/NFS.
 
 DuckLake uses the DuckDB engine internally. If DuckDB is used for local experiments,
 keep any writable `.duckdb` database on local or pod-scratch storage and never place a

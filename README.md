@@ -16,6 +16,10 @@ storage under `.local/data`.
 This runtime is a development harness, not production. It does not replace the
 canonical k3s + Helm architecture documented in `docs/architecture.md`.
 
+Local SQLite DuckLake catalogs are for local smoke tests only. Mounted/shared DuckLake
+storage requires a non-local durable catalog such as PostgreSQL; ingestion rejects
+mounted DuckLake storage with a SQLite catalog.
+
 Production mapping:
 
 - `.local/data` approximates TrueNAS NFS DuckLake data-file storage
