@@ -11,15 +11,15 @@ import dlt
 from dlt.destinations import ducklake
 from dlt.destinations.impl.ducklake.configuration import DuckLakeCredentials
 
-from eve_market_ingestion.everef_market_history_files import BASE_URL
-from eve_market_ingestion.raw_files.config import resolve_raw_files_config
-from eve_market_ingestion.raw_files.everef import acquire_everef_market_history_files
-from eve_market_ingestion.sources.everef_market_history import (
+from ingest.everef_files import BASE_URL
+from ingest.raw_files.config import resolve_raw_files_config
+from ingest.raw_files.everef import acquire_everef_market_history_files
+from ingest.sources.everef import (
     RAW_CACHE_INPUT_SOURCE,
     URL_INPUT_SOURCE,
     everef_market_history_source,
 )
-from eve_market_ingestion.storage_config import (
+from ingest.storage_config import (
     DATA_ROOT_ENV_VAR as DATA_ROOT_ENV_VAR,
     DEFAULT_MOUNTED_DATA_ROOT as DEFAULT_MOUNTED_DATA_ROOT,
     LOCAL_STORAGE_TARGET,

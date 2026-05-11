@@ -15,23 +15,23 @@ import dlt
 import pandas as pd
 from dlt.sources.helpers import requests
 
-from eve_market_ingestion.contracts.market_history import (
+from ingest.contracts.market_history import (
     MARKET_HISTORY_COLUMNS,
     MARKET_HISTORY_PRIMARY_KEY,
     validate_market_history_chunk,
 )
-from eve_market_ingestion.everef_market_history_files import (
+from ingest.everef_files import (
     BASE_URL,
     iter_dates,
     market_history_file_url,
     parse_market_history_date,
     update_market_history_file_metadata,
 )
-from eve_market_ingestion.raw_files.config import (
+from ingest.raw_files.config import (
     LOCAL_STORAGE_TARGET,
     resolve_raw_files_config,
 )
-from eve_market_ingestion.raw_files.everef import (
+from ingest.raw_files.everef import (
     list_cached_everef_market_history_files,
 )
 

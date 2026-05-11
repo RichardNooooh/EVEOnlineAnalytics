@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import logging
 
-from eve_market_ingestion.everef_market_history_files import BASE_URL
-from eve_market_ingestion.pipelines.everef import (
+from ingest.everef_files import BASE_URL
+from ingest.pipelines.everef import (
     DATA_ROOT_ENV_VAR,
     DUCKLAKE_CATALOG_ENV_VAR,
     DUCKLAKE_NAME_ENV_VAR,
@@ -15,13 +15,13 @@ from eve_market_ingestion.pipelines.everef import (
     STORAGE_TARGETS,
     run_everef_market_history_pipeline,
 )
-from eve_market_ingestion.raw_files.config import (
+from ingest.raw_files.config import (
     RAW_FILES_DB_ENV_VAR,
     RAW_FILES_ROOT_ENV_VAR,
     resolve_raw_files_config,
 )
-from eve_market_ingestion.raw_files.everef import acquire_everef_market_history_files
-from eve_market_ingestion.sources.everef_market_history import (
+from ingest.raw_files.everef import acquire_everef_market_history_files
+from ingest.sources.everef import (
     INPUT_SOURCES,
     URL_INPUT_SOURCE,
 )

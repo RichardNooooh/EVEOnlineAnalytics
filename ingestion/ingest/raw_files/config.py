@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from eve_market_ingestion.storage_config import (
+from ingest.storage_config import (
     DATA_ROOT_ENV_VAR as DATA_ROOT_ENV_VAR,
     DEFAULT_MOUNTED_DATA_ROOT as DEFAULT_MOUNTED_DATA_ROOT,
     LOCAL_STORAGE_TARGET,

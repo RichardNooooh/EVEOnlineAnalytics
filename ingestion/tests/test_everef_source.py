@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from eve_market_ingestion.sources import everef_market_history as source
+from ingest.sources import everef as source
 
 
 class FakeProbeClient:

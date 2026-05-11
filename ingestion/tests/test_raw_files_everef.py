@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from eve_market_ingestion.raw_files.config import MOUNTED_STORAGE_TARGET
-from eve_market_ingestion.raw_files.config import RawFilesConfig
-from eve_market_ingestion.raw_files.config import RAW_FILES_DB_ENV_VAR
-from eve_market_ingestion.raw_files.config import RAW_FILES_ROOT_ENV_VAR
-from eve_market_ingestion.raw_files.config import resolve_raw_files_config
-from eve_market_ingestion.raw_files.everef import acquire_everef_market_history_files
-from eve_market_ingestion.raw_files.everef import (
+from ingest.raw_files.config import MOUNTED_STORAGE_TARGET
+from ingest.raw_files.config import RawFilesConfig
+from ingest.raw_files.config import RAW_FILES_DB_ENV_VAR
+from ingest.raw_files.config import RAW_FILES_ROOT_ENV_VAR
+from ingest.raw_files.config import resolve_raw_files_config
+from ingest.raw_files.everef import acquire_everef_market_history_files
+from ingest.raw_files.everef import (
     list_cached_everef_market_history_files,
 )
 
