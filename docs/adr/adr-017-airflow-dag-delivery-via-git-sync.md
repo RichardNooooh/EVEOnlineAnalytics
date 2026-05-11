@@ -30,9 +30,9 @@ Persistent DAG storage adds state the project does not need. In this homelab, us
 PVC for DAG files also creates avoidable operational risk when the underlying storage is
 an NFS-backed volume on TrueNAS. That includes bursty I/O, delayed file visibility,
 sync lag, and other difficult-to-reason-about runtime behavior. The project already uses
-shared NFS for durable artifacts such as published datasets, manifests, MLflow
-artifacts, and Airflow logs. DAG source code should not be treated as part of that
-durable storage contract.
+shared NFS for durable artifacts such as DuckLake data files, manifests/contracts,
+MLflow artifacts, and Airflow logs. DAG source code should not be treated as part of
+that durable storage contract.
 
 ## Decision
 

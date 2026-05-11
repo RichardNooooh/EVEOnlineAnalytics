@@ -2,27 +2,30 @@
 
 ## Purpose
 
-This document defines the planned shared-storage layout for the single-writer Parquet
-architecture.
+This document defines the planned shared-storage layout for DuckLake tables backed by
+Parquet data files.
 
 ## Shared NFS Root
 
 ```text
 /mnt/tank/eve-market/
 ├── datasets/
-│   ├── raw/
-│   ├── curated/
+│   ├── ducklake/
+│   │   ├── raw/
+│   │   └── curated/
 │   ├── manifests/
 │   └── contracts/
 ├── mlflow/
 └── airflow-logs/
 ```
 
-`datasets/` is the durable analytical storage root.
+`datasets/ducklake/` is the durable analytical data-file root. In production-style
+deployments, the DuckLake catalog should use PostgreSQL rather than a SQLite file on
+shared NFS.
 
 ## Dataset Naming
 
-Planned dataset naming convention:
+Planned table naming convention:
 
 - `raw_market_history`
 - `raw_market_orders`
@@ -30,21 +33,20 @@ Planned dataset naming convention:
 - `curated_trade_volume`
 - `feat_item_daily`
 
-Use stable, descriptive names that reflect a published contract rather than an
+Use stable, descriptive names that reflect a published table contract rather than an
 implementation detail.
 
 ## Example Dataset Layout
 
 ```text
 datasets/
-├── raw/
-│   ├── raw_market_history/
-│   │   └── source=esi/region_id=10000002/date=2026-04-13/
-│   └── raw_market_orders/
-│       └── source=everef/region_id=10000002/snapshot_date=2026-04-13/
-├── curated/
-│   ├── curated_daily_prices/
-│   └── feat_item_daily/
+├── ducklake/
+│   ├── raw/
+│   │   ├── raw_market_history/
+│   │   └── raw_market_orders/
+│   └── curated/
+│       ├── curated_daily_prices/
+│       └── feat_item_daily/
 ├── manifests/
 │   └── <dataset-name>/
 └── contracts/
@@ -53,19 +55,21 @@ datasets/
 
 ## Partitioning Guidance
 
-Partitioning should be driven by reader and writer behavior.
+Table partitioning and replacement scope should be driven by reader and writer behavior.
 
 Current planned rules:
 
-- market history datasets partition by `source`, `region_id`, and `date`
-- market order snapshot datasets partition by `source`, `region_id`, and snapshot time
+- market history tables use `date` as the primary Everef replacement scope and include
+  `source`, `region_id`, and `type_id`
+- market order snapshot tables partition by `source`, `region_id`, and snapshot time
   bucket such as `snapshot_date` or a timestamp partition
-- curated datasets partition by the smallest stable unit that supports rebuild and
+- curated tables partition by the smallest stable unit that supports rebuild and
   efficient downstream reads, typically `date` and optionally `region_id`
 
 ## Manifest Contract
 
-Each published dataset should eventually have a manifest that records at least:
+DuckLake catalog and table metadata are the primary publication boundary readers trust.
+Supplemental manifests may record at least:
 
 - dataset name
 - publication timestamp
@@ -73,7 +77,7 @@ Each published dataset should eventually have a manifest that records at least:
 - partition set included in the publication
 - schema or contract version
 
-The manifest is the publication boundary readers trust.
+The manifest is supporting metadata, not a replacement for DuckLake catalog state.
 
 ## Scratch Storage Is Separate
 
@@ -81,4 +85,4 @@ Scratch compute state is not part of the shared layout above.
 
 - local DuckDB work DBs belong on pod-local scratch
 - temporary publication paths must be treated as unpublished
-- shared durable storage is only for published dataset state and supporting metadata
+- shared durable storage is only for published table data files and supporting metadata

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document captures source-level field contracts and the planned dataset-oriented
+This document captures source-level field contracts and the planned DuckLake-backed
 publishing model.
 
 ## Source: ESI Market History
@@ -39,11 +39,12 @@ Expected contract elements:
 - type identifier
 - observation date
 - source fields preserved with documented semantic quirks
-- publication metadata recorded in manifests rather than requiring a mutable database
+- publication metadata recorded through DuckLake catalog state, contracts, and
+  supplemental manifests where useful
 
 ### `raw_market_orders`
 
-Durable Parquet representation of market order snapshots.
+Durable DuckLake-backed representation of market order snapshots.
 
 Expected contract elements:
 
@@ -66,7 +67,8 @@ Examples:
 
 ## Publication Contract Notes
 
-- published Parquet datasets are the system of record
-- schemas should be versioned through contracts and manifests
+- DuckLake tables are the system of record
+- Parquet files are the physical storage format below DuckLake
+- schemas should be versioned through contracts and supplemental manifests
 - dbt and batch compute may use transient local DuckDB state, but that state is not
   canonical storage

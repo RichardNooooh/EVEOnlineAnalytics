@@ -8,6 +8,7 @@ amended:
   - 2026-04-13
   - 2026-04-14
   - 2026-04-18
+  - 2026-05-10
 ---
 
 # ADR 002 - Tools Used and Not Used
@@ -30,9 +31,9 @@ The stack is defined by the two tables below.
 |---|---|---|
 | **Orchestration** | Airflow | Industry-standard DAG orchestrator; KubernetesPodOperator enables isolated pod-per-task execution for ingestion, dbt, and ML jobs. |
 | **Ingestion** | Python + dlt | Lightweight, code-first ingestion approach for everef.net archives and the ESI API. See ADR-014. |
-| **Storage** | Parquet datasets on TrueNAS (ZFS RAIDZ1) + NFS | Shared storage holds the published raw and curated datasets, manifests, contracts, artifacts, and logs. Published Parquet datasets are the system of record. See ADR-016. |
+| **Storage** | DuckLake over Parquet files on TrueNAS (ZFS RAIDZ1) + NFS | Shared storage holds DuckLake data files, contracts, artifacts, and logs. DuckLake catalog metadata is durable state and should use PostgreSQL in production-style deployments. See ADR-016 and ADR-020. |
 | **Compute** | DuckDB (local or transient only) | Embedded analytical engine used for local development and single-writer batch jobs. DuckDB databases are scratch state, not cluster-shared persistent storage. See ADR-016. |
-| **Transformation** | dbt | SQL-first transformation with built-in lineage, testing, and documentation; planned to read Parquet-backed sources and publish curated outputs. |
+| **Transformation** | dbt | SQL-first transformation with built-in lineage, testing, and documentation; planned to read DuckLake-backed table state through a validated DuckLake/DuckDB handoff. |
 | **BI** | Tableau | Portfolio-standard BI tool for dashboard presentation; Tableau Public enables sharing without licensing cost. |
 | **ML Experiment Tracking** | MLflow | Tracks experiments, parameters, metrics, and model artifacts; integrates cleanly with Python training scripts and serves as the model registry. |
 | **ML Serving** | BentoML | Packages trained models as REST APIs with health checks and rolling restarts under k3s. |
@@ -41,7 +42,7 @@ The stack is defined by the two tables below.
 | **Container Platform** | k3s (Kubernetes) | Lightweight Kubernetes distribution appropriate for a 3-node homelab cluster; preserves full Kubernetes API compatibility. See ADR-003. |
 | **App Deployment** | Helm | Kubernetes-native package manager; used for workloads that are intentionally deployed inside `k3s`. |
 | **IaC - VM Provisioning** | OpenTofu + `bpg/proxmox` | Declarative VM provisioning via the actively maintained `bpg/proxmox` provider; OpenTofu is the open-source Terraform fork. See ADR-010. |
-| **IaC - Cluster Bootstrap** | Ansible (`k3s-io/k3s-ansible`) | Handles HA etcd bootstrap, node configuration, NFS client setup, and kubeconfig retrieval. See ADR-010. |
+| **IaC - Cluster Bootstrap** | Ansible custom roles | Handles HA etcd bootstrap, node configuration, NFS client setup, and kubeconfig retrieval. See ADR-010. |
 | **Ingress** | Traefik (k3s built-in) | Bundled with k3s; routes all HTTP/S services by hostname. See ADR-012. |
 | **Load Balancer** | ServiceLB / Klipper (k3s built-in) | Handles the external `LoadBalancer` service footprint required for the homelab cluster. See ADR-012. |
 | **Stable API VIP** | kube-vip (DaemonSet) | Provides a stable virtual IP for `kubectl` access from the management workstation; survives individual node failure. See ADR-015. |
@@ -60,7 +61,7 @@ The stack is defined by the two tables below.
 |---|---|
 | **Airbyte** | Removed after evaluation. The project has two well-defined source types, does not need Airbyte's platform overhead, and is moving toward explicit single-writer dataset publication rather than syncs into a mutable destination warehouse. See ADR-014. |
 | **Great Expectations** | Overlaps with dbt tests. dbt tests cover schema, business logic, freshness, and custom assertions sufficiently for this project's scope. |
-| **DVC** | Published Parquet datasets, manifests, and MLflow already cover persisted analytical data and model artifacts. DVC would add a parallel versioning system with no clear incremental benefit at this scale. |
+| **DVC** | DuckLake tables, catalog metadata, contracts, manifests, and MLflow already cover persisted analytical data and model artifacts. DVC would add a parallel versioning system with no clear incremental benefit at this scale. |
 | **PowerBI** | Tableau is the sole BI tool. Adding a second BI tool provides no incremental portfolio value and splits effort. |
 | **MetalLB** | ServiceLB (k3s built-in) handles the external `LoadBalancer` footprint needed here. See ADR-012. |
 | **Docker Compose** | Kubernetes-managed application workloads deploy via Helm on k3s. External infrastructure services such as PostgreSQL may still run on separate Proxmox VMs. See ADR-003 and ADR-018. |
@@ -78,8 +79,9 @@ The stack is defined by the two tables below.
 - 2026-04-13 - Storage and compute were separated
   - The earlier taxonomy implicitly treated DuckDB as both storage and compute.
     Following ADR-016, the stack now distinguishes shared storage from local or
-    transient compute. Parquet datasets on shared NFS are the persisted system of
-    record. DuckDB remains in the stack as a local analytical engine only.
+    transient compute. This was later refined by ADR-020 so DuckLake tables are the
+    canonical analytical table contract and Parquet is the physical file format.
+    DuckDB remains in the stack as a local analytical engine only.
 
 - 2026-04-14 - Infra validation tooling was documented explicitly
   - `pre-commit` is now part of the documented local validation path for
@@ -93,3 +95,9 @@ The stack is defined by the two tables below.
     not for every stateful dependency in the homelab.
   - External PostgreSQL is now explicitly treated as a separate Proxmox VM
     rather than another service deployed inside `k3s`.
+
+- 2026-05-10 - Refine storage contract for DuckLake
+  - ADR-020 adopts DuckLake as the canonical analytical table format. Parquet remains
+    the physical data file format rather than the table contract.
+  - The checked-in Ansible layer uses project-specific roles rather than an upstream
+    k3s role set.
