@@ -49,7 +49,9 @@ def test_list_market_history_urls_emits_market_date_and_url() -> None:
     ]
 
 
-def test_probe_market_history_file_yields_enriched_item(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_probe_market_history_file_yields_enriched_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_client = FakeProbeClient(
         FakeResponse(
             200,
@@ -71,7 +73,10 @@ def test_probe_market_history_file_yields_enriched_item(monkeypatch: pytest.Monk
         }
     ]
     assert fake_client.calls == [("https://example.test/file.csv.bz2", True)]
-    assert item == {"market_date": "2025-01-01", "url": "https://example.test/file.csv.bz2"}
+    assert item == {
+        "market_date": "2025-01-01",
+        "url": "https://example.test/file.csv.bz2",
+    }
 
 
 def test_probe_market_history_file_skips_404(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,7 +107,9 @@ def test_probe_market_history_file_raises_on_request_exception(
         list(source._probe_market_history_file(_probe_item()))
 
 
-def test_read_market_history_csv_yields_chunks_with_source_metadata(tmp_path: Path) -> None:
+def test_read_market_history_csv_yields_chunks_with_source_metadata(
+    tmp_path: Path,
+) -> None:
     csv_path = _write_market_history_fixture(tmp_path, _valid_market_history_frame())
     item = {
         "market_date": "2025-01-01",
@@ -119,6 +126,30 @@ def test_read_market_history_csv_yields_chunks_with_source_metadata(tmp_path: Pa
     assert list(chunks[0]["_source_content_length"]) == [123]
     assert list(chunks[0]["_source_last_modified"]) == ["2025-01-01T12:00:00+00:00"]
     assert chunks[0]["_ingested_at"].iloc[0] == chunks[1]["_ingested_at"].iloc[0]
+
+
+def test_read_market_history_csv_reads_local_path_and_preserves_source_url(
+    tmp_path: Path,
+) -> None:
+    csv_path = _write_market_history_fixture(tmp_path, _valid_market_history_frame())
+    item = {
+        "market_date": "2025-01-01",
+        "url": "https://example.test/history/2025/market-history-2025-01-01.csv.bz2",
+        "local_path": str(csv_path),
+        "sha256": "abc123",
+        "downloaded_at": "2025-01-01T12:00:00+00:00",
+    }
+
+    chunks = list(source._read_market_history_csv(item, chunksize=10))
+
+    assert len(chunks) == 1
+    assert list(chunks[0]["_source_url"]) == [item["url"], item["url"]]
+    assert list(chunks[0]["_source_local_path"]) == [str(csv_path), str(csv_path)]
+    assert list(chunks[0]["_source_sha256"]) == ["abc123", "abc123"]
+    assert list(chunks[0]["_source_downloaded_at"]) == [
+        "2025-01-01T12:00:00+00:00",
+        "2025-01-01T12:00:00+00:00",
+    ]
 
 
 def test_read_market_history_csv_uses_ducklake_merge_hints() -> None:
@@ -139,7 +170,9 @@ def test_read_market_history_csv_rejects_non_positive_chunksize(tmp_path: Path) 
         list(source._read_market_history_csv(_read_item(csv_path), chunksize=0))
 
 
-def test_read_market_history_csv_raises_on_missing_required_column(tmp_path: Path) -> None:
+def test_read_market_history_csv_raises_on_missing_required_column(
+    tmp_path: Path,
+) -> None:
     frame = _valid_market_history_frame().drop(columns=["volume"])
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
@@ -156,9 +189,14 @@ def test_read_market_history_csv_raises_on_null_primary_key(tmp_path: Path) -> N
         list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
 
 
-def test_read_market_history_csv_raises_on_duplicate_primary_key(tmp_path: Path) -> None:
+def test_read_market_history_csv_raises_on_duplicate_primary_key(
+    tmp_path: Path,
+) -> None:
     frame = pd.concat(
-        [_valid_market_history_frame().iloc[[0]], _valid_market_history_frame().iloc[[0]]],
+        [
+            _valid_market_history_frame().iloc[[0]],
+            _valid_market_history_frame().iloc[[0]],
+        ],
         ignore_index=True,
     )
     csv_path = _write_market_history_fixture(tmp_path, frame)
@@ -189,7 +227,9 @@ def test_read_market_history_csv_raises_on_date_mismatch(tmp_path: Path) -> None
         list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
 
 
-def test_read_market_history_csv_raises_on_negative_numeric_value(tmp_path: Path) -> None:
+def test_read_market_history_csv_raises_on_negative_numeric_value(
+    tmp_path: Path,
+) -> None:
     frame = _valid_market_history_frame()
     frame.loc[0, "volume"] = -1
     csv_path = _write_market_history_fixture(tmp_path, frame)
@@ -198,7 +238,9 @@ def test_read_market_history_csv_raises_on_negative_numeric_value(tmp_path: Path
         list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
 
 
-def test_read_market_history_csv_raises_on_read_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_market_history_csv_raises_on_read_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fail_read_csv(*args, **kwargs):
         raise OSError("cannot read")
 

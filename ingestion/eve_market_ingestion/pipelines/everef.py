@@ -11,7 +11,13 @@ import dlt
 from dlt.destinations import ducklake
 from dlt.destinations.impl.ducklake.configuration import DuckLakeCredentials
 
+from eve_market_ingestion.everef_market_history_files import BASE_URL
+from eve_market_ingestion.raw_files.config import resolve_raw_files_config
+from eve_market_ingestion.raw_files.everef import acquire_everef_market_history_files
 from eve_market_ingestion.sources.everef_market_history import (
+    INPUT_SOURCES,
+    RAW_CACHE_INPUT_SOURCE,
+    URL_INPUT_SOURCE,
     everef_market_history_source,
 )
 
@@ -180,10 +186,18 @@ def run_everef_market_history_pipeline(
     data_root: str | None = None,
     base_url: str | None = None,
     chunksize: int | None = None,
+    input_source: str = URL_INPUT_SOURCE,
+    sync_raw: bool = False,
+    raw_root: str | None = None,
+    raw_ledger_db: str | None = None,
     loader_file_format: str = "parquet",
     dev_mode: bool = False,
 ) -> Any:
     """Run the Everef market history source through a dlt pipeline."""
+    if input_source not in INPUT_SOURCES:
+        msg = f"input_source must be one of {', '.join(INPUT_SOURCES)}"
+        raise ValueError(msg)
+
     destination_config = build_destination_config(
         destination,
         ducklake_name,
@@ -205,6 +219,29 @@ def run_everef_market_history_pipeline(
         source_kwargs["base_url"] = base_url
     if chunksize is not None:
         source_kwargs["chunksize"] = chunksize
+    if raw_root is not None:
+        source_kwargs["raw_root"] = raw_root
+    if raw_ledger_db is not None:
+        source_kwargs["raw_ledger_db"] = raw_ledger_db
+
+    effective_input_source = RAW_CACHE_INPUT_SOURCE if sync_raw else input_source
+    source_kwargs["input_source"] = effective_input_source
+    source_kwargs["storage_target"] = storage_target
+    source_kwargs["data_root"] = data_root
+
+    if sync_raw:
+        config = resolve_raw_files_config(
+            raw_root=raw_root,
+            db_path=raw_ledger_db,
+            storage_target=storage_target,
+            data_root=data_root,
+        )
+        acquire_everef_market_history_files(
+            start_date,
+            end_date,
+            base_url=base_url or BASE_URL,
+            config=config,
+        )
 
     return pipeline.run(
         everef_market_history_source(start_date, end_date, **source_kwargs),
