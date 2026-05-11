@@ -144,7 +144,7 @@ metadata such as Everef `totals.json`, `ETag`, or an explicit force-refresh opti
 The same command can be run through the module entrypoint:
 
 ```bash
-uv --project ingestion run python -m eve_market_ingestion.cli everef-market-history \
+uv --project ingestion run python -m ingest.cli everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31
 ```

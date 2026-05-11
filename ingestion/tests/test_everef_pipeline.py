@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from eve_market_ingestion.pipelines import everef
+from ingest.pipelines import everef
 
 
 class FakeDuckLakeCredentials:
@@ -395,6 +395,6 @@ def test_cli_accepts_raw_cache_input_options() -> None:
 
 
 def everef_cli_parser():
-    from eve_market_ingestion.cli import build_parser
+    from ingest.cli import build_parser
 
     return build_parser()
