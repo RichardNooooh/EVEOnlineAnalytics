@@ -6,19 +6,21 @@ expected daily files, then streams available CSVs in pandas chunks into dlt.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from email.utils import parsedate_to_datetime
-import logging
 from typing import Any
 
 import dlt
-from dlt.sources.helpers import requests
 import pandas as pd
+from dlt.sources.helpers import requests
 
-from eve_market_ingestion.contracts.market_history import MARKET_HISTORY_COLUMNS
-from eve_market_ingestion.contracts.market_history import MARKET_HISTORY_PRIMARY_KEY
-from eve_market_ingestion.contracts.market_history import validate_market_history_chunk
+from eve_market_ingestion.contracts.market_history import (
+    MARKET_HISTORY_COLUMNS,
+    MARKET_HISTORY_PRIMARY_KEY,
+    validate_market_history_chunk,
+)
 
 BASE_URL = "https://data.everef.net/market-history"
 DEFAULT_CHUNKSIZE = 20_000
@@ -148,8 +150,9 @@ def _probe_market_history_file(item: dict[str, str]) -> Iterator[dict[str, Any]]
 @dlt.transformer(
     name="market_history",
     parallelized=True,
-    write_disposition="replace",
+    write_disposition={"disposition": "merge", "strategy": "delete-insert"},
     primary_key=MARKET_HISTORY_PRIMARY_KEY,
+    merge_key="date",
     columns=MARKET_HISTORY_COLUMNS,
 )
 def read_market_history_csv(
@@ -195,7 +198,6 @@ def _read_market_history_csv(
                 raise ValueError(msg)
             seen_primary_keys.update(chunk_keys)
 
-            chunk["_source_market_date"] = item["market_date"]
             chunk["_source_url"] = file_url
             chunk["_source_content_length"] = item.get("content_length")
             chunk["_source_last_modified"] = item.get("last_modified")
