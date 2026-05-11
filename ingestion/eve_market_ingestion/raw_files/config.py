@@ -6,13 +6,19 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-DATA_ROOT_ENV_VAR = "EVE_MARKET_DATA_ROOT"
+from eve_market_ingestion.storage_config import (
+    DATA_ROOT_ENV_VAR as DATA_ROOT_ENV_VAR,
+    DEFAULT_MOUNTED_DATA_ROOT as DEFAULT_MOUNTED_DATA_ROOT,
+    LOCAL_STORAGE_TARGET,
+    MOUNTED_STORAGE_TARGET,
+    STORAGE_TARGETS,
+    ingestion_root,
+    mounted_data_root_path,
+    resolve_mounted_data_root,
+)
+
 RAW_FILES_ROOT_ENV_VAR = "EVE_MARKET_RAW_FILES_ROOT"
 RAW_FILES_DB_ENV_VAR = "EVE_MARKET_RAW_FILES_DB"
-LOCAL_STORAGE_TARGET = "local"
-MOUNTED_STORAGE_TARGET = "mounted"
-STORAGE_TARGETS = (LOCAL_STORAGE_TARGET, MOUNTED_STORAGE_TARGET)
-DEFAULT_MOUNTED_DATA_ROOT = "/opt/eve-market/data"
 
 
 @dataclass(frozen=True)
@@ -23,11 +29,6 @@ class RawFilesConfig:
     db_path: Path
 
 
-def ingestion_root() -> Path:
-    """Return the standalone ingestion project root."""
-    return Path(__file__).resolve().parents[2]
-
-
 def local_raw_files_root() -> Path:
     """Return the repo-local raw source-file cache root."""
     return ingestion_root() / ".local/raw"
@@ -35,28 +36,7 @@ def local_raw_files_root() -> Path:
 
 def mounted_raw_files_root(data_root: str) -> Path:
     """Return the mounted raw source-file cache root under data root."""
-    if not data_root.strip():
-        msg = "data_root must not be empty"
-        raise ValueError(msg)
-    return Path(data_root).expanduser().resolve() / "raw"
-
-
-def resolve_mounted_data_root(data_root: str | None = None) -> str:
-    """Resolve mounted data root by explicit, env, then default precedence."""
-    if data_root is not None:
-        if not data_root.strip():
-            msg = "data_root must not be empty"
-            raise ValueError(msg)
-        return data_root
-
-    env_data_root = os.getenv(DATA_ROOT_ENV_VAR)
-    if env_data_root is not None:
-        if not env_data_root.strip():
-            msg = f"{DATA_ROOT_ENV_VAR} must not be empty"
-            raise ValueError(msg)
-        return env_data_root
-
-    return DEFAULT_MOUNTED_DATA_ROOT
+    return mounted_data_root_path(data_root) / "raw"
 
 
 def raw_files_root_for_target(
