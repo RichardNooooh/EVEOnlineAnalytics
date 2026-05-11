@@ -53,6 +53,12 @@ Ingestion source and pipeline code extracts and validates records; DuckLake dest
 configuration and publication-specific storage/catalog policy live at the ingestion
 publisher boundary.
 
+For Everef ingestion, URL construction, source-date iteration, and HTTP probe metadata
+belong to the canonical client module `ingest.clients.everef`. Market-history schema,
+primary keys, and validation belong to `ingest.contracts.market_history`. The dlt source
+should wire those boundaries together and stream chunks rather than own client behavior
+or contract definitions.
+
 ## Local Development/Demo Runtime
 
 The repository includes a local Docker Compose Airflow + dlt runtime for fast

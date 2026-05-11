@@ -7,6 +7,24 @@ probe into reusable `dlt` code.
 Commands below assume they are run from the repository root with `uv --project
 ingestion`. If you are already in `ingestion/`, use `uv run` instead.
 
+## Implementation Boundaries
+
+Everef ingestion keeps source concerns split across small modules:
+
+- `ingest.clients.everef` is the canonical Everef client boundary. Import URL
+  construction, date iteration, and HTTP probe metadata helpers from this module.
+- `ingest.contracts.market_history` owns market-history schema, primary keys, and
+  chunk validation. The `average` field is documented there as volume-weighted average
+  price (VWAP), not median.
+- `ingest.sources.everef` defines the `dlt` source/resources and stays thin: it wires
+  client URL/probe behavior, contract schema/validation, and CSV chunk streaming.
+- `ingest.raw_files.*` owns raw cached-file acquisition and ledger behavior. The dlt
+  source can read from the cache, but the cache is not the publication contract.
+- `ingest.publishers.*` owns destination configuration, storage/catalog precedence, and
+  mounted-storage guardrails.
+
+Do not import from removed compatibility shims; use the canonical module paths above.
+
 ## Everef Market History
 
 The Everef source lists expected daily CSV archives, probes each URL with `HEAD`, then
@@ -171,6 +189,19 @@ Before loading each chunk, the source validates the expected market history cont
 required columns, non-null and unique `(date, region_id, type_id)` keys, source date
 matching the CSV filename date, numeric values, non-negative numeric fields, and
 `highest >= lowest`.
+
+Validation is chunk-local by design so large files can stream without accumulating all
+primary keys in memory. Dataset-level replacement and idempotency are handled by the
+publication contract and DuckLake merge/delete-insert behavior.
+
+## Test Guidance
+
+Prefer testing client helpers, contracts, and source generator behavior at their public
+module boundaries. Avoid reaching into dlt private internals.
+
+When a test consumes a dlt resource or transformer generator, collect a bounded number
+of yielded values with `itertools.islice` or an equivalent helper. Do not materialize a
+full date range or a full CSV stream unless the fixture is intentionally tiny.
 
 Useful options:
 
