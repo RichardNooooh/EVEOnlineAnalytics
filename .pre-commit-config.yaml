@@ -10,6 +10,11 @@ repos:
       - id: end-of-file-fixer
   - repo: local
     hooks:
+      - id: python-ruff-format
+        name: python ruff format
+        entry: ruff format
+        language: system
+        files: \.(py|pyi)$
       - id: infra-ansible-lint
         name: infra ansible lint
         entry: make -C infra ansible-lint

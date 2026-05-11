@@ -6,10 +6,16 @@ LOCAL_COMPOSE := docker compose --env-file $(LOCAL_AIRFLOW_ENV) --env-file $(LOC
 
 .DEFAULT_GOAL := help
 
-.PHONY: help local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke
+.PHONY: help python-format python-format-check local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+python-format: ## Format Python files with Ruff
+	ruff format .
+
+python-format-check: ## Check Python formatting with Ruff
+	ruff format --check .
 
 local-airflow-env:
 	@test -f $(LOCAL_AIRFLOW_ENV) || { echo "ERROR: missing $(LOCAL_AIRFLOW_ENV). Copy infra/local/.env.example first."; exit 1; }
