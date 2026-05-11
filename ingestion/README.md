@@ -25,13 +25,15 @@ By default, standalone CLI output uses DuckLake with a local SQLite catalog and 
 DuckLake storage under `ingestion/.local/ducklake/everef_market_history`.
 
 For Airflow or Kubernetes, mount the shared NFS PVC into the worker/pod and use the
-mounted storage target:
+mounted storage target. Production-style workloads should also use a PostgreSQL
+DuckLake catalog; otherwise the catalog still defaults to local SQLite for smoke tests.
 
 ```bash
 uv --project ingestion run eve-market-ingest everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
-  --storage-target mounted
+  --storage-target mounted \
+  --ducklake-catalog postgresql://user:password@postgres.example/eve_market_ducklake
 ```
 
 The mounted DuckLake storage target resolves to
@@ -66,6 +68,12 @@ export EVE_MARKET_DUCKLAKE_STORAGE=file:///opt/eve-market/data/ducklake/everef/m
 Set `EVE_MARKET_DUCKLAKE_NAME` and `EVE_MARKET_DUCKLAKE_CATALOG` to override the
 DuckLake attach name and catalog URL for scheduled workloads.
 
+Validate the locked ingestion environment and tests from the ingestion project root:
+
+```bash
+uv run --locked pytest
+```
+
 ## Raw Source-File Cache
 
 Raw source-file acquisition is separate from dlt loading. It downloads Everef CSV
@@ -90,10 +98,12 @@ data root:
 uv --project ingestion run eve-market-ingest raw-files sync-everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
-  --storage-target mounted
+  --storage-target mounted \
+  --data-root /mnt/eve-market/data
 ```
 
-The mounted raw cache target resolves to `/opt/eve-market/data/raw`. Override with
+The mounted raw cache target resolves to `/opt/eve-market/data/raw` unless `--data-root`
+or `EVE_MARKET_DATA_ROOT` changes the mounted root. Override the raw cache directly with
 `--raw-root` or `EVE_MARKET_RAW_FILES_ROOT`. Override the SQLite ledger path with
 `--raw-ledger-db` or `EVE_MARKET_RAW_FILES_DB`.
 
@@ -165,7 +175,7 @@ Useful options:
 - `--data-root`: mounted storage root used with `--storage-target mounted`; `EVE_MARKET_DATA_ROOT` is the environment fallback, then `/opt/eve-market/data`.
 - `--ducklake-storage`: full DuckLake storage URL override. This overrides `EVE_MARKET_DUCKLAKE_STORAGE`, which overrides `--storage-target` and `--data-root` defaults.
 - `--loader-file-format`: dlt loader file format, defaults to `parquet`.
-- `--chunksize`: pandas CSV chunk size, defaults to `20000`.
+- `--chunksize`: pandas CSV chunk size; omitted uses the source default `20000`.
 - `--base-url`: override the Everef market history base URL for testing.
 - `--input-source`: CSV read source, `url` or `raw-cache`, defaults to `url`.
 - `--sync-raw`: download raw source files first, then load from `raw-cache`.
