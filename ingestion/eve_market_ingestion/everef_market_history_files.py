@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from datetime import date, timedelta
+import logging
+from collections.abc import Iterator, Mapping, MutableMapping
+from datetime import UTC, date, timedelta
+from email.utils import parsedate_to_datetime
+from typing import Any
 
 BASE_URL = "https://data.everef.net/market-history"
 
@@ -36,3 +39,84 @@ def iter_dates(start_date: date, end_date: date) -> Iterator[date]:
 
     for offset in range((end_date - start_date).days + 1):
         yield start_date + timedelta(days=offset)
+
+
+def update_market_history_file_metadata(
+    item: MutableMapping[str, Any],
+    headers: Mapping[str, str],
+    *,
+    logger: logging.Logger,
+    warn_missing: bool = False,
+    warn_zero_content_length: bool = False,
+    positive_content_length_only: bool = True,
+) -> None:
+    """Enrich an Everef market-history source item from HTTP validators."""
+    content_length = headers.get("content-length")
+    if content_length is None:
+        if warn_missing:
+            logger.warning(
+                "Everef is missing content-length header for %s", item["url"]
+            )
+    else:
+        _update_content_length(
+            item,
+            content_length,
+            logger=logger,
+            warn_zero=warn_zero_content_length,
+            positive_only=positive_content_length_only,
+        )
+
+    last_modified = headers.get("last-modified")
+    if last_modified is None:
+        if warn_missing:
+            logger.warning("Everef is missing last-modified header for %s", item["url"])
+    else:
+        _update_last_modified(item, last_modified, logger=logger)
+
+
+def _update_content_length(
+    item: MutableMapping[str, Any],
+    content_length: str,
+    *,
+    logger: logging.Logger,
+    warn_zero: bool,
+    positive_only: bool,
+) -> None:
+    try:
+        parsed_length = int(content_length)
+    except ValueError:
+        logger.warning(
+            "Everef returned invalid content-length=%r for %s",
+            content_length,
+            item["url"],
+        )
+        return
+
+    if parsed_length == 0:
+        if warn_zero:
+            logger.warning("Everef file has content-length of 0: %s", item["url"])
+        return
+
+    if positive_only and parsed_length <= 0:
+        return
+
+    item["content_length"] = parsed_length
+
+
+def _update_last_modified(
+    item: MutableMapping[str, Any],
+    last_modified: str,
+    *,
+    logger: logging.Logger,
+) -> None:
+    try:
+        last_modified_dt = parsedate_to_datetime(last_modified)
+    except ValueError:
+        logger.warning(
+            "Everef returned invalid last-modified=%r for %s",
+            last_modified,
+            item["url"],
+        )
+        return
+
+    item["last_modified"] = last_modified_dt.astimezone(UTC).isoformat()

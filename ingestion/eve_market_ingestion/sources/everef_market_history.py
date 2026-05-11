@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
-from email.utils import parsedate_to_datetime
 from typing import Any
 
 import dlt
@@ -26,6 +25,7 @@ from eve_market_ingestion.everef_market_history_files import (
     iter_dates,
     market_history_file_url,
     parse_market_history_date,
+    update_market_history_file_metadata,
 )
 from eve_market_ingestion.raw_files.config import (
     LOCAL_STORAGE_TARGET,
@@ -46,48 +46,6 @@ _PROBE_CLIENT = requests.Client(
     raise_for_status=False,
     status_codes=(429, 500, 502, 503, 504),
 )
-
-
-def _update_content_length(item: dict[str, Any], response: requests.Response) -> None:
-    content_length = response.headers.get("content-length")
-    if content_length is None:
-        logger.warning("Everef is missing content-length header for %s", item["url"])
-        return
-
-    try:
-        parsed_length = int(content_length)
-    except ValueError:
-        logger.warning(
-            "Everef returned invalid content-length=%r for %s",
-            content_length,
-            item["url"],
-        )
-        return
-
-    if parsed_length == 0:
-        logger.warning("Everef file has content-length of 0: %s", item["url"])
-        return
-
-    item["content_length"] = parsed_length
-
-
-def _update_last_modified(item: dict[str, Any], response: requests.Response) -> None:
-    last_modified = response.headers.get("last-modified")
-    if last_modified is None:
-        logger.warning("Everef is missing last-modified header for %s", item["url"])
-        return
-
-    try:
-        last_modified_dt = parsedate_to_datetime(last_modified)
-    except ValueError:
-        logger.warning(
-            "Everef returned invalid last-modified=%r for %s",
-            last_modified,
-            item["url"],
-        )
-        return
-
-    item["last_modified"] = last_modified_dt.astimezone(UTC).isoformat()
 
 
 @dlt.resource(name="market_history_urls", selected=False)
@@ -131,8 +89,14 @@ def _probe_market_history_file(item: dict[str, str]) -> Iterator[dict[str, Any]]
         raise RuntimeError(msg)
 
     enriched_item: dict[str, Any] = dict(item)
-    _update_content_length(enriched_item, response)
-    _update_last_modified(enriched_item, response)
+    update_market_history_file_metadata(
+        enriched_item,
+        response.headers,
+        logger=logger,
+        warn_missing=True,
+        warn_zero_content_length=True,
+        positive_content_length_only=False,
+    )
 
     yield enriched_item
 
