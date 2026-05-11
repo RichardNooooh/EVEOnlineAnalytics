@@ -13,6 +13,7 @@ from typing import Any
 
 import dlt
 import pandas as pd
+import pyarrow as pa
 from dlt.sources.helpers import requests
 
 from ingest.contracts.market_history import (
@@ -39,6 +40,27 @@ DEFAULT_CHUNKSIZE = 20_000
 URL_INPUT_SOURCE = "url"
 RAW_CACHE_INPUT_SOURCE = "raw-cache"
 INPUT_SOURCES = (URL_INPUT_SOURCE, RAW_CACHE_INPUT_SOURCE)
+
+MARKET_HISTORY_ARROW_SCHEMA = pa.schema(
+    [
+        pa.field("date", pa.string(), nullable=False),
+        pa.field("region_id", pa.int64(), nullable=False),
+        pa.field("type_id", pa.int64(), nullable=False),
+        pa.field("average", pa.float64(), nullable=False),
+        pa.field("highest", pa.float64(), nullable=False),
+        pa.field("lowest", pa.float64(), nullable=False),
+        pa.field("order_count", pa.int64(), nullable=False),
+        pa.field("volume", pa.int64(), nullable=False),
+        pa.field("_source_market_date", pa.string()),
+        pa.field("_source_url", pa.string()),
+        pa.field("_source_local_path", pa.string()),
+        pa.field("_source_sha256", pa.string()),
+        pa.field("_source_content_length", pa.int64()),
+        pa.field("_source_last_modified", pa.string()),
+        pa.field("_source_downloaded_at", pa.string()),
+        pa.field("_ingested_at", pa.string()),
+    ]
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,15 +159,15 @@ def list_cached_market_history_files(
 def read_market_history_csv(
     item: dict[str, Any],
     chunksize: int = DEFAULT_CHUNKSIZE,
-) -> Iterator[pd.DataFrame]:
-    """Stream an Everef market history CSV into dlt as pandas chunks."""
+) -> Iterator[pa.Table]:
+    """Stream an Everef market history CSV into dlt as Arrow chunks."""
     yield from _read_market_history_csv(item, chunksize=chunksize)
 
 
 def _read_market_history_csv(
     item: dict[str, Any],
     chunksize: int = DEFAULT_CHUNKSIZE,
-) -> Iterator[pd.DataFrame]:
+) -> Iterator[pa.Table]:
     """Stream one Everef market history CSV without dlt parallel wrapper."""
     if chunksize <= 0:
         msg = "chunksize must be greater than 0"
@@ -188,7 +210,11 @@ def _read_market_history_csv(
             chunk["_ingested_at"] = ingested_at
 
             yielded_rows += len(chunk)
-            yield chunk
+            yield pa.Table.from_pandas(
+                chunk,
+                schema=MARKET_HISTORY_ARROW_SCHEMA,
+                preserve_index=False,
+            )
         if yielded_rows == 0:
             msg = f"Everef CSV contained no rows: {source_url}"
             raise ValueError(msg)

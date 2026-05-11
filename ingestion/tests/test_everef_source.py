@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
 import pytest
 
 from ingest.sources import everef as source
@@ -121,11 +122,17 @@ def test_read_market_history_csv_yields_chunks_with_source_metadata(
     chunks = list(source._read_market_history_csv(item, chunksize=1))
 
     assert len(chunks) == 2
-    assert list(chunks[0]["_source_market_date"]) == ["2025-01-01"]
-    assert list(chunks[0]["_source_url"]) == [str(csv_path)]
-    assert list(chunks[0]["_source_content_length"]) == [123]
-    assert list(chunks[0]["_source_last_modified"]) == ["2025-01-01T12:00:00+00:00"]
-    assert chunks[0]["_ingested_at"].iloc[0] == chunks[1]["_ingested_at"].iloc[0]
+    assert all(isinstance(chunk, pa.Table) for chunk in chunks)
+    first_chunk = chunks[0].to_pandas()
+    second_chunk = chunks[1].to_pandas()
+    assert list(first_chunk["_source_market_date"]) == ["2025-01-01"]
+    assert list(first_chunk["_source_url"]) == [str(csv_path)]
+    assert list(first_chunk["_source_content_length"]) == [123]
+    assert list(first_chunk["_source_last_modified"]) == ["2025-01-01T12:00:00+00:00"]
+    assert first_chunk["_ingested_at"].iloc[0] == second_chunk["_ingested_at"].iloc[0]
+    assert chunks[0].schema.field("date").nullable is False
+    assert chunks[0].schema.field("region_id").nullable is False
+    assert chunks[0].schema.field("type_id").nullable is False
 
 
 def test_read_market_history_csv_reads_local_path_and_preserves_source_url(
@@ -143,10 +150,11 @@ def test_read_market_history_csv_reads_local_path_and_preserves_source_url(
     chunks = list(source._read_market_history_csv(item, chunksize=10))
 
     assert len(chunks) == 1
-    assert list(chunks[0]["_source_url"]) == [item["url"], item["url"]]
-    assert list(chunks[0]["_source_local_path"]) == [str(csv_path), str(csv_path)]
-    assert list(chunks[0]["_source_sha256"]) == ["abc123", "abc123"]
-    assert list(chunks[0]["_source_downloaded_at"]) == [
+    chunk = chunks[0].to_pandas()
+    assert list(chunk["_source_url"]) == [item["url"], item["url"]]
+    assert list(chunk["_source_local_path"]) == [str(csv_path), str(csv_path)]
+    assert list(chunk["_source_sha256"]) == ["abc123", "abc123"]
+    assert list(chunk["_source_downloaded_at"]) == [
         "2025-01-01T12:00:00+00:00",
         "2025-01-01T12:00:00+00:00",
     ]
