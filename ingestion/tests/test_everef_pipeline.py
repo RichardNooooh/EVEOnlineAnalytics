@@ -233,6 +233,7 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
                     "base_url": base_url,
                     "raw_root": str(config.raw_root),
                     "db_path": str(config.db_path),
+                    "max_copies_per_date": config.max_copies_per_date,
                 },
             )
         )
@@ -267,6 +268,7 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
         sync_raw=True,
         raw_root="/tmp/raw",
         raw_ledger_db="/tmp/raw.sqlite",
+        raw_max_copies_per_date="0",
     )
 
     assert load_info == "load-info"
@@ -277,6 +279,7 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
         "base_url": "https://example.test/history",
         "raw_root": "/tmp/raw",
         "db_path": "/tmp/raw.sqlite",
+        "max_copies_per_date": 0,
     }
     assert calls[2][1]["input_source"] == "raw-cache"
     assert calls[2][1]["storage_target"] == "mounted"
@@ -381,6 +384,8 @@ def test_cli_accepts_raw_file_sync_command() -> None:
             "/tmp/raw",
             "--raw-ledger-db",
             "/tmp/raw.sqlite",
+            "--raw-max-copies-per-date",
+            "0",
         ]
     )
 
@@ -388,6 +393,7 @@ def test_cli_accepts_raw_file_sync_command() -> None:
     assert args.raw_command == "sync-everef-market-history"
     assert args.raw_root == "/tmp/raw"
     assert args.raw_ledger_db == "/tmp/raw.sqlite"
+    assert args.raw_max_copies_per_date == "0"
 
 
 def test_cli_accepts_raw_cache_input_options() -> None:
@@ -403,11 +409,14 @@ def test_cli_accepts_raw_cache_input_options() -> None:
             "--input-source",
             "raw-cache",
             "--sync-raw",
+            "--raw-max-copies-per-date",
+            "9",
         ]
     )
 
     assert args.input_source == "raw-cache"
     assert args.sync_raw is True
+    assert args.raw_max_copies_per_date == "9"
 
 
 def everef_cli_parser():
