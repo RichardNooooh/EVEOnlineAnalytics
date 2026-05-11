@@ -7,13 +7,12 @@ import logging
 
 from ingest.everef_files import BASE_URL
 from ingest.pipelines.everef import (
-    DATA_ROOT_ENV_VAR,
+    run_everef_market_history_pipeline,
+)
+from ingest.publishers.ducklake import (
     DUCKLAKE_CATALOG_ENV_VAR,
     DUCKLAKE_NAME_ENV_VAR,
     DUCKLAKE_STORAGE_ENV_VAR,
-    LOCAL_STORAGE_TARGET,
-    STORAGE_TARGETS,
-    run_everef_market_history_pipeline,
 )
 from ingest.raw_files.config import (
     RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
@@ -25,6 +24,11 @@ from ingest.raw_files.everef import acquire_everef_market_history_files
 from ingest.sources.everef import (
     INPUT_SOURCES,
     URL_INPUT_SOURCE,
+)
+from ingest.storage_config import (
+    DATA_ROOT_ENV_VAR,
+    LOCAL_STORAGE_TARGET,
+    STORAGE_TARGETS,
 )
 
 
