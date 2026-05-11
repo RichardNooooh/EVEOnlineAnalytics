@@ -12,7 +12,9 @@ class FakeDuckLakeCredentials:
         self.storage = storage
 
 
-def fake_ducklake_destination(credentials: FakeDuckLakeCredentials) -> dict[str, object]:
+def fake_ducklake_destination(
+    credentials: FakeDuckLakeCredentials,
+) -> dict[str, object]:
     return {"credentials": credentials}
 
 
@@ -21,7 +23,9 @@ def patch_ducklake(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(everef, "ducklake", fake_ducklake_destination)
 
 
-def test_ducklake_destination_uses_local_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ducklake_destination_uses_local_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     patch_ducklake(monkeypatch)
     monkeypatch.delenv(everef.DUCKLAKE_NAME_ENV_VAR, raising=False)
     monkeypatch.delenv(everef.DUCKLAKE_CATALOG_ENV_VAR, raising=False)
@@ -35,12 +39,18 @@ def test_ducklake_destination_uses_local_defaults(monkeypatch: pytest.MonkeyPatc
     assert credentials.catalog == everef.local_ducklake_catalog()
     assert credentials.storage == everef.local_ducklake_storage()
     assert credentials.catalog.startswith("sqlite:///")
-    assert credentials.catalog.endswith("/ingestion/.local/ducklake/everef_market_history/lake_catalog.sqlite")
+    assert credentials.catalog.endswith(
+        "/ingestion/.local/ducklake/everef_market_history/lake_catalog.sqlite"
+    )
     assert credentials.storage.startswith("file://")
-    assert credentials.storage.endswith("/ingestion/.local/ducklake/everef_market_history/files")
+    assert credentials.storage.endswith(
+        "/ingestion/.local/ducklake/everef_market_history/files"
+    )
 
 
-def test_ducklake_destination_uses_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ducklake_destination_uses_env_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     patch_ducklake(monkeypatch)
     monkeypatch.setenv(everef.DUCKLAKE_NAME_ENV_VAR, "env_lake")
     monkeypatch.setenv(everef.DUCKLAKE_CATALOG_ENV_VAR, "postgresql://env/catalog")
@@ -88,7 +98,10 @@ def test_ducklake_destination_uses_mounted_storage_target(
     )
 
     credentials = destination_config["credentials"]
-    assert credentials.storage == "file:///opt/eve-market/data/ducklake/everef/market_history"
+    assert (
+        credentials.storage
+        == "file:///opt/eve-market/data/ducklake/everef/market_history"
+    )
 
 
 def test_ducklake_destination_uses_data_root_override(
@@ -180,6 +193,82 @@ def test_non_ducklake_destination_returns_raw_string() -> None:
     assert everef.build_destination_config("filesystem") == "filesystem"
 
 
+def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, object]] = []
+
+    class FakePipeline:
+        def run(self, source, *, loader_file_format: str):
+            calls.append(("run", (source, loader_file_format)))
+            return "load-info"
+
+    def fake_pipeline(**kwargs):
+        calls.append(("pipeline", kwargs))
+        return FakePipeline()
+
+    def fake_acquire(start_date, end_date, *, base_url, config):
+        calls.append(
+            (
+                "acquire",
+                {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "base_url": base_url,
+                    "raw_root": str(config.raw_root),
+                    "db_path": str(config.db_path),
+                },
+            )
+        )
+        return []
+
+    def fake_source(start_date, end_date, **kwargs):
+        calls.append(
+            (
+                "source",
+                {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    **kwargs,
+                },
+            )
+        )
+        return "source"
+
+    monkeypatch.setattr(
+        everef, "build_destination_config", lambda *args, **kwargs: "dest"
+    )
+    monkeypatch.setattr(everef.dlt, "pipeline", fake_pipeline)
+    monkeypatch.setattr(everef, "acquire_everef_market_history_files", fake_acquire)
+    monkeypatch.setattr(everef, "everef_market_history_source", fake_source)
+
+    load_info = everef.run_everef_market_history_pipeline(
+        "2025-01-01",
+        "2025-01-01",
+        storage_target="mounted",
+        data_root="/mnt/eve-market",
+        base_url="https://example.test/history",
+        sync_raw=True,
+        raw_root="/tmp/raw",
+        raw_ledger_db="/tmp/raw.sqlite",
+    )
+
+    assert load_info == "load-info"
+    assert [call[0] for call in calls] == ["pipeline", "acquire", "source", "run"]
+    assert calls[1][1] == {
+        "start_date": "2025-01-01",
+        "end_date": "2025-01-01",
+        "base_url": "https://example.test/history",
+        "raw_root": "/tmp/raw",
+        "db_path": "/tmp/raw.sqlite",
+    }
+    assert calls[2][1]["input_source"] == "raw-cache"
+    assert calls[2][1]["storage_target"] == "mounted"
+    assert calls[2][1]["data_root"] == "/mnt/eve-market"
+    assert calls[2][1]["raw_root"] == "/tmp/raw"
+    assert calls[2][1]["raw_ledger_db"] == "/tmp/raw.sqlite"
+
+
 def test_cli_defaults_to_parquet_loader_format() -> None:
     parser = everef_cli_parser()
 
@@ -259,6 +348,50 @@ def test_cli_accepts_ducklake_name_catalog_storage() -> None:
     assert args.ducklake_name == "arg_lake"
     assert args.ducklake_catalog == "postgresql://arg/catalog"
     assert args.ducklake_storage == "file:///mnt/arg"
+
+
+def test_cli_accepts_raw_file_sync_command() -> None:
+    parser = everef_cli_parser()
+
+    args = parser.parse_args(
+        [
+            "raw-files",
+            "sync-everef-market-history",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2025-01-01",
+            "--raw-root",
+            "/tmp/raw",
+            "--raw-ledger-db",
+            "/tmp/raw.sqlite",
+        ]
+    )
+
+    assert args.command == "raw-files"
+    assert args.raw_command == "sync-everef-market-history"
+    assert args.raw_root == "/tmp/raw"
+    assert args.raw_ledger_db == "/tmp/raw.sqlite"
+
+
+def test_cli_accepts_raw_cache_input_options() -> None:
+    parser = everef_cli_parser()
+
+    args = parser.parse_args(
+        [
+            "everef-market-history",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2025-01-01",
+            "--input-source",
+            "raw-cache",
+            "--sync-raw",
+        ]
+    )
+
+    assert args.input_source == "raw-cache"
+    assert args.sync_raw is True
 
 
 def everef_cli_parser():

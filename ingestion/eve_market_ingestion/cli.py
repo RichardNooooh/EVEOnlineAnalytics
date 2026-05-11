@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 
+from eve_market_ingestion.everef_market_history_files import BASE_URL
 from eve_market_ingestion.pipelines.everef import run_everef_market_history_pipeline
 from eve_market_ingestion.pipelines.everef import DATA_ROOT_ENV_VAR
 from eve_market_ingestion.pipelines.everef import DUCKLAKE_CATALOG_ENV_VAR
@@ -12,6 +13,12 @@ from eve_market_ingestion.pipelines.everef import DUCKLAKE_NAME_ENV_VAR
 from eve_market_ingestion.pipelines.everef import DUCKLAKE_STORAGE_ENV_VAR
 from eve_market_ingestion.pipelines.everef import LOCAL_STORAGE_TARGET
 from eve_market_ingestion.pipelines.everef import STORAGE_TARGETS
+from eve_market_ingestion.raw_files.config import RAW_FILES_DB_ENV_VAR
+from eve_market_ingestion.raw_files.config import RAW_FILES_ROOT_ENV_VAR
+from eve_market_ingestion.raw_files.config import resolve_raw_files_config
+from eve_market_ingestion.raw_files.everef import acquire_everef_market_history_files
+from eve_market_ingestion.sources.everef_market_history import INPUT_SOURCES
+from eve_market_ingestion.sources.everef_market_history import URL_INPUT_SOURCE
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -74,8 +81,71 @@ def build_parser() -> argparse.ArgumentParser:
     )
     everef_parser.add_argument("--base-url", default=None)
     everef_parser.add_argument("--chunksize", type=int, default=None)
+    everef_parser.add_argument(
+        "--input-source",
+        choices=INPUT_SOURCES,
+        default=URL_INPUT_SOURCE,
+        help="Read CSVs from source URLs or from the raw-file cache.",
+    )
+    everef_parser.add_argument(
+        "--sync-raw",
+        action="store_true",
+        help="Download raw files first, then load from the raw-file cache.",
+    )
+    everef_parser.add_argument(
+        "--raw-root",
+        default=None,
+        help=f"Raw source-file cache root. Overrides {RAW_FILES_ROOT_ENV_VAR}.",
+    )
+    everef_parser.add_argument(
+        "--raw-ledger-db",
+        default=None,
+        help=f"Raw source-file SQLite ledger path. Overrides {RAW_FILES_DB_ENV_VAR}.",
+    )
     everef_parser.add_argument("--loader-file-format", default="parquet")
     everef_parser.add_argument("--dev-mode", action="store_true")
+
+    raw_files_parser = subparsers.add_parser(
+        "raw-files",
+        help="Manage raw source-file acquisition caches.",
+    )
+    raw_subparsers = raw_files_parser.add_subparsers(dest="raw_command")
+    raw_subparsers.required = True
+    raw_sync_parser = raw_subparsers.add_parser(
+        "sync-everef-market-history",
+        help="Download Everef market history CSV archives into the raw cache.",
+    )
+    raw_sync_parser.add_argument(
+        "--start-date", required=True, help="Inclusive YYYY-MM-DD date."
+    )
+    raw_sync_parser.add_argument(
+        "--end-date", required=True, help="Inclusive YYYY-MM-DD date."
+    )
+    raw_sync_parser.add_argument(
+        "--storage-target",
+        choices=STORAGE_TARGETS,
+        default=LOCAL_STORAGE_TARGET,
+        help="Default raw cache target when --raw-root and env override are unset.",
+    )
+    raw_sync_parser.add_argument(
+        "--data-root",
+        default=None,
+        help=(
+            "Mounted storage root used with --storage-target mounted; "
+            f"env fallback {DATA_ROOT_ENV_VAR}."
+        ),
+    )
+    raw_sync_parser.add_argument("--base-url", default=None)
+    raw_sync_parser.add_argument(
+        "--raw-root",
+        default=None,
+        help=f"Raw source-file cache root. Overrides {RAW_FILES_ROOT_ENV_VAR}.",
+    )
+    raw_sync_parser.add_argument(
+        "--raw-ledger-db",
+        default=None,
+        help=f"Raw source-file SQLite ledger path. Overrides {RAW_FILES_DB_ENV_VAR}.",
+    )
 
     return parser
 
@@ -99,10 +169,30 @@ def main(argv: list[str] | None = None) -> int:
             data_root=args.data_root,
             base_url=args.base_url,
             chunksize=args.chunksize,
+            input_source=args.input_source,
+            sync_raw=args.sync_raw,
+            raw_root=args.raw_root,
+            raw_ledger_db=args.raw_ledger_db,
             loader_file_format=args.loader_file_format,
             dev_mode=args.dev_mode,
         )
         print(load_info)
+        return 0
+
+    if args.command == "raw-files" and args.raw_command == "sync-everef-market-history":
+        config = resolve_raw_files_config(
+            raw_root=args.raw_root,
+            db_path=args.raw_ledger_db,
+            storage_target=args.storage_target,
+            data_root=args.data_root,
+        )
+        records = acquire_everef_market_history_files(
+            args.start_date,
+            args.end_date,
+            base_url=args.base_url or BASE_URL,
+            config=config,
+        )
+        print(f"Synced {len(records)} Everef market history raw files")
         return 0
 
     parser.print_help()
