@@ -13,10 +13,9 @@ amended: []
 
 ## Context
 
-ADR-016 established published Parquet datasets on shared storage as the system of
-record and rejected a cluster-shared writable DuckDB database file. That decision made
-the durable analytical state file-oriented and kept DuckDB in its proper role as local
-or transient compute.
+ADR-016 established a Parquet dataset contract on shared storage and rejected a
+cluster-shared writable DuckDB database file. That decision made the durable analytical
+state file-oriented and kept DuckDB in its proper role as local or transient compute.
 
 The ingestion design now needs stronger table semantics than plain filesystem Parquet
 can provide on its own. Everef market-history files are daily historical source files,

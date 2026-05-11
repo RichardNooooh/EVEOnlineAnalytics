@@ -6,6 +6,7 @@ tags:
   - tools
 amended:
   - 2026-04-13
+  - 2026-05-10
 ---
 
 # ADR 014 - Replace Airbyte with Python Dataset-Publishing Ingestion
@@ -20,11 +21,11 @@ contract.
 ## Decision
 
 Remove Airbyte entirely. Use Python ingestion jobs orchestrated by Airflow to fetch
-source data and publish partitioned Parquet datasets.
+source data and publish DuckLake tables backed by Parquet data files.
 
 The planned pipeline contract becomes:
 
-`Airflow -> dataset writer/publisher -> Parquet raw/bronze datasets -> dbt reads Parquet sources -> curated Parquet outputs and/or transient local DuckDB work DB`
+`Airflow -> dlt dataset writer/publisher -> DuckLake raw/bronze tables -> dbt reads canonical table state through a validated DuckLake/DuckDB handoff -> curated DuckLake tables and/or transient local DuckDB work DB`
 
 This ADR is about the ingestion approach, not a runtime implementation. It defines
 the contract the future ingestion code must follow.
@@ -39,20 +40,21 @@ Three problems compounded to make Airbyte a poor fit:
 2. **Overengineered for the real source set.** The project has exactly two source
    families: everef.net bulk archives and the EVE ESI API. Both are well-served by
    explicit Python jobs with rate limiting, retries, and publication semantics.
-3. **Poor fit for the target dataset contract.** The project is standardizing on
-   single-writer publication of partitioned Parquet datasets with manifests and
-   promotion semantics. Airbyte's destination-centric model is less aligned with that
+3. **Poor fit for the target table contract.** The project is standardizing on
+   single-writer publication of DuckLake table state with explicit replacement scopes
+   and contracts. Airbyte's destination-centric model is less aligned with that
    contract than explicit ingestion code.
 
 ## Contract Changes
 
 - Airflow schedules ingestion jobs and publication steps directly.
-- Ingestion jobs write candidate output to temporary locations, validate, then promote
-  the dataset publication to its canonical Parquet path.
-- Raw datasets are published to shared storage as Parquet, not merged into a shared
-  mutable database file.
-- dbt reads those datasets as external sources and may materialize curated Parquet
-  outputs or use a transient local DuckDB work database during execution.
+- Ingestion jobs write candidate output, validate, then commit DuckLake table changes
+  for the intended replacement scope.
+- Raw tables are published to shared storage as DuckLake-backed Parquet data files, not
+  merged into a shared mutable DuckDB database file.
+- dbt reads canonical table state through a validated DuckLake/DuckDB handoff and may
+  materialize curated DuckLake outputs or use a transient local DuckDB work database
+  during execution.
 
 ## What This Does Not Change
 
@@ -82,5 +84,10 @@ and documentation.
 - 2026-04-13 - Updated for the Parquet publication contract
   - This ADR originally described Python/dlt jobs that loaded into DuckDB before dbt
     transforms. Following ADR-016, the ingestion flow is now documented as publishing
-    partitioned Parquet datasets, with dbt reading Parquet sources and using DuckDB
-    only as local or transient compute when needed.
+    file-backed datasets, with DuckDB only as local or transient compute when needed.
+    ADR-020 later refined this into DuckLake table publication over Parquet data files.
+
+- 2026-05-10 - Updated for DuckLake publication contract
+  - ADR-020 adopts DuckLake as the canonical table format. dlt ingestion publishes
+    table changes with merge/delete-insert semantics where needed, while Parquet remains
+    the physical data file format.
