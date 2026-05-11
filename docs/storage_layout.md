@@ -19,9 +19,15 @@ Parquet data files.
 └── airflow-logs/
 ```
 
-`datasets/ducklake/` is the durable analytical data-file root. In production-style
-deployments, the DuckLake catalog should use PostgreSQL rather than a SQLite file on
-shared NFS.
+`datasets/ducklake/` is the durable analytical data-file root. In production-style or
+mounted/shared deployments, the DuckLake catalog must use non-local durable storage such
+as PostgreSQL. A local SQLite DuckLake catalog is only for local smoke tests, and mounted
+DuckLake storage with a SQLite catalog is rejected.
+
+Ingestion resolves DuckLake storage from explicit `--ducklake-storage`, then
+`EVE_MARKET_DUCKLAKE_STORAGE`, then the selected storage target. The mounted target uses
+the shared data root and requires a PostgreSQL-style catalog from `--ducklake-catalog` or
+`EVE_MARKET_DUCKLAKE_CATALOG`.
 
 ## Dataset Naming
 
@@ -86,3 +92,5 @@ Scratch compute state is not part of the shared layout above.
 - local DuckDB work DBs belong on pod-local scratch
 - temporary publication paths must be treated as unpublished
 - shared durable storage is only for published table data files and supporting metadata
+- SQLite DuckLake catalogs belong only to local smoke storage, not mounted/shared
+  DuckLake storage
