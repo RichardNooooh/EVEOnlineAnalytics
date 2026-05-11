@@ -6,19 +6,25 @@ import argparse
 import logging
 
 from eve_market_ingestion.everef_market_history_files import BASE_URL
-from eve_market_ingestion.pipelines.everef import run_everef_market_history_pipeline
-from eve_market_ingestion.pipelines.everef import DATA_ROOT_ENV_VAR
-from eve_market_ingestion.pipelines.everef import DUCKLAKE_CATALOG_ENV_VAR
-from eve_market_ingestion.pipelines.everef import DUCKLAKE_NAME_ENV_VAR
-from eve_market_ingestion.pipelines.everef import DUCKLAKE_STORAGE_ENV_VAR
-from eve_market_ingestion.pipelines.everef import LOCAL_STORAGE_TARGET
-from eve_market_ingestion.pipelines.everef import STORAGE_TARGETS
-from eve_market_ingestion.raw_files.config import RAW_FILES_DB_ENV_VAR
-from eve_market_ingestion.raw_files.config import RAW_FILES_ROOT_ENV_VAR
-from eve_market_ingestion.raw_files.config import resolve_raw_files_config
+from eve_market_ingestion.pipelines.everef import (
+    DATA_ROOT_ENV_VAR,
+    DUCKLAKE_CATALOG_ENV_VAR,
+    DUCKLAKE_NAME_ENV_VAR,
+    DUCKLAKE_STORAGE_ENV_VAR,
+    LOCAL_STORAGE_TARGET,
+    STORAGE_TARGETS,
+    run_everef_market_history_pipeline,
+)
+from eve_market_ingestion.raw_files.config import (
+    RAW_FILES_DB_ENV_VAR,
+    RAW_FILES_ROOT_ENV_VAR,
+    resolve_raw_files_config,
+)
 from eve_market_ingestion.raw_files.everef import acquire_everef_market_history_files
-from eve_market_ingestion.sources.everef_market_history import INPUT_SOURCES
-from eve_market_ingestion.sources.everef_market_history import URL_INPUT_SOURCE
+from eve_market_ingestion.sources.everef_market_history import (
+    INPUT_SOURCES,
+    URL_INPUT_SOURCE,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,6 +35,19 @@ def build_parser() -> argparse.ArgumentParser:
         "everef-market-history",
         help="Ingest Everef daily market history CSV archives.",
     )
+
+    build_everef_parser(everef_parser)
+
+    raw_files_parser = subparsers.add_parser(
+        "raw-files",
+        help="Manage raw source-file acquisition caches.",
+    )
+
+    build_raw_files_parser(raw_files_parser)
+    return parser
+
+
+def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
     everef_parser.add_argument(
         "--start-date", required=True, help="Inclusive YYYY-MM-DD date."
     )
@@ -105,10 +124,8 @@ def build_parser() -> argparse.ArgumentParser:
     everef_parser.add_argument("--loader-file-format", default="parquet")
     everef_parser.add_argument("--dev-mode", action="store_true")
 
-    raw_files_parser = subparsers.add_parser(
-        "raw-files",
-        help="Manage raw source-file acquisition caches.",
-    )
+
+def build_raw_files_parser(raw_files_parser: argparse.ArgumentParser) -> None:
     raw_subparsers = raw_files_parser.add_subparsers(dest="raw_command")
     raw_subparsers.required = True
     raw_sync_parser = raw_subparsers.add_parser(
@@ -146,8 +163,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=f"Raw source-file SQLite ledger path. Overrides {RAW_FILES_DB_ENV_VAR}.",
     )
-
-    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
