@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 
-from ingest.everef_files import BASE_URL
+from ingest.clients.everef import BASE_URL
 from ingest.pipelines.everef import (
     run_everef_market_history_pipeline,
 )
@@ -15,8 +15,8 @@ from ingest.publishers.ducklake import (
     DUCKLAKE_STORAGE_ENV_VAR,
 )
 from ingest.raw_files.config import (
-    RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
     RAW_FILES_DB_ENV_VAR,
+    RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
     RAW_FILES_ROOT_ENV_VAR,
     resolve_raw_files_config,
 )

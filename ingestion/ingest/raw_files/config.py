@@ -8,7 +8,11 @@ from pathlib import Path
 
 from ingest.storage_config import (
     DATA_ROOT_ENV_VAR as DATA_ROOT_ENV_VAR,
+)
+from ingest.storage_config import (
     DEFAULT_MOUNTED_DATA_ROOT as DEFAULT_MOUNTED_DATA_ROOT,
+)
+from ingest.storage_config import (
     LOCAL_STORAGE_TARGET,
     MOUNTED_STORAGE_TARGET,
     STORAGE_TARGETS,
