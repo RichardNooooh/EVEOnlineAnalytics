@@ -152,7 +152,7 @@ eve-market-analytics/
 ├── ingestion/
 │   ├── README.md
 │   ├── dlt.yml                         # optional later
-│   ├── eve_market_ingestion/
+│   ├── ingest/
 │   │   ├── sources/
 │   │   ├── clients/
 │   │   ├── pipelines/
