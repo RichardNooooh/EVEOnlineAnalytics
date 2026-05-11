@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
+from itertools import islice
 from pathlib import Path
+from typing import TypeVar
 
 import pytest
 from ingest.raw_files.config import (
@@ -17,6 +20,8 @@ from ingest.raw_files.everef import (
     list_cached_everef_market_history_files,
 )
 from ingest.raw_files.repository import RawFileRepository
+
+T = TypeVar("T")
 
 
 class FakeHttpClient:
@@ -97,11 +102,14 @@ def test_acquire_downloads_file_and_records_sqlite_ledger(tmp_path: Path) -> Non
     assert record.downloaded_size == len(b"raw bytes")
     assert client.get_calls == [record.source_url]
 
-    cached_items = list_cached_everef_market_history_files(
-        "2025-01-01",
-        "2025-01-01",
-        base_url="https://example.test/history",
-        config=config,
+    cached_items = _collect_bounded(
+        list_cached_everef_market_history_files(
+            "2025-01-01",
+            "2025-01-01",
+            base_url="https://example.test/history",
+            config=config,
+        ),
+        1,
     )
     assert cached_items == [record.to_source_item()]
 
@@ -191,11 +199,14 @@ def test_acquire_prunes_old_changed_copies_by_default(tmp_path: Path) -> None:
         record.local_path for record in records[1:]
     }
 
-    cached_items = list_cached_everef_market_history_files(
-        "2025-01-01",
-        "2025-01-01",
-        base_url="https://example.test/history",
-        config=config,
+    cached_items = _collect_bounded(
+        list_cached_everef_market_history_files(
+            "2025-01-01",
+            "2025-01-01",
+            base_url="https://example.test/history",
+            config=config,
+        ),
+        1,
     )
     assert cached_items == [records[-1].to_source_item()]
 
@@ -391,11 +402,14 @@ def test_acquire_redownloads_when_source_has_no_validators(tmp_path: Path) -> No
 
 def test_list_cached_raises_for_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="not cached"):
-        list_cached_everef_market_history_files(
-            "2025-01-01",
-            "2025-01-01",
-            base_url="https://example.test/history",
-            config=_config(tmp_path),
+        _collect_bounded(
+            list_cached_everef_market_history_files(
+                "2025-01-01",
+                "2025-01-01",
+                base_url="https://example.test/history",
+                config=_config(tmp_path),
+            ),
+            1,
         )
 
 
@@ -465,3 +479,10 @@ def _config(tmp_path: Path) -> RawFilesConfig:
         raw_root=tmp_path / "raw",
         db_path=tmp_path / "raw" / "raw_files.sqlite",
     )
+
+
+def _collect_bounded(values: Iterable[T], limit: int) -> list[T]:
+    collected = list(islice(values, limit + 1))
+    if len(collected) > limit:
+        pytest.fail(f"expected at most {limit} values")
+    return collected

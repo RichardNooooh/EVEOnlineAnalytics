@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date
+from itertools import islice
 from pathlib import Path
+from typing import TypeVar
 
 import pandas as pd
 import pyarrow as pa
 import pytest
 
+from ingest.clients import everef as client
+from ingest.contracts.market_history import (
+    MARKET_HISTORY_COLUMNS,
+    MARKET_HISTORY_PRIMARY_KEY,
+)
 from ingest.sources import everef as source
+
+T = TypeVar("T")
 
 
 class FakeProbeClient:
@@ -31,10 +41,8 @@ class FakeResponse:
 
 def test_list_market_history_urls_emits_market_date_and_url() -> None:
     urls = list(
-        source.list_market_history_urls._pipe.gen(
-            date(2025, 1, 1),
-            date(2025, 1, 2),
-            "https://example.test/history",
+        client.iter_market_history_url_items(
+            date(2025, 1, 1), date(2025, 1, 2), "https://example.test/history"
         )
     )
 
@@ -50,9 +58,7 @@ def test_list_market_history_urls_emits_market_date_and_url() -> None:
     ]
 
 
-def test_probe_market_history_file_yields_enriched_item(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_probe_market_history_file_yields_enriched_item() -> None:
     fake_client = FakeProbeClient(
         FakeResponse(
             200,
@@ -62,17 +68,19 @@ def test_probe_market_history_file_yields_enriched_item(
             },
         )
     )
-    monkeypatch.setattr(source, "_PROBE_CLIENT", fake_client)
     item = {"market_date": "2025-01-01", "url": "https://example.test/file.csv.bz2"}
 
-    assert list(source._probe_market_history_file(item)) == [
-        {
-            "market_date": "2025-01-01",
-            "url": "https://example.test/file.csv.bz2",
-            "content_length": 123,
-            "last_modified": "2025-01-01T12:00:00+00:00",
-        }
-    ]
+    assert client.probe_market_history_file_item(
+        item,
+        http_client=fake_client,
+        logger=source.logger,
+        request_exception_type=source.requests.RequestException,
+    ) == {
+        "market_date": "2025-01-01",
+        "url": "https://example.test/file.csv.bz2",
+        "content_length": 123,
+        "last_modified": "2025-01-01T12:00:00+00:00",
+    }
     assert fake_client.calls == [("https://example.test/file.csv.bz2", True)]
     assert item == {
         "market_date": "2025-01-01",
@@ -80,32 +88,38 @@ def test_probe_market_history_file_yields_enriched_item(
     }
 
 
-def test_probe_market_history_file_skips_404(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(source, "_PROBE_CLIENT", FakeProbeClient(FakeResponse(404)))
-
-    assert list(source._probe_market_history_file(_probe_item())) == []
-
-
-def test_probe_market_history_file_raises_on_unexpected_status(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(source, "_PROBE_CLIENT", FakeProbeClient(FakeResponse(500)))
-
-    with pytest.raises(RuntimeError, match="Unexpected Everef status HTTP 500"):
-        list(source._probe_market_history_file(_probe_item()))
-
-
-def test_probe_market_history_file_raises_on_request_exception(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        source,
-        "_PROBE_CLIENT",
-        FakeProbeClient(exc=source.requests.RequestException("timeout")),
+def test_probe_market_history_file_skips_404() -> None:
+    assert (
+        client.probe_market_history_file_item(
+            _probe_item(),
+            http_client=FakeProbeClient(FakeResponse(404)),
+            logger=source.logger,
+            request_exception_type=source.requests.RequestException,
+        )
+        is None
     )
 
+
+def test_probe_market_history_file_raises_on_unexpected_status() -> None:
+    with pytest.raises(RuntimeError, match="Unexpected Everef status HTTP 500"):
+        client.probe_market_history_file_item(
+            _probe_item(),
+            http_client=FakeProbeClient(FakeResponse(500)),
+            logger=source.logger,
+            request_exception_type=source.requests.RequestException,
+        )
+
+
+def test_probe_market_history_file_raises_on_request_exception() -> None:
     with pytest.raises(RuntimeError, match="Everef probe failed"):
-        list(source._probe_market_history_file(_probe_item()))
+        client.probe_market_history_file_item(
+            _probe_item(),
+            http_client=FakeProbeClient(
+                exc=source.requests.RequestException("timeout")
+            ),
+            logger=source.logger,
+            request_exception_type=source.requests.RequestException,
+        )
 
 
 def test_read_market_history_csv_yields_chunks_with_source_metadata(
@@ -119,7 +133,9 @@ def test_read_market_history_csv_yields_chunks_with_source_metadata(
         "last_modified": "2025-01-01T12:00:00+00:00",
     }
 
-    chunks = list(source._read_market_history_csv(item, chunksize=1))
+    chunks = _collect_bounded(
+        source.read_market_history_csv.__wrapped__(item, chunksize=1), 2
+    )
 
     assert len(chunks) == 2
     assert all(isinstance(chunk, pa.Table) for chunk in chunks)
@@ -147,7 +163,9 @@ def test_read_market_history_csv_reads_local_path_and_preserves_source_url(
         "downloaded_at": "2025-01-01T12:00:00+00:00",
     }
 
-    chunks = list(source._read_market_history_csv(item, chunksize=10))
+    chunks = _collect_bounded(
+        source.read_market_history_csv.__wrapped__(item, chunksize=10), 1
+    )
 
     assert len(chunks) == 1
     chunk = chunks[0].to_pandas()
@@ -160,22 +178,25 @@ def test_read_market_history_csv_reads_local_path_and_preserves_source_url(
     ]
 
 
-def test_read_market_history_csv_uses_ducklake_merge_hints() -> None:
-    table_schema = source.read_market_history_csv.compute_table_schema()
-
-    assert table_schema["write_disposition"] == "merge"
-    assert table_schema["x-merge-strategy"] == "delete-insert"
-    assert table_schema["columns"]["date"]["merge_key"] is True
-    assert table_schema["columns"]["date"]["primary_key"] is True
-    assert table_schema["columns"]["region_id"]["primary_key"] is True
-    assert table_schema["columns"]["type_id"]["primary_key"] is True
+def test_market_history_contract_declares_publication_keys() -> None:
+    assert MARKET_HISTORY_PRIMARY_KEY == ["date", "region_id", "type_id"]
+    assert set(MARKET_HISTORY_PRIMARY_KEY).issubset(MARKET_HISTORY_COLUMNS)
+    assert all(
+        MARKET_HISTORY_COLUMNS[column_name]["nullable"] is False
+        for column_name in MARKET_HISTORY_PRIMARY_KEY
+    )
 
 
 def test_read_market_history_csv_rejects_non_positive_chunksize(tmp_path: Path) -> None:
     csv_path = _write_market_history_fixture(tmp_path, _valid_market_history_frame())
 
     with pytest.raises(ValueError, match="chunksize must be greater than 0"):
-        list(source._read_market_history_csv(_read_item(csv_path), chunksize=0))
+        _collect_bounded(
+            source.read_market_history_csv.__wrapped__(
+                _read_item(csv_path), chunksize=0
+            ),
+            1,
+        )
 
 
 def test_read_market_history_csv_raises_on_missing_required_column(
@@ -184,8 +205,13 @@ def test_read_market_history_csv_raises_on_missing_required_column(
     frame = _valid_market_history_frame().drop(columns=["volume"])
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
-    with pytest.raises(RuntimeError, match="missing columns: volume"):
-        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
+    with pytest.raises(ValueError, match="missing columns: volume"):
+        _collect_bounded(
+            source.read_market_history_csv.__wrapped__(
+                _read_item(csv_path), chunksize=10
+            ),
+            1,
+        )
 
 
 def test_read_market_history_csv_raises_on_null_primary_key(tmp_path: Path) -> None:
@@ -193,8 +219,13 @@ def test_read_market_history_csv_raises_on_null_primary_key(tmp_path: Path) -> N
     frame.loc[0, "type_id"] = None
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
-    with pytest.raises(RuntimeError, match="null primary-key"):
-        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
+    with pytest.raises(ValueError, match="null primary-key"):
+        _collect_bounded(
+            source.read_market_history_csv.__wrapped__(
+                _read_item(csv_path), chunksize=10
+            ),
+            1,
+        )
 
 
 def test_read_market_history_csv_raises_on_duplicate_primary_key(
@@ -209,11 +240,16 @@ def test_read_market_history_csv_raises_on_duplicate_primary_key(
     )
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
-    with pytest.raises(RuntimeError, match="duplicate primary-key"):
-        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
+    with pytest.raises(ValueError, match="duplicate primary-key"):
+        _collect_bounded(
+            source.read_market_history_csv.__wrapped__(
+                _read_item(csv_path), chunksize=10
+            ),
+            1,
+        )
 
 
-def test_read_market_history_csv_raises_on_duplicate_primary_key_across_chunks(
+def test_read_market_history_csv_allows_duplicate_primary_key_across_chunks(
     tmp_path: Path,
 ) -> None:
     frame = pd.concat(
@@ -222,8 +258,12 @@ def test_read_market_history_csv_raises_on_duplicate_primary_key_across_chunks(
     )
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
-    with pytest.raises(RuntimeError, match="duplicate primary-key rows across chunks"):
-        list(source._read_market_history_csv(_read_item(csv_path), chunksize=2))
+    chunks = _collect_bounded(
+        source.read_market_history_csv.__wrapped__(_read_item(csv_path), chunksize=2),
+        2,
+    )
+
+    assert len(chunks) == 2
 
 
 def test_read_market_history_csv_raises_on_date_mismatch(tmp_path: Path) -> None:
@@ -231,8 +271,13 @@ def test_read_market_history_csv_raises_on_date_mismatch(tmp_path: Path) -> None
     frame.loc[0, "date"] = "2025-01-02"
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
-    with pytest.raises(RuntimeError, match="do not match source market_date"):
-        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
+    with pytest.raises(ValueError, match="do not match source market_date"):
+        _collect_bounded(
+            source.read_market_history_csv.__wrapped__(
+                _read_item(csv_path), chunksize=10
+            ),
+            1,
+        )
 
 
 def test_read_market_history_csv_raises_on_negative_numeric_value(
@@ -242,8 +287,13 @@ def test_read_market_history_csv_raises_on_negative_numeric_value(
     frame.loc[0, "volume"] = -1
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
-    with pytest.raises(RuntimeError, match="negative numeric"):
-        list(source._read_market_history_csv(_read_item(csv_path), chunksize=10))
+    with pytest.raises(ValueError, match="negative numeric"):
+        _collect_bounded(
+            source.read_market_history_csv.__wrapped__(
+                _read_item(csv_path), chunksize=10
+            ),
+            1,
+        )
 
 
 def test_read_market_history_csv_raises_on_read_error(
@@ -255,7 +305,19 @@ def test_read_market_history_csv_raises_on_read_error(
     monkeypatch.setattr(source.pd, "read_csv", fail_read_csv)
 
     with pytest.raises(RuntimeError, match="Could not read Everef CSV"):
-        list(source._read_market_history_csv(_read_item(Path("missing.csv.bz2"))))
+        _collect_bounded(
+            source.read_market_history_csv.__wrapped__(
+                _read_item(Path("missing.csv.bz2"))
+            ),
+            1,
+        )
+
+
+def _collect_bounded(values: Iterable[T], limit: int) -> list[T]:
+    collected = list(islice(values, limit + 1))
+    if len(collected) > limit:
+        pytest.fail(f"expected at most {limit} values")
+    return collected
 
 
 def _probe_item() -> dict[str, str]:
