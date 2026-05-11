@@ -1,10 +1,16 @@
-"""Market history ingestion contract."""
+"""Market history ingestion contract.
+
+The Everef/ESI ``average`` field is canonicalized as volume-weighted average
+price (VWAP) semantics. The in-game client may label this value as median, but
+ingestion contracts should retain the API field name and document it as VWAP.
+"""
 
 from __future__ import annotations
 
 from datetime import date
 
 import pandas as pd
+import pyarrow as pa
 
 MARKET_HISTORY_PRIMARY_KEY = ["date", "region_id", "type_id"]
 REQUIRED_MARKET_HISTORY_COLUMNS = {
@@ -28,6 +34,30 @@ MARKET_HISTORY_COLUMNS = {
     column_name: {"nullable": False}
     for column_name in sorted(REQUIRED_MARKET_HISTORY_COLUMNS)
 }
+MARKET_HISTORY_COLUMNS["average"]["description"] = (
+    "Volume-weighted average price (VWAP)."
+)
+
+MARKET_HISTORY_ARROW_SCHEMA = pa.schema(
+    [
+        pa.field("date", pa.string(), nullable=False),
+        pa.field("region_id", pa.int64(), nullable=False),
+        pa.field("type_id", pa.int64(), nullable=False),
+        pa.field("average", pa.float64(), nullable=False),
+        pa.field("highest", pa.float64(), nullable=False),
+        pa.field("lowest", pa.float64(), nullable=False),
+        pa.field("order_count", pa.int64(), nullable=False),
+        pa.field("volume", pa.int64(), nullable=False),
+        pa.field("_source_market_date", pa.string()),
+        pa.field("_source_url", pa.string()),
+        pa.field("_source_local_path", pa.string()),
+        pa.field("_source_sha256", pa.string()),
+        pa.field("_source_content_length", pa.int64()),
+        pa.field("_source_last_modified", pa.string()),
+        pa.field("_source_downloaded_at", pa.string()),
+        pa.field("_ingested_at", pa.string()),
+    ]
+)
 
 
 def validate_market_history_chunk(

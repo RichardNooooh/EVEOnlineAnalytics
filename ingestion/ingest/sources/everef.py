@@ -16,17 +16,17 @@ import pandas as pd
 import pyarrow as pa
 from dlt.sources.helpers import requests
 
+from ingest.clients.everef import (
+    BASE_URL,
+    iter_market_history_url_items,
+    parse_market_history_date,
+    probe_market_history_file_item,
+)
 from ingest.contracts.market_history import (
+    MARKET_HISTORY_ARROW_SCHEMA,
     MARKET_HISTORY_COLUMNS,
     MARKET_HISTORY_PRIMARY_KEY,
     validate_market_history_chunk,
-)
-from ingest.everef_files import (
-    BASE_URL,
-    iter_dates,
-    market_history_file_url,
-    parse_market_history_date,
-    update_market_history_file_metadata,
 )
 from ingest.raw_files.config import (
     LOCAL_STORAGE_TARGET,
@@ -40,27 +40,6 @@ DEFAULT_CHUNKSIZE = 20_000
 URL_INPUT_SOURCE = "url"
 RAW_CACHE_INPUT_SOURCE = "raw-cache"
 INPUT_SOURCES = (URL_INPUT_SOURCE, RAW_CACHE_INPUT_SOURCE)
-
-MARKET_HISTORY_ARROW_SCHEMA = pa.schema(
-    [
-        pa.field("date", pa.string(), nullable=False),
-        pa.field("region_id", pa.int64(), nullable=False),
-        pa.field("type_id", pa.int64(), nullable=False),
-        pa.field("average", pa.float64(), nullable=False),
-        pa.field("highest", pa.float64(), nullable=False),
-        pa.field("lowest", pa.float64(), nullable=False),
-        pa.field("order_count", pa.int64(), nullable=False),
-        pa.field("volume", pa.int64(), nullable=False),
-        pa.field("_source_market_date", pa.string()),
-        pa.field("_source_url", pa.string()),
-        pa.field("_source_local_path", pa.string()),
-        pa.field("_source_sha256", pa.string()),
-        pa.field("_source_content_length", pa.int64()),
-        pa.field("_source_last_modified", pa.string()),
-        pa.field("_source_downloaded_at", pa.string()),
-        pa.field("_ingested_at", pa.string()),
-    ]
-)
 
 logger = logging.getLogger(__name__)
 
@@ -77,49 +56,23 @@ def list_market_history_urls(
     base_url: str = BASE_URL,
 ) -> Iterator[dict[str, str]]:
     """List expected Everef market history CSV URLs for an inclusive date range."""
-    for market_date in iter_dates(start_date, end_date):
-        yield {
-            "market_date": market_date.isoformat(),
-            "url": market_history_file_url(market_date, base_url),
-        }
+    yield from iter_market_history_url_items(start_date, end_date, base_url)
 
 
 @dlt.transformer(name="market_history_files", selected=False, parallelized=True)
 def probe_market_history_file(item: dict[str, str]) -> Iterator[dict[str, Any]]:
     """Probe an Everef file URL and keep only readable files."""
-    yield from _probe_market_history_file(item)
-
-
-def _probe_market_history_file(item: dict[str, str]) -> Iterator[dict[str, Any]]:
-    """Probe one Everef file URL without dlt parallel wrapper."""
-    try:
-        response = _PROBE_CLIENT.head(item["url"], allow_redirects=True)
-    except requests.RequestException as exc:
-        msg = f"Everef probe failed at {item['url']}: {exc}"
-        raise RuntimeError(msg) from exc
-
-    if response.status_code == 404:
-        logger.warning(
-            "Everef file missing for %s: %s",
-            item["market_date"],
-            item["url"],
-        )
-        return
-
-    if response.status_code >= 400:
-        msg = f"Unexpected Everef status HTTP {response.status_code} for {item['url']}"
-        raise RuntimeError(msg)
-
-    enriched_item: dict[str, Any] = dict(item)
-    update_market_history_file_metadata(
-        enriched_item,
-        response.headers,
+    enriched_item = probe_market_history_file_item(
+        item,
+        http_client=_PROBE_CLIENT,
         logger=logger,
+        request_exception_type=requests.RequestException,
         warn_missing=True,
         warn_zero_content_length=True,
         positive_content_length_only=False,
     )
-
+    if enriched_item is None:
+        return
     yield enriched_item
 
 
@@ -161,14 +114,6 @@ def read_market_history_csv(
     chunksize: int = DEFAULT_CHUNKSIZE,
 ) -> Iterator[pa.Table]:
     """Stream an Everef market history CSV into dlt as Arrow chunks."""
-    yield from _read_market_history_csv(item, chunksize=chunksize)
-
-
-def _read_market_history_csv(
-    item: dict[str, Any],
-    chunksize: int = DEFAULT_CHUNKSIZE,
-) -> Iterator[pa.Table]:
-    """Stream one Everef market history CSV without dlt parallel wrapper."""
     if chunksize <= 0:
         msg = "chunksize must be greater than 0"
         raise ValueError(msg)
@@ -176,51 +121,50 @@ def _read_market_history_csv(
     source_url = item["url"]
     read_path = item.get("local_path", source_url)
     ingested_at = datetime.now(UTC).isoformat()
-    seen_primary_keys: set[tuple[Any, ...]] = set()
 
     try:
         chunks = pd.read_csv(read_path, compression="bz2", chunksize=chunksize)
-        yielded_rows = 0
-        for chunk_index, chunk in enumerate(chunks, start=1):
-            validate_market_history_chunk(
-                chunk,
-                file_url=source_url,
-                market_date=item["market_date"],
-                chunk_index=chunk_index,
-            )
-            chunk_keys = set(
-                chunk[MARKET_HISTORY_PRIMARY_KEY].itertuples(index=False, name=None)
-            )
-            duplicate_keys = seen_primary_keys.intersection(chunk_keys)
-            if duplicate_keys:
-                msg = (
-                    f"Everef CSV chunk {chunk_index} from {source_url} contains "
-                    "duplicate primary-key rows across chunks"
-                )
-                raise ValueError(msg)
-            seen_primary_keys.update(chunk_keys)
-
-            chunk["_source_market_date"] = item["market_date"]
-            chunk["_source_url"] = source_url
-            chunk["_source_local_path"] = item.get("local_path")
-            chunk["_source_sha256"] = item.get("sha256")
-            chunk["_source_content_length"] = item.get("content_length")
-            chunk["_source_last_modified"] = item.get("last_modified")
-            chunk["_source_downloaded_at"] = item.get("downloaded_at")
-            chunk["_ingested_at"] = ingested_at
-
-            yielded_rows += len(chunk)
-            yield pa.Table.from_pandas(
-                chunk,
-                schema=MARKET_HISTORY_ARROW_SCHEMA,
-                preserve_index=False,
-            )
-        if yielded_rows == 0:
-            msg = f"Everef CSV contained no rows: {source_url}"
-            raise ValueError(msg)
-    except Exception as exc:
+    except (OSError, EOFError, UnicodeDecodeError, pd.errors.ParserError) as exc:
         msg = f"Could not read Everef CSV {source_url}: {exc}"
         raise RuntimeError(msg) from exc
+
+    yielded_rows = 0
+    chunk_index = 0
+    while True:
+        try:
+            chunk = next(chunks)
+        except StopIteration:
+            break
+        except (OSError, EOFError, UnicodeDecodeError, pd.errors.ParserError) as exc:
+            msg = f"Could not read Everef CSV {source_url}: {exc}"
+            raise RuntimeError(msg) from exc
+
+        chunk_index += 1
+        validate_market_history_chunk(
+            chunk,
+            file_url=source_url,
+            market_date=item["market_date"],
+            chunk_index=chunk_index,
+        )
+
+        chunk["_source_market_date"] = item["market_date"]
+        chunk["_source_url"] = source_url
+        chunk["_source_local_path"] = item.get("local_path")
+        chunk["_source_sha256"] = item.get("sha256")
+        chunk["_source_content_length"] = item.get("content_length")
+        chunk["_source_last_modified"] = item.get("last_modified")
+        chunk["_source_downloaded_at"] = item.get("downloaded_at")
+        chunk["_ingested_at"] = ingested_at
+
+        yielded_rows += len(chunk)
+        yield pa.Table.from_pandas(
+            chunk,
+            schema=MARKET_HISTORY_ARROW_SCHEMA,
+            preserve_index=False,
+        )
+    if yielded_rows == 0:
+        msg = f"Everef CSV contained no rows: {source_url}"
+        raise ValueError(msg)
 
 
 @dlt.source(name="everef")

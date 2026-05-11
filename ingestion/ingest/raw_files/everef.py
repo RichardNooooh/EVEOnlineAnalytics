@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -10,13 +11,14 @@ from uuid import uuid4
 
 import requests
 
-from ingest.everef_files import (
+from ingest.clients.everef import (
     BASE_URL,
     iter_dates,
     market_history_file_name,
     market_history_file_url,
+    market_history_url_item,
     parse_market_history_date,
-    update_market_history_file_metadata,
+    probe_market_history_file_item,
 )
 from ingest.raw_files.config import (
     RawFilesConfig,
@@ -47,10 +49,11 @@ def acquire_everef_market_history_files(
     records: list[RawFileRecord] = []
 
     for market_date in iter_dates(parsed_start, parsed_end):
-        item = _probe_market_history_file(
-            market_date,
-            base_url=base_url,
+        item = probe_market_history_file_item(
+            market_history_url_item(market_date, base_url),
             http_client=http_client,
+            logger=logger,
+            request_exception_type=requests.RequestException,
         )
         if item is None:
             continue
@@ -108,13 +111,12 @@ def list_cached_everef_market_history_files(
     *,
     base_url: str = BASE_URL,
     config: RawFilesConfig | None = None,
-) -> list[dict[str, object]]:
-    """List cached Everef market-history source items for dlt."""
+) -> Iterator[dict[str, object]]:
+    """Yield cached Everef market-history source items for dlt."""
     parsed_start = parse_market_history_date(start_date)
     parsed_end = parse_market_history_date(end_date)
     resolved_config = config or resolve_raw_files_config()
     repository = RawFileRepository(resolved_config.db_path)
-    items: list[dict[str, object]] = []
 
     for market_date in iter_dates(parsed_start, parsed_end):
         source_url = market_history_file_url(market_date, base_url)
@@ -132,29 +134,7 @@ def list_cached_everef_market_history_files(
                 f"Everef raw file cache record is invalid for {market_date.isoformat()}"
             )
             raise FileNotFoundError(msg)
-        items.append(cached.to_source_item())
-
-    return items
-
-
-def _probe_market_history_file(
-    market_date: date,
-    *,
-    base_url: str,
-    http_client: Any,
-) -> dict[str, Any] | None:
-    url = market_history_file_url(market_date, base_url)
-    response = http_client.head(url, allow_redirects=True)
-    if response.status_code == 404:
-        logger.warning("Everef file missing for %s: %s", market_date.isoformat(), url)
-        return None
-    if response.status_code >= 400:
-        msg = f"Unexpected Everef status HTTP {response.status_code} for {url}"
-        raise RuntimeError(msg)
-
-    item: dict[str, Any] = {"market_date": market_date.isoformat(), "url": url}
-    update_market_history_file_metadata(item, response.headers, logger=logger)
-    return item
+        yield cached.to_source_item()
 
 
 def _download_and_record(
