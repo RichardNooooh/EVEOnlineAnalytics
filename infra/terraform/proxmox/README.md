@@ -27,8 +27,9 @@ Ansible inventory and local secret files consumed by later automation.
 3. **Network bridge** - `vmbr0` with VLAN support if needed.
 4. **SSH access** - Required for snippet upload.
 
-The downstream k3s cluster uses NFS for shared Parquet datasets, manifests, MLflow
-artifacts, and Airflow logs. It does not use NFS as a shared mutable DuckDB warehouse.
+The downstream k3s cluster uses NFS for DuckLake data files, manifests/contracts,
+MLflow artifacts, and Airflow logs. It does not use NFS as a shared mutable DuckDB
+warehouse.
 
 ### On Your Workstation
 
@@ -82,7 +83,7 @@ After apply completes:
 | `ml_db_env_path` | Path to generated MLflow DB env file |
 | `ssh_key_path_proxmox` | SSH private key used for cloud-init |
 | `ssh_key_path_ansible` | SSH private key used for Ansible |
-| `ansible_inventory_snippet` | YAML-formatted reference for k3s-ansible |
+| `ansible_inventory_snippet` | YAML-formatted generated inventory preview |
 
 ## Ansible Integration
 

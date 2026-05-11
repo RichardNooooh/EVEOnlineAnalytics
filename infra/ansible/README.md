@@ -13,10 +13,10 @@ This layer uses a role-based architecture with clear separation of concerns:
 - **postgresql_server role:** external PostgreSQL server install and DB provisioning
 - **nfs_client role:** shared NFS mount configuration
 
-The repo also contains a `k3s_upgrade` role for future upgrade-specific workflows, but
-the main entrypoint today is still `site.yml`.
+No k3s upgrade workflow is wired into the current checked-in playbooks; `site.yml` is
+the main entrypoint for cluster bootstrap and configuration.
 
-The shared NFS mount backs published Parquet datasets, manifests, MLflow artifacts,
+The shared NFS mount backs DuckLake data files, manifests/contracts, MLflow artifacts,
 and Airflow logs. It does not host a shared writable DuckDB warehouse file.
 
 Any DuckDB database used by dbt or a batch job is scratch state and should use
@@ -178,7 +178,7 @@ Critical for stability on nodes with limited RAM:
 - performance-tuned mount options
 - pre-checks for NFS reachability and export visibility
 - health directory under the mounted share
-- shared storage intended for published datasets, artifacts, and logs
+- shared storage intended for DuckLake data files, artifacts, and logs
 
 ## Tags
 
