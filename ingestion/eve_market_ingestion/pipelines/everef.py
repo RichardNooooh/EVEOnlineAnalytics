@@ -8,33 +8,47 @@ from pathlib import Path
 from typing import Any
 
 import dlt
-from dlt.destinations import filesystem
+from dlt.destinations import ducklake
+from dlt.destinations.impl.ducklake.configuration import DuckLakeCredentials
 
 from eve_market_ingestion.sources.everef_market_history import (
     everef_market_history_source,
 )
 
-BUCKET_URL_ENV_VAR = "EVE_MARKET_INGESTION_BUCKET_URL"
 DATA_ROOT_ENV_VAR = "EVE_MARKET_DATA_ROOT"
+DUCKLAKE_NAME_ENV_VAR = "EVE_MARKET_DUCKLAKE_NAME"
+DUCKLAKE_CATALOG_ENV_VAR = "EVE_MARKET_DUCKLAKE_CATALOG"
+DUCKLAKE_STORAGE_ENV_VAR = "EVE_MARKET_DUCKLAKE_STORAGE"
+DEFAULT_DUCKLAKE_NAME = "eve_market"
 LOCAL_STORAGE_TARGET = "local"
 MOUNTED_STORAGE_TARGET = "mounted"
 STORAGE_TARGETS = (LOCAL_STORAGE_TARGET, MOUNTED_STORAGE_TARGET)
 DEFAULT_MOUNTED_DATA_ROOT = "/opt/eve-market/data"
 
 
-def local_bucket_url() -> str:
-    """Return the repo-local filesystem bucket URL independent of cwd."""
+def local_ducklake_root() -> Path:
+    """Return the repo-local DuckLake root independent of cwd."""
     ingestion_root = Path(__file__).resolve().parents[2]
-    return (ingestion_root / ".local/dlt-staging/everef/market_history").as_uri()
+    return ingestion_root / ".local/ducklake/everef_market_history"
 
 
-def mounted_bucket_url(data_root: str) -> str:
-    """Return the mounted filesystem bucket URL under a configured data root."""
+def local_ducklake_catalog() -> str:
+    """Return the repo-local DuckLake sqlite catalog URL."""
+    return f"sqlite:///{local_ducklake_root() / 'lake_catalog.sqlite'}"
+
+
+def local_ducklake_storage() -> str:
+    """Return the repo-local DuckLake file storage URL."""
+    return (local_ducklake_root() / "files").as_uri()
+
+
+def mounted_ducklake_storage(data_root: str) -> str:
+    """Return the mounted DuckLake file storage URL under a configured data root."""
     if not data_root.strip():
         msg = "data_root must not be empty"
         raise ValueError(msg)
     return (
-        Path(data_root).expanduser().resolve() / "dlt-staging/everef/market_history"
+        Path(data_root).expanduser().resolve() / "ducklake/everef/market_history"
     ).as_uri()
 
 
@@ -56,61 +70,100 @@ def resolve_mounted_data_root(data_root: str | None = None) -> str:
     return DEFAULT_MOUNTED_DATA_ROOT
 
 
-def bucket_url_for_storage_target(
+def ducklake_storage_for_target(
     storage_target: str,
     data_root: str | None = None,
 ) -> str:
-    """Resolve a named storage target to its default filesystem bucket URL."""
+    """Resolve a named storage target to its default DuckLake storage URL."""
     if storage_target == LOCAL_STORAGE_TARGET:
-        return local_bucket_url()
+        return local_ducklake_storage()
     if storage_target == MOUNTED_STORAGE_TARGET:
-        return mounted_bucket_url(resolve_mounted_data_root(data_root))
+        return mounted_ducklake_storage(resolve_mounted_data_root(data_root))
 
     msg = f"storage_target must be one of {', '.join(STORAGE_TARGETS)}"
     raise ValueError(msg)
 
 
-def resolve_bucket_url(
-    bucket_url: str | None = None,
+def resolve_config_value(
+    explicit_value: str | None,
     *,
-    storage_target: str = LOCAL_STORAGE_TARGET,
-    data_root: str | None = None,
+    env_var: str,
+    default_value: str,
+    value_name: str,
 ) -> str:
-    """Resolve filesystem bucket URL by explicit, env, target, then local precedence."""
-    if bucket_url is not None:
-        if not bucket_url.strip():
-            msg = "bucket_url must not be empty"
+    """Resolve config by explicit, env, then default precedence."""
+    if explicit_value is not None:
+        if not explicit_value.strip():
+            msg = f"{value_name} must not be empty"
             raise ValueError(msg)
-        return bucket_url
+        return explicit_value
 
-    env_bucket_url = os.getenv(BUCKET_URL_ENV_VAR)
-    if env_bucket_url is not None:
-        if not env_bucket_url.strip():
-            msg = f"{BUCKET_URL_ENV_VAR} must not be empty"
+    env_value = os.getenv(env_var)
+    if env_value is not None:
+        if not env_value.strip():
+            msg = f"{env_var} must not be empty"
             raise ValueError(msg)
-        return env_bucket_url
+        return env_value
 
-    return bucket_url_for_storage_target(storage_target, data_root)
+    return default_value
+
+
+def resolve_ducklake_storage(
+    ducklake_storage: str | None,
+    *,
+    storage_target: str,
+    data_root: str | None,
+) -> str:
+    """Resolve DuckLake storage by explicit, env, target, then local precedence."""
+    if ducklake_storage is not None:
+        if not ducklake_storage.strip():
+            msg = "ducklake_storage must not be empty"
+            raise ValueError(msg)
+        return ducklake_storage
+
+    env_storage = os.getenv(DUCKLAKE_STORAGE_ENV_VAR)
+    if env_storage is not None:
+        if not env_storage.strip():
+            msg = f"{DUCKLAKE_STORAGE_ENV_VAR} must not be empty"
+            raise ValueError(msg)
+        return env_storage
+
+    return ducklake_storage_for_target(storage_target, data_root)
 
 
 def build_destination_config(
-    destination: str,
-    bucket_url: str | None = None,
+    destination: str = "ducklake",
+    ducklake_name: str | None = None,
+    ducklake_catalog: str | None = None,
+    ducklake_storage: str | None = None,
     *,
     storage_target: str = LOCAL_STORAGE_TARGET,
     data_root: str | None = None,
 ) -> str | Any:
-    """Build a dlt destination config, resolving filesystem storage explicitly."""
-    if destination != "filesystem":
+    """Build a dlt destination config, keeping non-DuckLake strings as escape hatch."""
+    if destination != "ducklake":
         return destination
 
-    return filesystem(
-        bucket_url=resolve_bucket_url(
-            bucket_url,
+    credentials = DuckLakeCredentials(
+        resolve_config_value(
+            ducklake_name,
+            env_var=DUCKLAKE_NAME_ENV_VAR,
+            default_value=DEFAULT_DUCKLAKE_NAME,
+            value_name="ducklake_name",
+        ),
+        catalog=resolve_config_value(
+            ducklake_catalog,
+            env_var=DUCKLAKE_CATALOG_ENV_VAR,
+            default_value=local_ducklake_catalog(),
+            value_name="ducklake_catalog",
+        ),
+        storage=resolve_ducklake_storage(
+            ducklake_storage,
             storage_target=storage_target,
             data_root=data_root,
-        )
+        ),
     )
+    return ducklake(credentials=credentials)
 
 
 def run_everef_market_history_pipeline(
@@ -119,8 +172,10 @@ def run_everef_market_history_pipeline(
     *,
     pipeline_name: str = "everef_market_history",
     dataset_name: str = "everef_market_history",
-    destination: str = "filesystem",
-    bucket_url: str | None = None,
+    destination: str = "ducklake",
+    ducklake_name: str | None = None,
+    ducklake_catalog: str | None = None,
+    ducklake_storage: str | None = None,
     storage_target: str = LOCAL_STORAGE_TARGET,
     data_root: str | None = None,
     base_url: str | None = None,
@@ -131,7 +186,9 @@ def run_everef_market_history_pipeline(
     """Run the Everef market history source through a dlt pipeline."""
     destination_config = build_destination_config(
         destination,
-        bucket_url,
+        ducklake_name,
+        ducklake_catalog,
+        ducklake_storage,
         storage_target=storage_target,
         data_root=data_root,
     )
