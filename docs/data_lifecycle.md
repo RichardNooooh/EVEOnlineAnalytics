@@ -3,7 +3,8 @@
 ## Overview
 
 The platform treats data publication as an explicit lifecycle, not an in-place update
-to a shared database file.
+to a shared DuckDB database file. DuckLake table state is the canonical analytical
+contract; Parquet files are the physical storage below that table format.
 
 ## Dataset Layers
 
@@ -11,7 +12,7 @@ to a shared database file.
 
 - closest durable representation of source records
 - minimally normalized
-- partitioned for replay, backfill, and source correction handling
+- organized for replay, backfill, and source correction handling
 - published by ingestion jobs
 
 ### Curated
@@ -28,7 +29,8 @@ An Airflow task or batch job fetches source records from everef.net or ESI.
 
 ### 2. Stage Candidate Output
 
-The writer produces candidate Parquet files in a temporary, unpublished location.
+The writer produces candidate data in job-local or unpublished state before it becomes
+visible table state.
 
 ### 3. Validate
 
@@ -41,13 +43,14 @@ The writer validates:
 
 ### 4. Publish
 
-The writer promotes the validated output into the canonical dataset path and writes a
-manifest describing the publication.
+The writer commits the validated change into the canonical DuckLake table state. For
+sources that can revise prior files, the replacement scope must be explicit, such as the
+Everef market-history source `date`.
 
 ### 5. Consume
 
 Downstream readers such as dbt, ML jobs, dashboards, and APIs consume only published
-dataset state.
+table state.
 
 ## Backfills and Corrections
 
@@ -55,7 +58,8 @@ The architecture expects source corrections and replay.
 
 - everef archives may change as new history is discovered
 - backfills may replace or republish prior partitions
-- publication manifests must make the visible partition set explicit
+- DuckLake table state must make the visible replacement scope explicit
+- supplemental manifests may record publication metadata where useful
 
 ## Single-Writer Rules
 
@@ -68,8 +72,8 @@ The architecture expects source corrections and replay.
 
 dbt will eventually:
 
-- treat published Parquet datasets as external sources
-- materialize curated outputs as Parquet datasets and/or use a transient local DuckDB
+- read canonical DuckLake table state through a validated DuckLake/DuckDB handoff
+- materialize curated outputs as DuckLake tables and/or use a transient local DuckDB
   work database during execution
 - never depend on a cluster-shared writable DuckDB warehouse file
 
@@ -88,6 +92,6 @@ Expected loop:
 6. deploy to k3s with Helm
 
 Local storage remains an approximation of production storage. `.local/data` stands in
-for TrueNAS NFS dataset storage, local Postgres stands in for the Airflow metadata
-database, and bind-mounted DAGs/code stand in for the deployed Airflow image or sync
-mechanism.
+for TrueNAS NFS DuckLake data-file storage, local Postgres stands in for the Airflow
+metadata database, and bind-mounted DAGs/code stand in for the deployed Airflow image or
+sync mechanism.

@@ -15,21 +15,23 @@ engineering.
 
 ## Canonical Architecture Contract
 
-- **System of record:** published Parquet datasets on shared storage.
-- **Shared storage:** TrueNAS NFS exported into k3s as RWX storage for Parquet datasets,
-  manifests, artifacts, and logs.
+- **System of record:** DuckLake tables backed by Parquet data files on shared storage.
+- **Shared storage:** TrueNAS NFS exported into k3s as RWX storage for DuckLake data
+  files, manifests/contracts, artifacts, and logs.
+- **Catalog state:** DuckLake catalog metadata is durable state. Use PostgreSQL for
+  production-style deployments; local SQLite is only for local smoke tests.
 - **Compute:** DuckDB is local or transient analytical compute only.
 - **Forbidden pattern:** there is no cluster-shared writable `.duckdb` file.
 - **Writer model:** dataset publication is single-writer for the relevant publication
   scope.
-- **Publication model:** writers use temp-write then promote semantics and publish
-  manifests/contracts.
+- **Publication model:** writers publish through DuckLake table commits or merge/delete
+  semantics and maintain contracts/manifests where useful.
 - **Scratch storage:** any DuckDB database used by dbt or batch jobs must live on pod
   scratch such as `emptyDir` or node-local `ReadWriteOnce` volumes, never RWX shared
   NFS.
 
-See `docs/architecture.md`, `docs/data_lifecycle.md`, `docs/storage_layout.md`, and
-ADR-016 for the current contract.
+See `docs/architecture.md`, `docs/data_lifecycle.md`, `docs/storage_layout.md`,
+ADR-016, and ADR-020 for the current contract.
 
 ## Data Sources
 
@@ -85,9 +87,9 @@ justification.
 | Layer | Tool | Purpose |
 |---|---|---|
 | Extract + Publish | **Python + dlt** | Source-specific ingestion and dataset publication tasks orchestrated by Airflow |
-| Storage | **Parquet on shared NFS** | Durable raw and curated datasets, manifests, contracts, and shared reader state |
+| Storage | **DuckLake over Parquet files** | Durable raw and curated analytical tables, contracts, catalog metadata, and shared reader state |
 | Compute | **DuckDB** (local/transient only) | Local dev queries, dbt work DBs, and single-writer batch compute |
-| Transform | **dbt** (Parquet sources, local DuckDB work DB, Snowflake proof target) | SQL transformations, tests, and documentation |
+| Transform | **dbt** (DuckLake/DuckDB handoff, local DuckDB work DB, Snowflake proof target) | SQL transformations, tests, and documentation |
 | Orchestration | **Airflow** | DAG-based scheduling for ingestion, transforms, training, predictions, and monitoring |
 | Cloud-readiness | **Snowflake** (OpenTofu/Terraform) | IaC code proves a managed warehouse path; not kept live |
 | BI / Dashboards | **Tableau** | Market analytics visualization for end users |
@@ -101,8 +103,8 @@ justification.
 - **Airbyte:** Heavy self-hosted footprint and the wrong abstraction for explicit
   single-writer dataset publication.
 - **Great Expectations:** Overlaps with dbt tests for this scope.
-- **DVC:** Published Parquet datasets plus manifests cover persisted analytical data;
-  MLflow handles model artifacts.
+- **DVC:** DuckLake tables, catalog metadata, contracts, and manifests cover persisted
+  analytical data; MLflow handles model artifacts.
 - **PowerBI:** Redundant with Tableau.
 
 ## ML Models
@@ -217,8 +219,9 @@ eve-market-analytics/
 - All 3 nodes are k3s server nodes with workload scheduling enabled.
 - Shared storage is provided by TrueNAS NFS and exposed to the cluster through RWX
   PersistentVolumes.
-- Shared NFS stores published Parquet datasets, manifests, MLflow artifacts, and
-  Airflow logs.
+- Shared NFS stores DuckLake data files, manifests/contracts, MLflow artifacts, and
+  Airflow logs. DuckLake catalog metadata is durable state and should use PostgreSQL in
+  production-style deployments.
 - Airflow metadata uses an external PostgreSQL server on its own Proxmox VM rather than
   another service inside `k3s`. That same server may later host MLflow in separate
   databases and credentials.
@@ -238,8 +241,8 @@ eve-market-analytics/
 
 - Snowflake IaC is a planned cloud-readiness path and is not checked into this repo
   yet.
-- The steady-state architecture remains self-hosted Parquet datasets plus local or
-  transient compute.
+- The steady-state architecture remains self-hosted DuckLake tables backed by Parquet
+  files plus local or transient compute.
 
 ### RAM Budget
 

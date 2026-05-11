@@ -10,15 +10,15 @@
 
 Local Compose stack provides fast ingestion iteration and portfolio demo access without
 requiring Proxmox, k3s, TrueNAS, or Helm. It runs Airflow with a local Postgres
-metadata database, bind-mounted DAGs and project code, and local dataset storage under
-`.local/data`.
+metadata database, bind-mounted DAGs and project code, and local DuckLake data-file
+storage under `.local/data`.
 
 This runtime is a development harness, not production. It does not replace the
 canonical k3s + Helm architecture documented in `docs/architecture.md`.
 
 Production mapping:
 
-- `.local/data` approximates TrueNAS NFS dataset storage
+- `.local/data` approximates TrueNAS NFS DuckLake data-file storage
 - local Postgres approximates the Airflow metadata database
 - bind-mounted DAGs and code approximate the deployed Airflow image or sync mechanism
 

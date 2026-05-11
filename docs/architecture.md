@@ -2,10 +2,14 @@
 
 ## Canonical Contract
 
-The platform uses a **single-writer Parquet architecture**.
+The platform uses **DuckLake tables as the canonical analytical table contract**.
 
-- **System of record:** published Parquet datasets on shared NFS storage.
-- **Shared durable state:** Parquet data files, dataset manifests, schema contracts,
+- **System of record:** DuckLake table state backed by Parquet data files.
+- **Physical storage:** Parquet files stored on shared storage under the DuckLake table
+  format.
+- **Catalog state:** DuckLake catalog metadata is durable state and must be backed up
+  with the data files.
+- **Shared durable state:** DuckLake data files, catalog metadata, schema contracts,
   MLflow artifacts, and Airflow logs.
 - **Compute state:** local or transient execution state such as DuckDB work databases.
 - **Service boundary:** Kubernetes runs the application workloads, while PostgreSQL runs
@@ -19,8 +23,9 @@ The platform uses a **single-writer Parquet architecture**.
 Storage is durable, shared, and reader-visible.
 
 - stored on TrueNAS NFS
-- organized as Parquet datasets by layer and dataset name
-- governed by publication manifests and contracts
+- organized as DuckLake tables by layer and dataset name
+- governed by DuckLake catalog state, table contracts, and supplemental manifests where
+  they are useful
 - safe for many readers after publication
 
 ### Compute
@@ -29,17 +34,17 @@ Compute is local and disposable.
 
 - DuckDB may be used for local development or single-writer batch jobs
 - dbt may use a local DuckDB work database during execution
-- compute outputs are not canonical until published to the dataset storage contract
+- compute outputs are not canonical until published to the DuckLake table contract
 
 ## Planned Data Flow
 
 ```text
 Airflow
   -> dataset writer / publisher
-  -> raw or bronze Parquet datasets on shared NFS
-  -> dbt reads Parquet-backed sources
-  -> curated Parquet outputs and/or transient local DuckDB work DB
-  -> ML training, dashboards, and APIs consume published datasets
+  -> raw or bronze DuckLake tables backed by Parquet files
+  -> dbt reads canonical table state through a validated DuckLake/DuckDB handoff
+  -> curated DuckLake tables and/or transient local DuckDB work DB
+  -> ML training, dashboards, and APIs consume published table state
 ```
 
 ## Local Development/Demo Runtime
@@ -49,12 +54,12 @@ iteration and portfolio demos without Proxmox, k3s, TrueNAS, or Helm.
 
 This runtime is a development harness only. It is not production and does not replace
 the canonical k3s + Helm architecture. Production workloads still target k3s, Helm,
-TrueNAS-backed RWX storage for published datasets, and the external Airflow metadata
+TrueNAS-backed RWX storage for DuckLake data files, and the external Airflow metadata
 PostgreSQL service described by ADR-018.
 
 Local-to-production mapping:
 
-- `.local/data` approximates TrueNAS NFS dataset storage for published Parquet data
+- `.local/data` approximates TrueNAS NFS storage for DuckLake data files
 - local Postgres approximates the Airflow metadata database
 - bind-mounted DAGs and source code approximate the deployed Airflow image or DAG/code
   sync mechanism
@@ -86,16 +91,17 @@ scope.
 
 ## Publication Semantics
 
-Future ingestion and transform jobs must use temp-write then promote semantics:
+Ingestion and transform jobs publish by changing DuckLake table state, not by exposing
+loose Parquet files as the contract. A publication must preserve these semantics:
 
-1. write candidate files into a temporary path
+1. stage candidate data in unpublished job state
 2. validate data and schema contract compliance
-3. emit or update a manifest describing the promoted publication
-4. promote the files into the canonical published location
-5. only then allow downstream readers to treat the data as visible
+3. commit the DuckLake table change for the intended replacement scope
+4. record supporting contract or manifest metadata where needed
+5. only then allow downstream readers to treat the table state as visible
 
-This repository does not implement that behavior yet. This document defines the target
-contract.
+For Everef market history, revised source dates are represented through DuckLake merge
+or delete-insert semantics rather than append-only duplicate rows.
 
 ## Scratch Storage Contract
 
@@ -114,7 +120,7 @@ Disallowed example:
 ## Planned Repository Orientation
 
 The planned repo structure favors `datasets/` over `warehouse/` because the canonical
-durable artifact is a published dataset, not a shared mutable database file.
+durable artifact is analytical table state, not a shared mutable DuckDB database file.
 
 See also:
 
@@ -122,3 +128,4 @@ See also:
 - `docs/storage_layout.md`
 - `docs/data_dictionary.md`
 - `docs/adr/adr-016-parquet-system-of-record.md`
+- `docs/adr/adr-020-ducklake-canonical-table-format.md`
