@@ -164,6 +164,7 @@ def run_everef_market_history_pipeline(
     sync_raw: bool = False,
     raw_root: str | None = None,
     raw_ledger_db: str | None = None,
+    raw_max_copies_per_date: int | str | None = None,
     loader_file_format: str = "parquet",
     dev_mode: bool = False,
 ) -> Any:
@@ -188,6 +189,7 @@ def run_everef_market_history_pipeline(
         raw_config = resolve_raw_files_config(
             raw_root=raw_root,
             db_path=raw_ledger_db,
+            max_copies_per_date=raw_max_copies_per_date,
             storage_target=storage_target,
             data_root=data_root,
         )

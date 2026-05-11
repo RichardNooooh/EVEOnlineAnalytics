@@ -84,11 +84,22 @@ def acquire_everef_market_history_file(
         if cached.id is not None:
             repository.touch_checked(cached.id, now)
         logger.info("Everef raw file cache hit for %s", item["market_date"])
+        _prune_old_copies(
+            repository,
+            source_date=item["market_date"],
+            max_copies=config.max_copies_per_date,
+        )
         return cached
 
-    return _download_and_record(
+    record = _download_and_record(
         item, config=config, repository=repository, http_client=http_client
     )
+    _prune_old_copies(
+        repository,
+        source_date=item["market_date"],
+        max_copies=config.max_copies_per_date,
+    )
+    return record
 
 
 def list_cached_everef_market_history_files(
@@ -266,6 +277,48 @@ def _local_file_matches(
     if downloaded_size is not None and path.stat().st_size != downloaded_size:
         return False
     return sha256_file(path) == sha256
+
+
+def _prune_old_copies(
+    repository: RawFileRepository,
+    *,
+    source_date: str,
+    max_copies: int,
+) -> None:
+    if max_copies == 0:
+        return
+
+    records = repository.list_successes_for_source_date(
+        source_name=SOURCE_NAME,
+        dataset_name=DATASET_NAME,
+        source_date=source_date,
+    )
+    kept_paths: set[str] = set()
+    pruned_paths: set[str] = set()
+    for record in records:
+        if record.local_path is None:
+            continue
+        if record.local_path in kept_paths or record.local_path in pruned_paths:
+            continue
+        if len(kept_paths) < max_copies:
+            kept_paths.add(record.local_path)
+        else:
+            pruned_paths.add(record.local_path)
+
+    for local_path in pruned_paths:
+        path = Path(local_path)
+        path.unlink(missing_ok=True)
+        _remove_empty_parents(path.parent)
+
+    repository.delete_successes_for_local_paths(pruned_paths)
+
+
+def _remove_empty_parents(path: Path) -> None:
+    for candidate in (path, path.parent):
+        try:
+            candidate.rmdir()
+        except OSError:
+            return
 
 
 def _utc_now() -> str:
