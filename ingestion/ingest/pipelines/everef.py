@@ -52,6 +52,15 @@ def local_ducklake_storage() -> str:
     return (local_ducklake_root() / "files").as_uri()
 
 
+def ensure_local_ducklake_paths(catalog: str, storage: str) -> None:
+    """Create repo-local DuckLake paths when local defaults are in use."""
+    root = local_ducklake_root()
+    if catalog == local_ducklake_catalog():
+        root.mkdir(parents=True, exist_ok=True)
+    if storage == local_ducklake_storage():
+        (root / "files").mkdir(parents=True, exist_ok=True)
+
+
 def mounted_ducklake_storage(data_root: str) -> str:
     """Return the mounted DuckLake file storage URL under a configured data root."""
     return (
@@ -109,24 +118,30 @@ def build_destination_config(
     if destination != "ducklake":
         return destination
 
+    name = resolve_config_value(
+        ducklake_name,
+        env_var=DUCKLAKE_NAME_ENV_VAR,
+        default_value=DEFAULT_DUCKLAKE_NAME,
+        value_name="ducklake_name",
+    )
+    catalog = resolve_config_value(
+        ducklake_catalog,
+        env_var=DUCKLAKE_CATALOG_ENV_VAR,
+        default_value=local_ducklake_catalog(),
+        value_name="ducklake_catalog",
+    )
+    storage = resolve_ducklake_storage(
+        ducklake_storage,
+        storage_target=storage_target,
+        data_root=data_root,
+    )
+
+    ensure_local_ducklake_paths(catalog, storage)
+
     credentials = DuckLakeCredentials(
-        resolve_config_value(
-            ducklake_name,
-            env_var=DUCKLAKE_NAME_ENV_VAR,
-            default_value=DEFAULT_DUCKLAKE_NAME,
-            value_name="ducklake_name",
-        ),
-        catalog=resolve_config_value(
-            ducklake_catalog,
-            env_var=DUCKLAKE_CATALOG_ENV_VAR,
-            default_value=local_ducklake_catalog(),
-            value_name="ducklake_catalog",
-        ),
-        storage=resolve_ducklake_storage(
-            ducklake_storage,
-            storage_target=storage_target,
-            data_root=data_root,
-        ),
+        name,
+        catalog=catalog,
+        storage=storage,
     )
     return ducklake(credentials=credentials)
 
