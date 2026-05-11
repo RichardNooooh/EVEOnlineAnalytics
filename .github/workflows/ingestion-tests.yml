@@ -1,0 +1,35 @@
+name: Ingestion Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ingestion/**"
+      - "mise.toml"
+      - ".github/workflows/ingestion-tests.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "ingestion/**"
+      - "mise.toml"
+      - ".github/workflows/ingestion-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Pytest
+    runs-on: [self-hosted, Linux, X64, eve, ci, python]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install toolchain with mise
+        uses: jdx/mise-action@v4
+
+      - name: Run ingestion tests
+        working-directory: ingestion
+        run: uv run --locked pytest
