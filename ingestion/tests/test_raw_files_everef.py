@@ -4,16 +4,19 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
-from ingest.raw_files.config import MOUNTED_STORAGE_TARGET
-from ingest.raw_files.config import RawFilesConfig
-from ingest.raw_files.config import RAW_FILES_DB_ENV_VAR
-from ingest.raw_files.config import RAW_FILES_ROOT_ENV_VAR
-from ingest.raw_files.config import resolve_raw_files_config
-from ingest.raw_files.everef import acquire_everef_market_history_files
+from ingest.raw_files.config import (
+    MOUNTED_STORAGE_TARGET,
+    RAW_FILES_DB_ENV_VAR,
+    RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
+    RAW_FILES_ROOT_ENV_VAR,
+    RawFilesConfig,
+    resolve_raw_files_config,
+)
 from ingest.raw_files.everef import (
+    acquire_everef_market_history_files,
     list_cached_everef_market_history_files,
 )
+from ingest.raw_files.repository import RawFileRepository
 
 
 class FakeHttpClient:
@@ -154,6 +157,162 @@ def test_acquire_redownloads_when_remote_metadata_changes(tmp_path: Path) -> Non
     assert len(client.get_calls) == 2
 
 
+def test_acquire_prunes_old_changed_copies_by_default(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    client = FakeHttpClient(b"raw bytes 0")
+    records = []
+
+    for index in range(6):
+        client.content = f"raw bytes {index}".encode()
+        client.last_modified = f"Wed, 01 Jan 2025 12:00:0{index} GMT"
+        records.append(
+            acquire_everef_market_history_files(
+                "2025-01-01",
+                "2025-01-01",
+                base_url="https://example.test/history",
+                config=config,
+                http_client=client,
+            )[0]
+        )
+
+    assert records[0].local_path is not None
+    assert not Path(records[0].local_path).exists()
+    for record in records[1:]:
+        assert record.local_path is not None
+        assert Path(record.local_path).exists()
+
+    repository = RawFileRepository(config.db_path)
+    cached_records = repository.list_successes_for_source_date(
+        source_name="everef",
+        dataset_name="market_history",
+        source_date="2025-01-01",
+    )
+    assert {record.local_path for record in cached_records} == {
+        record.local_path for record in records[1:]
+    }
+
+    cached_items = list_cached_everef_market_history_files(
+        "2025-01-01",
+        "2025-01-01",
+        base_url="https://example.test/history",
+        config=config,
+    )
+    assert cached_items == [records[-1].to_source_item()]
+
+
+def test_acquire_prunes_old_changed_copies_per_date(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    client = FakeHttpClient(b"raw bytes 0")
+    dates = ["2025-01-01", "2025-01-02"]
+    records_by_date = {market_date: [] for market_date in dates}
+
+    for market_date in dates:
+        for index in range(6):
+            client.content = f"raw bytes {market_date} {index}".encode()
+            client.last_modified = f"Wed, {index + 1:02d} Jan 2025 12:00:00 GMT"
+            records_by_date[market_date].append(
+                acquire_everef_market_history_files(
+                    market_date,
+                    market_date,
+                    base_url="https://example.test/history",
+                    config=config,
+                    http_client=client,
+                )[0]
+            )
+
+    repository = RawFileRepository(config.db_path)
+    for market_date, records in records_by_date.items():
+        assert records[0].local_path is not None
+        assert not Path(records[0].local_path).exists()
+        for record in records[1:]:
+            assert record.local_path is not None
+            assert Path(record.local_path).exists()
+
+        cached_records = repository.list_successes_for_source_date(
+            source_name="everef",
+            dataset_name="market_history",
+            source_date=market_date,
+        )
+        assert {record.local_path for record in cached_records} == {
+            record.local_path for record in records[1:]
+        }
+
+
+def test_acquire_keeps_all_changed_copies_when_pruning_disabled(
+    tmp_path: Path,
+) -> None:
+    config = RawFilesConfig(
+        raw_root=tmp_path / "raw",
+        db_path=tmp_path / "raw" / "raw_files.sqlite",
+        max_copies_per_date=0,
+    )
+    client = FakeHttpClient(b"raw bytes 0")
+    records = []
+
+    for index in range(6):
+        client.content = f"raw bytes {index}".encode()
+        client.last_modified = f"Wed, 01 Jan 2025 12:00:0{index} GMT"
+        records.append(
+            acquire_everef_market_history_files(
+                "2025-01-01",
+                "2025-01-01",
+                base_url="https://example.test/history",
+                config=config,
+                http_client=client,
+            )[0]
+        )
+
+    for record in records:
+        assert record.local_path is not None
+        assert Path(record.local_path).exists()
+
+
+def test_acquire_prunes_old_copies_on_cache_hit(tmp_path: Path) -> None:
+    disabled_config = RawFilesConfig(
+        raw_root=tmp_path / "raw",
+        db_path=tmp_path / "raw" / "raw_files.sqlite",
+        max_copies_per_date=0,
+    )
+    client = FakeHttpClient(b"raw bytes 0")
+    records = []
+
+    for index in range(3):
+        client.content = f"raw bytes {index}".encode()
+        client.last_modified = f"Wed, 01 Jan 2025 12:00:0{index} GMT"
+        records.append(
+            acquire_everef_market_history_files(
+                "2025-01-01",
+                "2025-01-01",
+                base_url="https://example.test/history",
+                config=disabled_config,
+                http_client=client,
+            )[0]
+        )
+
+    pruning_config = RawFilesConfig(
+        raw_root=disabled_config.raw_root,
+        db_path=disabled_config.db_path,
+        max_copies_per_date=2,
+    )
+    cache_hit = acquire_everef_market_history_files(
+        "2025-01-01",
+        "2025-01-01",
+        base_url="https://example.test/history",
+        config=pruning_config,
+        http_client=client,
+    )[0]
+
+    assert cache_hit.local_path == records[-1].local_path
+    assert records[0].local_path is not None
+    assert not Path(records[0].local_path).exists()
+    for record in records[1:]:
+        assert record.local_path is not None
+        assert Path(record.local_path).exists()
+    assert len(client.get_calls) == 3
+
+
 def test_acquire_replaces_corrupt_existing_hash_path(tmp_path: Path) -> None:
     config = _config(tmp_path)
     content = b"raw bytes"
@@ -250,6 +409,7 @@ def test_raw_files_config_resolves_local_default(
 
     assert str(config.raw_root).endswith("/ingestion/.local/raw")
     assert config.db_path == config.raw_root / "raw_files.sqlite"
+    assert config.max_copies_per_date == 5
 
 
 def test_raw_files_config_resolves_mounted_target(
@@ -274,11 +434,30 @@ def test_raw_files_config_resolves_env_overrides(
 ) -> None:
     monkeypatch.setenv(RAW_FILES_ROOT_ENV_VAR, str(tmp_path / "env-raw"))
     monkeypatch.setenv(RAW_FILES_DB_ENV_VAR, str(tmp_path / "env.sqlite"))
+    monkeypatch.setenv(RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR, "0")
 
     config = resolve_raw_files_config()
 
     assert config.raw_root == tmp_path / "env-raw"
     assert config.db_path == tmp_path / "env.sqlite"
+    assert config.max_copies_per_date == 0
+
+
+def test_raw_files_config_accepts_explicit_max_copies(tmp_path: Path) -> None:
+    config = resolve_raw_files_config(
+        raw_root=str(tmp_path / "raw"),
+        max_copies_per_date="7",
+    )
+
+    assert config.max_copies_per_date == 7
+
+
+def test_raw_files_config_rejects_invalid_max_copies(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="greater than or equal to 0"):
+        resolve_raw_files_config(
+            raw_root=str(tmp_path / "raw"),
+            max_copies_per_date="-1",
+        )
 
 
 def _config(tmp_path: Path) -> RawFilesConfig:
