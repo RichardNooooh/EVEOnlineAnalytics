@@ -16,6 +16,7 @@ from ingest.pipelines.everef import (
     run_everef_market_history_pipeline,
 )
 from ingest.raw_files.config import (
+    RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
     RAW_FILES_DB_ENV_VAR,
     RAW_FILES_ROOT_ENV_VAR,
     resolve_raw_files_config,
@@ -121,6 +122,14 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
         default=None,
         help=f"Raw source-file SQLite ledger path. Overrides {RAW_FILES_DB_ENV_VAR}.",
     )
+    everef_parser.add_argument(
+        "--raw-max-copies-per-date",
+        default=None,
+        help=(
+            "Maximum raw file copies to keep per source date; 0 disables deletion. "
+            f"Overrides {RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR}."
+        ),
+    )
     everef_parser.add_argument("--loader-file-format", default="parquet")
     everef_parser.add_argument("--dev-mode", action="store_true")
 
@@ -163,6 +172,14 @@ def build_raw_files_parser(raw_files_parser: argparse.ArgumentParser) -> None:
         default=None,
         help=f"Raw source-file SQLite ledger path. Overrides {RAW_FILES_DB_ENV_VAR}.",
     )
+    raw_sync_parser.add_argument(
+        "--raw-max-copies-per-date",
+        default=None,
+        help=(
+            "Maximum raw file copies to keep per source date; 0 disables deletion. "
+            f"Overrides {RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR}."
+        ),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -188,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
             sync_raw=args.sync_raw,
             raw_root=args.raw_root,
             raw_ledger_db=args.raw_ledger_db,
+            raw_max_copies_per_date=args.raw_max_copies_per_date,
             loader_file_format=args.loader_file_format,
             dev_mode=args.dev_mode,
         )
@@ -198,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         config = resolve_raw_files_config(
             raw_root=args.raw_root,
             db_path=args.raw_ledger_db,
+            max_copies_per_date=args.raw_max_copies_per_date,
             storage_target=args.storage_target,
             data_root=args.data_root,
         )

@@ -87,6 +87,46 @@ class RawFileRepository:
             id=record_id, **{k: v for k, v in vars(record).items() if k != "id"}
         )
 
+    def list_successes_for_source_date(
+        self,
+        *,
+        source_name: str,
+        dataset_name: str,
+        source_date: str,
+    ) -> list[RawFileRecord]:
+        """Return successful acquisitions for a source date, newest first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                select *
+                from raw_file_acquisitions
+                where source_name = ?
+                  and dataset_name = ?
+                  and source_date = ?
+                  and status = 'downloaded'
+                  and local_path is not null
+                order by downloaded_at desc, id desc
+                """,
+                (source_name, dataset_name, source_date),
+            ).fetchall()
+        return [_record_from_row(row) for row in rows]
+
+    def delete_successes_for_local_paths(self, local_paths: set[str]) -> None:
+        """Delete successful ledger rows for removed local files."""
+        if not local_paths:
+            return
+
+        placeholders = ", ".join("?" for _ in local_paths)
+        with self._connect() as conn:
+            conn.execute(
+                f"""
+                delete from raw_file_acquisitions
+                where status = 'downloaded'
+                  and local_path in ({placeholders})
+                """,
+                tuple(sorted(local_paths)),
+            )
+
     def touch_checked(self, record_id: int, checked_at: str) -> None:
         """Update last_checked_at for a cache-hit row."""
         with self._connect() as conn:

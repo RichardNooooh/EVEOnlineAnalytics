@@ -19,6 +19,8 @@ from ingest.storage_config import (
 
 RAW_FILES_ROOT_ENV_VAR = "EVE_MARKET_RAW_FILES_ROOT"
 RAW_FILES_DB_ENV_VAR = "EVE_MARKET_RAW_FILES_DB"
+RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR = "EVE_MARKET_RAW_FILES_MAX_COPIES_PER_DATE"
+DEFAULT_MAX_COPIES_PER_DATE = 5
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,7 @@ class RawFilesConfig:
 
     raw_root: Path
     db_path: Path
+    max_copies_per_date: int = DEFAULT_MAX_COPIES_PER_DATE
 
 
 def local_raw_files_root() -> Path:
@@ -57,6 +60,7 @@ def resolve_raw_files_config(
     *,
     raw_root: str | None = None,
     db_path: str | None = None,
+    max_copies_per_date: int | str | None = None,
     storage_target: str = LOCAL_STORAGE_TARGET,
     data_root: str | None = None,
 ) -> RawFilesConfig:
@@ -73,7 +77,45 @@ def resolve_raw_files_config(
         default=resolved_root / "raw_files.sqlite",
         value_name="db_path",
     )
-    return RawFilesConfig(raw_root=resolved_root, db_path=resolved_db)
+    resolved_max_copies = _resolve_max_copies_per_date(max_copies_per_date)
+    return RawFilesConfig(
+        raw_root=resolved_root,
+        db_path=resolved_db,
+        max_copies_per_date=resolved_max_copies,
+    )
+
+
+def _resolve_max_copies_per_date(explicit_value: int | str | None) -> int:
+    if explicit_value is not None:
+        return _parse_max_copies_per_date(explicit_value, "max_copies_per_date")
+
+    env_value = os.getenv(RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR)
+    if env_value is not None:
+        return _parse_max_copies_per_date(
+            env_value,
+            RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
+        )
+
+    return DEFAULT_MAX_COPIES_PER_DATE
+
+
+def _parse_max_copies_per_date(value: int | str, value_name: str) -> int:
+    if isinstance(value, int):
+        parsed = value
+    else:
+        if not value.strip():
+            msg = f"{value_name} must not be empty"
+            raise ValueError(msg)
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            msg = f"{value_name} must be an integer greater than or equal to 0"
+            raise ValueError(msg) from exc
+
+    if parsed < 0:
+        msg = f"{value_name} must be greater than or equal to 0"
+        raise ValueError(msg)
+    return parsed
 
 
 def _resolve_optional_path(
