@@ -48,8 +48,8 @@ The refined storage contract is:
 - Plain filesystem Parquet alone is not the long-term canonical table storage format.
 - dlt loads Everef market-history data into DuckLake using merge/delete-insert
   semantics.
-- `market_date` is the replacement unit for revised Everef daily files.
-- Market-history loads use a composite primary key of `market_date`, `region_id`, and
+- Existing CSV `date` is the replacement unit for revised Everef daily files.
+- Market-history loads use a composite primary key of `date`, `region_id`, and
   `type_id` where applicable.
 - Iceberg remains a possible future cloud or resume extension, not the initial
   implementation target.
