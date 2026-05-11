@@ -7,7 +7,7 @@ from typing import Any
 
 import dlt
 
-from ingest.everef_files import BASE_URL
+from ingest.clients.everef import BASE_URL
 from ingest.publishers.ducklake import (
     build_destination_config as _build_destination_config,
 )
@@ -19,10 +19,6 @@ from ingest.sources.everef import (
     everef_market_history_source,
 )
 from ingest.storage_config import LOCAL_STORAGE_TARGET
-
-__all__ = [
-    "run_everef_market_history_pipeline",
-]
 
 
 def run_everef_market_history_pipeline(

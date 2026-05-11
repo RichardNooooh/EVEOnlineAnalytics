@@ -1,4 +1,9 @@
-"""Everef market history source-file helpers."""
+"""Everef market-history client helpers.
+
+This module owns Everef URL construction, source-date iteration, and HTTP probe
+metadata normalization so dlt sources and raw-file acquisition share one client
+boundary.
+"""
 
 from __future__ import annotations
 
@@ -39,6 +44,66 @@ def iter_dates(start_date: date, end_date: date) -> Iterator[date]:
 
     for offset in range((end_date - start_date).days + 1):
         yield start_date + timedelta(days=offset)
+
+
+def iter_market_history_url_items(
+    start_date: date,
+    end_date: date,
+    base_url: str = BASE_URL,
+) -> Iterator[dict[str, str]]:
+    """Yield expected Everef market-history URL items for a date range."""
+    for market_date in iter_dates(start_date, end_date):
+        yield market_history_url_item(market_date, base_url)
+
+
+def market_history_url_item(
+    market_date: date,
+    base_url: str = BASE_URL,
+) -> dict[str, str]:
+    """Build one Everef market-history URL item."""
+    return {
+        "market_date": market_date.isoformat(),
+        "url": market_history_file_url(market_date, base_url),
+    }
+
+
+def probe_market_history_file_item(
+    item: Mapping[str, str],
+    *,
+    http_client: Any,
+    logger: logging.Logger,
+    request_exception_type: type[Exception] | tuple[type[Exception], ...] = Exception,
+    warn_missing: bool = False,
+    warn_zero_content_length: bool = False,
+    positive_content_length_only: bool = True,
+) -> dict[str, Any] | None:
+    """Probe one Everef market-history URL item and return metadata if readable."""
+    try:
+        response = http_client.head(item["url"], allow_redirects=True)
+    except request_exception_type as exc:
+        msg = f"Everef probe failed at {item['url']}: {exc}"
+        raise RuntimeError(msg) from exc
+
+    if response.status_code == 404:
+        logger.warning(
+            "Everef file missing for %s: %s", item["market_date"], item["url"]
+        )
+        return None
+
+    if response.status_code >= 400:
+        msg = f"Unexpected Everef status HTTP {response.status_code} for {item['url']}"
+        raise RuntimeError(msg)
+
+    enriched_item: dict[str, Any] = dict(item)
+    update_market_history_file_metadata(
+        enriched_item,
+        response.headers,
+        logger=logger,
+        warn_missing=warn_missing,
+        warn_zero_content_length=warn_zero_content_length,
+        positive_content_length_only=positive_content_length_only,
+    )
+    return enriched_item
 
 
 def update_market_history_file_metadata(
