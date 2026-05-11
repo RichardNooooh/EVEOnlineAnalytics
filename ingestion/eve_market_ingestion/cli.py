@@ -6,8 +6,10 @@ import argparse
 import logging
 
 from eve_market_ingestion.pipelines.everef import run_everef_market_history_pipeline
-from eve_market_ingestion.pipelines.everef import BUCKET_URL_ENV_VAR
 from eve_market_ingestion.pipelines.everef import DATA_ROOT_ENV_VAR
+from eve_market_ingestion.pipelines.everef import DUCKLAKE_CATALOG_ENV_VAR
+from eve_market_ingestion.pipelines.everef import DUCKLAKE_NAME_ENV_VAR
+from eve_market_ingestion.pipelines.everef import DUCKLAKE_STORAGE_ENV_VAR
 from eve_market_ingestion.pipelines.everef import LOCAL_STORAGE_TARGET
 from eve_market_ingestion.pipelines.everef import STORAGE_TARGETS
 
@@ -20,24 +22,47 @@ def build_parser() -> argparse.ArgumentParser:
         "everef-market-history",
         help="Ingest Everef daily market history CSV archives.",
     )
-    everef_parser.add_argument("--start-date", required=True, help="Inclusive YYYY-MM-DD date.")
-    everef_parser.add_argument("--end-date", required=True, help="Inclusive YYYY-MM-DD date.")
+    everef_parser.add_argument(
+        "--start-date", required=True, help="Inclusive YYYY-MM-DD date."
+    )
+    everef_parser.add_argument(
+        "--end-date", required=True, help="Inclusive YYYY-MM-DD date."
+    )
     everef_parser.add_argument("--pipeline-name", default="everef_market_history")
     everef_parser.add_argument("--dataset-name", default="everef_market_history")
-    everef_parser.add_argument("--destination", default="filesystem")
+    everef_parser.add_argument("--destination", default="ducklake")
     everef_parser.add_argument(
-        "--bucket-url",
+        "--ducklake-name",
         default=None,
         help=(
-            "Filesystem destination URL, for example file:///tmp/eve-market/raw. "
-            f"Overrides {BUCKET_URL_ENV_VAR}, which overrides --storage-target defaults."
+            "DuckLake attach name. "
+            f"Overrides {DUCKLAKE_NAME_ENV_VAR}, then defaults to eve_market."
+        ),
+    )
+    everef_parser.add_argument(
+        "--ducklake-catalog",
+        default=None,
+        help=(
+            "DuckLake catalog URL. "
+            f"Overrides {DUCKLAKE_CATALOG_ENV_VAR}, then defaults to local sqlite."
+        ),
+    )
+    everef_parser.add_argument(
+        "--ducklake-storage",
+        default=None,
+        help=(
+            "DuckLake storage URL. "
+            f"Overrides {DUCKLAKE_STORAGE_ENV_VAR}, then --storage-target defaults."
         ),
     )
     everef_parser.add_argument(
         "--storage-target",
         choices=STORAGE_TARGETS,
         default=LOCAL_STORAGE_TARGET,
-        help="Default filesystem storage target when --bucket-url and env override are unset.",
+        help=(
+            "Default DuckLake storage target when --ducklake-storage "
+            "and env override are unset."
+        ),
     )
     everef_parser.add_argument(
         "--data-root",
@@ -67,7 +92,9 @@ def main(argv: list[str] | None = None) -> int:
             pipeline_name=args.pipeline_name,
             dataset_name=args.dataset_name,
             destination=args.destination,
-            bucket_url=args.bucket_url,
+            ducklake_name=args.ducklake_name,
+            ducklake_catalog=args.ducklake_catalog,
+            ducklake_storage=args.ducklake_storage,
             storage_target=args.storage_target,
             data_root=args.data_root,
             base_url=args.base_url,
