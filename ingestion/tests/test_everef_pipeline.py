@@ -48,6 +48,22 @@ def test_ducklake_destination_uses_local_defaults(
     )
 
 
+def test_ducklake_destination_creates_local_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    patch_ducklake(monkeypatch)
+    monkeypatch.delenv(everef.DUCKLAKE_CATALOG_ENV_VAR, raising=False)
+    monkeypatch.delenv(everef.DUCKLAKE_STORAGE_ENV_VAR, raising=False)
+    monkeypatch.setattr(everef, "local_ducklake_root", lambda: tmp_path / "ducklake")
+
+    destination_config = everef.build_destination_config("ducklake")
+
+    assert destination_config["credentials"].catalog.endswith("/lake_catalog.sqlite")
+    assert (tmp_path / "ducklake").is_dir()
+    assert (tmp_path / "ducklake/files").is_dir()
+
+
 def test_ducklake_destination_uses_env_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
