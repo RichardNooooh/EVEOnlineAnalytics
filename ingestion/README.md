@@ -195,13 +195,13 @@ uv --project ingestion run python -m ingest.cli everef-market-history \
 ```
 
 Before loading each chunk, the source validates the expected market history contract:
-required columns, non-null and unique `(date, region_id, type_id)` keys, source date
-matching the CSV filename date, numeric values, non-negative numeric fields, and
-`highest >= lowest`.
+required columns, non-null keys, row `date` matching the source market date, numeric
+values, non-negative numeric fields, and `highest >= lowest`.
 
-Validation is chunk-local by design so large files can stream without accumulating all
-primary keys in memory. Dataset-level replacement and idempotency are handled by the
-publication contract and DuckLake merge/delete-insert behavior.
+The reader also enforces file-level uniqueness for `(region_id, type_id)` after the
+market-day check, which is equivalent to the full `(date, region_id, type_id)` primary
+key for one Everef daily file. Dataset-level replacement and idempotency are handled by
+the publication contract and DuckLake merge/delete-insert behavior.
 
 ## Test Guidance
 

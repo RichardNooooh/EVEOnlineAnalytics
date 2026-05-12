@@ -249,7 +249,7 @@ def test_read_market_history_csv_raises_on_duplicate_primary_key(
         )
 
 
-def test_read_market_history_csv_allows_duplicate_primary_key_across_chunks(
+def test_read_market_history_csv_raises_on_duplicate_primary_key_across_chunks(
     tmp_path: Path,
 ) -> None:
     frame = pd.concat(
@@ -258,12 +258,13 @@ def test_read_market_history_csv_allows_duplicate_primary_key_across_chunks(
     )
     csv_path = _write_market_history_fixture(tmp_path, frame)
 
-    chunks = _collect_bounded(
-        source.read_market_history_csv.__wrapped__(_read_item(csv_path), chunksize=2),
-        2,
-    )
-
-    assert len(chunks) == 2
+    with pytest.raises(ValueError, match="duplicate .*region_id, type_id"):
+        _collect_bounded(
+            source.read_market_history_csv.__wrapped__(
+                _read_item(csv_path), chunksize=2
+            ),
+            2,
+        )
 
 
 def test_read_market_history_csv_raises_on_date_mismatch(tmp_path: Path) -> None:
@@ -277,6 +278,22 @@ def test_read_market_history_csv_raises_on_date_mismatch(tmp_path: Path) -> None
                 _read_item(csv_path), chunksize=10
             ),
             1,
+        )
+
+
+def test_read_market_history_csv_raises_on_later_chunk_date_mismatch(
+    tmp_path: Path,
+) -> None:
+    frame = _valid_market_history_frame()
+    frame.loc[1, "date"] = "2025-01-02"
+    csv_path = _write_market_history_fixture(tmp_path, frame)
+
+    with pytest.raises(ValueError, match="do not match source market_date"):
+        _collect_bounded(
+            source.read_market_history_csv.__wrapped__(
+                _read_item(csv_path), chunksize=1
+            ),
+            2,
         )
 
 
