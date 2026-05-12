@@ -18,8 +18,12 @@ Everef ingestion keeps source concerns split across small modules:
   price (VWAP), not median.
 - `ingest.sources.everef` defines the `dlt` source/resources and stays thin: it wires
   client URL/probe behavior, contract schema/validation, and CSV chunk streaming.
-- `ingest.raw_files.*` owns raw cached-file acquisition and ledger behavior. The dlt
-  source can read from the cache, but the cache is not the publication contract.
+- `ingest.raw_files.publisher` owns generic raw cached-file publication through
+  `RawFileSpec` and `publish_raw_file`: cache-hit checks, downloads, checksums,
+  ledger inserts, failed-acquisition rows, and old-copy pruning.
+- `ingest.raw_files.repository` owns the SQLite raw-file acquisition ledger.
+- `ingest.raw_files.everef` is the Everef-specific adapter. It probes Everef files,
+  converts source metadata into `RawFileSpec`, and lists cached Everef files for dlt.
 - `ingest.publishers.*` owns destination configuration, storage/catalog precedence, and
   mounted-storage guardrails.
 
@@ -105,6 +109,11 @@ uv run --locked pytest
 Raw source-file acquisition is separate from dlt loading. It downloads Everef CSV
 archives into a local or mounted raw cache, records checksums and source headers in a
 SQLite ledger, and lets dlt read the cached file paths later.
+
+Everef raw acquisition is intentionally thin: it adapts Everef probe metadata into a
+generic `RawFileSpec`, then delegates cache-hit detection, download, checksum, ledger,
+failure recording, and pruning behavior to `publish_raw_file`. This keeps source-specific
+URL/probe logic separate from reusable raw-file cache mechanics.
 
 Sync raw Everef market history files locally:
 
@@ -198,6 +207,15 @@ publication contract and DuckLake merge/delete-insert behavior.
 
 Prefer testing client helpers, contracts, and source generator behavior at their public
 module boundaries. Avoid reaching into dlt private internals.
+
+For raw-file behavior, keep tests split by boundary:
+
+- `test_raw_files_publisher.py` covers generic `RawFileSpec` and `publish_raw_file`
+  cache/download/prune behavior.
+- `test_raw_files_repository.py` covers SQLite ledger persistence and query behavior.
+- `test_raw_files_everef.py` covers Everef adapter/spec/list-cache behavior.
+- `test_raw_files_config.py`, `test_raw_files_downloader.py`, and
+  `test_raw_files_models.py` cover smaller supporting modules.
 
 When a test consumes a dlt resource or transformer generator, collect a bounded number
 of yielded values with `itertools.islice` or an equivalent helper. Do not materialize a
