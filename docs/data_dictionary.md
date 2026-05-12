@@ -38,6 +38,8 @@ Expected contract elements:
 - region identifier
 - type identifier
 - observation date
+- one row per `(date, region_id, type_id)`; each Everef daily source file must contain
+  only rows for its source market date
 - source fields preserved with documented semantic quirks
 - publication metadata recorded through DuckLake catalog state, contracts, and
   supplemental manifests where useful

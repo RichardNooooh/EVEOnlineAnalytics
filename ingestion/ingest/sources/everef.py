@@ -130,6 +130,7 @@ def read_market_history_csv(
 
     yielded_rows = 0
     chunk_index = 0
+    seen_market_keys: set[tuple[Any, Any]] = set()
     while True:
         try:
             chunk = next(chunks)
@@ -146,6 +147,18 @@ def read_market_history_csv(
             market_date=item["market_date"],
             chunk_index=chunk_index,
         )
+
+        market_keys = set(
+            chunk[["region_id", "type_id"]].itertuples(index=False, name=None)
+        )
+        duplicate_market_keys = seen_market_keys.intersection(market_keys)
+        if duplicate_market_keys:
+            msg = (
+                f"Everef CSV chunk {chunk_index} from {source_url} contains duplicate "
+                f"(region_id, type_id) rows for source market_date {item['market_date']}"
+            )
+            raise ValueError(msg)
+        seen_market_keys.update(market_keys)
 
         chunk["_source_market_date"] = item["market_date"]
         chunk["_source_url"] = source_url
