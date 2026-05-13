@@ -23,6 +23,8 @@ including:
   later MLflow use
 - deferred PgBouncer decision for Airflow metadata
 - DuckLake as the canonical lakehouse table format over Parquet data files
+- URL-selected raw source-file acquisition ledgers, with SQLite for direct local runs
+  and PostgreSQL for deployed runtimes
 - the prohibition on a cluster-shared writable DuckDB file
 
 ## Reading Order
@@ -31,7 +33,8 @@ Start with the higher-impact architecture records if you need project context qu
 
 1. `adr-014-replace-airbyte-dlt.md`
 2. `adr-020-ducklake-canonical-table-format.md`
-3. `adr-015-kube-vip-daemon-endpoint.md`
-4. `adr-016-parquet-system-of-record.md`
+3. `adr-021-raw-file-ledger-backends.md`
+4. `adr-015-kube-vip-daemon-endpoint.md`
+5. `adr-016-parquet-system-of-record.md`
 
 Earlier ADRs provide the historical decision trail that led to the current contract.
