@@ -65,8 +65,11 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, and PowerBI.
 ## Global Conventions
 
 - Use `mise` to handle tooling.
-- Python uses `ruff` and `uv`; prefer repo-root `pyproject.toml` when adding Python
-  package configuration.
+- Python uses `ruff` and `uv`. Keep repo-wide Python tool configuration such as
+  Ruff in the repo-root `pyproject.toml`. Keep package metadata, dependencies,
+  scripts, pytest config, and locks in the scoped Python project that owns them,
+  such as `ingestion/pyproject.toml` and `ingestion/uv.lock`, unless the repo is
+  deliberately migrated to a root `uv` workspace.
 - SQL uses lowercase keywords, CTEs over subqueries, one model per file, and prefixes
   such as `stg_`, `int_`, `mart_`, and `feat_`.
 - OpenTofu uses standard HCL formatting with `tofu fmt`.
