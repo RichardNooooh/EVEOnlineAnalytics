@@ -46,7 +46,7 @@ endif
 local-pipeline-smoke: local-airflow-env ## Smoke check local Airflow, dlt, dbt, DuckDB, and mounts
 	@mkdir -p .local/data .local/logs
 	$(LOCAL_COMPOSE) run --rm airflow-cli airflow db check
-	$(LOCAL_COMPOSE) run --rm airflow-cli python -c "import dlt, duckdb, pyarrow, pandas, dbt.version; from pathlib import Path; roots=[Path('/opt/airflow/dags'), Path('/opt/eve-market/ingestion'), Path('/opt/eve-market/transform'), Path('/opt/eve-market/datasets'), Path('/opt/eve-market/data')]; missing=[str(p) for p in roots if not p.exists()]; assert not missing, missing; print('local Airflow+dlt smoke ok')"
+	$(LOCAL_COMPOSE) run --rm airflow-cli python -c "import dlt, duckdb, pyarrow, pandas, psycopg, dbt.version; from pathlib import Path; roots=[Path('/opt/airflow/dags'), Path('/opt/eve-market/ingestion'), Path('/opt/eve-market/transform'), Path('/opt/eve-market/datasets'), Path('/opt/eve-market/data')]; missing=[str(p) for p in roots if not p.exists()]; assert not missing, missing; print('local Airflow+dlt smoke ok')"
 
 local-airflow-docker-smoke: local-airflow-env ingestion-image ## Smoke check Airflow DockerOperator support
 	$(LOCAL_COMPOSE) run --rm airflow-cli python -c "from airflow.providers.docker.operators.docker import DockerOperator; import docker; assert docker.from_env().ping(); print('local Airflow DockerOperator smoke ok')"

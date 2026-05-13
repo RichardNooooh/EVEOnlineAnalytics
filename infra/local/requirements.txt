@@ -7,4 +7,5 @@ dbt-duckdb
 duckdb
 pandas
 pyarrow
+psycopg[binary]
 requests
