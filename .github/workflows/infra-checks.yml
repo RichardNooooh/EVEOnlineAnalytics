@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "infra/**"
+      - "!**/*.md"
       - "!infra/local/**"
       - "mise.toml"
       - ".pre-commit-config.yaml"
@@ -14,6 +15,7 @@ on:
       - master
     paths:
       - "infra/**"
+      - "!**/*.md"
       - "!infra/local/**"
       - "mise.toml"
       - ".pre-commit-config.yaml"
