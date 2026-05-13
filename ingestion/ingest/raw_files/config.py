@@ -20,6 +20,7 @@ from ingest.storage_config import (
     ingestion_root,
     mounted_data_root_path,
     resolve_mounted_data_root,
+    resolve_optional_config_value,
 )
 
 RAW_FILES_ROOT_ENV_VAR = "EVE_MARKET_RAW_FILES_ROOT"
@@ -70,17 +71,40 @@ def resolve_raw_files_config(
     data_root: str | None = None,
 ) -> RawFilesConfig:
     """Resolve raw-file cache root and acquisition ledger URL."""
-    resolved_root = _resolve_optional_path(
+    resolved_root_value = resolve_optional_config_value(
         raw_root,
         env_var=RAW_FILES_ROOT_ENV_VAR,
-        default=raw_files_root_for_target(storage_target, data_root),
         value_name="raw_root",
     )
+    if resolved_root_value is not None:
+        resolved_root = Path(resolved_root_value).expanduser().resolve()
+    else:
+        resolved_root = raw_files_root_for_target(storage_target, data_root)
+
     resolved_ledger_url = _resolve_ledger_url(
         ledger_url=ledger_url,
         default_ledger_path=resolved_root / "raw_files.sqlite",
+        requires_explicit_ledger=_requires_explicit_ledger(
+            resolved_root,
+            storage_target=storage_target,
+            data_root=data_root,
+        ),
     )
-    resolved_max_copies = _resolve_max_copies_per_date(max_copies_per_date)
+    if max_copies_per_date is not None:
+        resolved_max_copies = _parse_max_copies_per_date(
+            max_copies_per_date,
+            "max_copies_per_date",
+        )
+    elif (
+        env_max_copies := os.getenv(RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR)
+    ) is not None:
+        resolved_max_copies = _parse_max_copies_per_date(
+            env_max_copies,
+            RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
+        )
+    else:
+        resolved_max_copies = DEFAULT_MAX_COPIES_PER_DATE
+
     return RawFilesConfig(
         raw_root=resolved_root,
         ledger_url=resolved_ledger_url,
@@ -105,15 +129,36 @@ def _resolve_ledger_url(
     *,
     ledger_url: str | None,
     default_ledger_path: Path,
+    requires_explicit_ledger: bool,
 ) -> str:
-    if ledger_url is not None:
-        return _validate_ledger_url(ledger_url, "ledger_url")
+    resolved_ledger_url = resolve_optional_config_value(
+        ledger_url,
+        env_var=RAW_FILES_LEDGER_URL_ENV_VAR,
+        value_name="ledger_url",
+    )
+    if resolved_ledger_url is not None:
+        return _validate_ledger_url(resolved_ledger_url, "ledger_url")
 
-    env_ledger_url = os.getenv(RAW_FILES_LEDGER_URL_ENV_VAR)
-    if env_ledger_url is not None:
-        return _validate_ledger_url(env_ledger_url, RAW_FILES_LEDGER_URL_ENV_VAR)
+    if requires_explicit_ledger:
+        msg = (
+            "mounted raw-file storage requires an explicit ledger URL such as "
+            f"PostgreSQL; set ledger_url or {RAW_FILES_LEDGER_URL_ENV_VAR}"
+        )
+        raise ValueError(msg)
 
     return sqlite_ledger_url(default_ledger_path)
+
+
+def _requires_explicit_ledger(
+    raw_root: Path,
+    *,
+    storage_target: str,
+    data_root: str | None,
+) -> bool:
+    if storage_target != MOUNTED_STORAGE_TARGET:
+        return False
+    mounted_root = mounted_data_root_path(resolve_mounted_data_root(data_root))
+    return raw_root == mounted_root or raw_root.is_relative_to(mounted_root)
 
 
 def _validate_ledger_url(value: str, value_name: str) -> str:
@@ -124,20 +169,6 @@ def _validate_ledger_url(value: str, value_name: str) -> str:
         msg = f"{value_name} must be a sqlite, postgres, or postgresql URL"
         raise ValueError(msg)
     return value
-
-
-def _resolve_max_copies_per_date(explicit_value: int | str | None) -> int:
-    if explicit_value is not None:
-        return _parse_max_copies_per_date(explicit_value, "max_copies_per_date")
-
-    env_value = os.getenv(RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR)
-    if env_value is not None:
-        return _parse_max_copies_per_date(
-            env_value,
-            RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
-        )
-
-    return DEFAULT_MAX_COPIES_PER_DATE
 
 
 def _parse_max_copies_per_date(value: int | str, value_name: str) -> int:
@@ -157,26 +188,3 @@ def _parse_max_copies_per_date(value: int | str, value_name: str) -> int:
         msg = f"{value_name} must be greater than or equal to 0"
         raise ValueError(msg)
     return parsed
-
-
-def _resolve_optional_path(
-    explicit_value: str | None,
-    *,
-    env_var: str,
-    default: Path,
-    value_name: str,
-) -> Path:
-    if explicit_value is not None:
-        if not explicit_value.strip():
-            msg = f"{value_name} must not be empty"
-            raise ValueError(msg)
-        return Path(explicit_value).expanduser().resolve()
-
-    env_value = os.getenv(env_var)
-    if env_value is not None:
-        if not env_value.strip():
-            msg = f"{env_var} must not be empty"
-            raise ValueError(msg)
-        return Path(env_value).expanduser().resolve()
-
-    return default
