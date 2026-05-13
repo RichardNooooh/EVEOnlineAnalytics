@@ -72,7 +72,8 @@ PostgreSQL service described by ADR-018.
 Local-to-production mapping:
 
 - `.local/data` approximates TrueNAS NFS storage for DuckLake data files
-- local Postgres approximates the Airflow metadata database
+- local Postgres approximates the Airflow metadata database and raw-file acquisition
+  ledger database
 - bind-mounted DAGs and source code approximate the deployed Airflow image or DAG/code
   sync mechanism
 - local DockerOperator task containers approximate KubernetesPodOperator pods that run
@@ -82,6 +83,12 @@ Local smoke runs may use the default SQLite DuckLake catalog. Any run using moun
 DuckLake storage, including `--storage-target mounted` or an explicit mounted
 `EVE_MARKET_DUCKLAKE_STORAGE`, must use a non-local catalog such as PostgreSQL through
 `--ducklake-catalog` or `EVE_MARKET_DUCKLAKE_CATALOG`.
+
+Raw source-file acquisition uses a separate ledger from the DuckLake publication
+catalog. Direct local ingestion defaults to a local SQLite raw ledger. Docker Compose and
+production-style k3s/Airflow deployments use PostgreSQL through
+`EVE_MARKET_RAW_FILES_LEDGER_URL`, while preserving single-writer acquisition semantics
+for the relevant publication scope.
 
 Local commands:
 

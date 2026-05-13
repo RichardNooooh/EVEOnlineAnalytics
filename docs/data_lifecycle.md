@@ -100,8 +100,8 @@ Expected loop:
 
 Local storage remains an approximation of production storage. `.local/data` stands in
 for TrueNAS NFS DuckLake data-file storage, local Postgres stands in for the Airflow
-metadata database, and bind-mounted DAGs/code stand in for the deployed Airflow image or
-sync mechanism.
+metadata database and raw-file acquisition ledger, and bind-mounted DAGs/code stand in
+for the deployed Airflow image or sync mechanism.
 
 Local Airflow may use DockerOperator with `eve-market-ingestion:local` to match the
 container boundary used later by KubernetesPodOperator. The deployable ingestion image is

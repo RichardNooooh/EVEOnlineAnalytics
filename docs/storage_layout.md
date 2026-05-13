@@ -15,6 +15,8 @@ Parquet data files.
 │   │   └── curated/
 │   ├── manifests/
 │   └── contracts/
+├── raw/
+│   └── <source>/<dataset>/
 ├── mlflow/
 └── airflow-logs/
 ```
@@ -28,6 +30,11 @@ Ingestion resolves DuckLake storage from explicit `--ducklake-storage`, then
 `EVE_MARKET_DUCKLAKE_STORAGE`, then the selected storage target. The mounted target uses
 the shared data root and requires a PostgreSQL-style catalog from `--ducklake-catalog` or
 `EVE_MARKET_DUCKLAKE_CATALOG`.
+
+`raw/` stores cached source files before dlt publication. Its acquisition ledger is not
+a shared SQLite file on NFS. Direct local ingestion defaults to a local SQLite ledger,
+while Docker Compose and k3s/Airflow-style deployments use PostgreSQL via
+`EVE_MARKET_RAW_FILES_LEDGER_URL`.
 
 ## Dataset Naming
 
