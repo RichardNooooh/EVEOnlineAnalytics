@@ -9,6 +9,7 @@ amended:
   - 2026-04-14
   - 2026-04-18
   - 2026-05-10
+  - 2026-05-12
 ---
 
 # ADR 002 - Tools Used and Not Used
@@ -53,7 +54,7 @@ The stack is defined by the two tables below.
 | **Cloud Proof - Managed Warehouse** | Snowflake (via Terraform, trial only) | Cloud-readiness proof-of-concept; Terraform resource definitions are authored, `tofu plan` is screencasted during the trial window, then the trial is allowed to expire. |
 | **Tool Version Management** | mise | Manages pinned versions of OpenTofu, Helm, Python, dbt, Ansible, and other CLI tools via `mise.toml`. |
 | **Local Validation** | pre-commit | Runs repo-scoped infra checks before commit and wraps `make -C infra ...` targets for Ansible, Kubernetes YAML, and OpenTofu validation. |
-| **Infra CI/CD** | GitHub Actions + self-hosted runners | Runs `.github/workflows/infra-checks.yml` for shared infrastructure validation. Current runner fleet: 3 Debian 13 LXCs hosting GitHub Actions runners. Optional support infrastructure, not a requirement for local development. |
+| **CI/CD** | GitHub Actions + GHCR + self-hosted runners | Runs shared validation workflows and publishes trusted ingestion container images. Infrastructure and Python checks use optional self-hosted Debian 13 LXC runners; ingestion image builds use GitHub-hosted `ubuntu-latest` runners and publish to GHCR. |
 
 ### Tools explicitly not used
 
@@ -101,3 +102,9 @@ The stack is defined by the two tables below.
     the physical data file format rather than the table contract.
   - The checked-in Ansible layer uses project-specific roles rather than an upstream
     k3s role set.
+
+- 2026-05-12 - Split image publishing from self-hosted validation runners
+  - Infrastructure and Python validation remain on optional self-hosted Debian 13 LXC
+    runners.
+  - The ingestion image workflow uses GitHub-hosted `ubuntu-latest` runners and publishes
+    trusted `master` builds to GHCR.
