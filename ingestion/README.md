@@ -36,6 +36,40 @@ streams readable `.csv.bz2` files into `dlt` in pandas chunks. By default, the d
 source still reads source URLs directly. Raw source-file acquisition is available as a
 separate SQLite-backed cache step.
 
+## Container Image
+
+Build the ingestion job image from the repository root:
+
+```bash
+make ingestion-image
+```
+
+Or build directly:
+
+```bash
+docker build -f ingestion/Dockerfile -t eve-market-ingestion:local ingestion
+```
+
+Smoke check the entrypoint:
+
+```bash
+make ingestion-image-smoke
+```
+
+The image entrypoint is `eve-market-ingest`, so pass normal CLI arguments after the
+image name:
+
+```bash
+docker run --rm eve-market-ingestion:local everef-market-history \
+  --start-date 2025-01-01 \
+  --end-date 2025-01-31 \
+  --dev-mode
+```
+
+For Airflow DockerOperator local runs, build `eve-market-ingestion:local` before running
+the DAG. For later KubernetesPodOperator runs, push the same image to a registry with an
+immutable tag such as a git SHA and mount shared storage at `/opt/eve-market/data`.
+
 ```bash
 uv --project ingestion run eve-market-ingest everef-market-history \
   --start-date 2025-01-01 \
