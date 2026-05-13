@@ -6,6 +6,7 @@ import pytest
 
 from conftest import FakeHttpClient, collect_bounded, raw_files_config
 from ingest.raw_files.everef import (
+    _market_history_source_item,
     acquire_everef_market_history_files,
     list_cached_everef_market_history_files,
 )
@@ -70,7 +71,27 @@ def test_list_cached_everef_returns_source_item(tmp_path: Path) -> None:
         1,
     )
 
-    assert cached_items == [record.to_source_item()]
+    assert cached_items == [_market_history_source_item(record)]
+
+
+def test_everef_source_item_returns_dlt_metadata(tmp_path: Path) -> None:
+    record = acquire_everef_market_history_files(
+        "2025-01-01",
+        "2025-01-01",
+        base_url="https://example.test/history",
+        config=raw_files_config(tmp_path),
+        http_client=FakeHttpClient(b"raw bytes"),
+    )[0]
+
+    assert _market_history_source_item(record) == {
+        "market_date": "2025-01-01",
+        "url": "https://example.test/history/2025/market-history-2025-01-01.csv.bz2",
+        "local_path": record.local_path,
+        "sha256": record.sha256,
+        "content_length": 9,
+        "last_modified": "2025-01-01T12:00:00+00:00",
+        "downloaded_at": record.downloaded_at,
+    }
 
 
 def test_list_cached_raises_for_missing_file(tmp_path: Path) -> None:
