@@ -21,7 +21,8 @@ Everef ingestion keeps source concerns split across small modules:
 - `ingest.raw_files.publisher` owns generic raw cached-file publication through
   `RawFileSpec` and `publish_raw_file`: cache-hit checks, downloads, checksums,
   ledger inserts, failed-acquisition rows, and old-copy pruning.
-- `ingest.raw_files.repository` owns the SQLite raw-file acquisition ledger.
+- `ingest.raw_files.repository` owns the URL-selected SQLite or PostgreSQL raw-file
+  acquisition ledger.
 - `ingest.raw_files.everef` is the Everef-specific adapter. It probes Everef files,
   converts source metadata into `RawFileSpec`, and lists cached Everef files for dlt.
 - `ingest.publishers.*` owns destination configuration, storage/catalog precedence, and
@@ -34,7 +35,8 @@ Do not import from removed compatibility shims; use the canonical module paths a
 The Everef source lists expected daily CSV archives, probes each URL with `HEAD`, then
 streams readable `.csv.bz2` files into `dlt` in pandas chunks. By default, the dlt
 source still reads source URLs directly. Raw source-file acquisition is available as a
-separate SQLite-backed cache step.
+separate cache step backed by SQLite for direct local runs or PostgreSQL for deployed
+local/cluster runtimes.
 
 ## Container Image
 
