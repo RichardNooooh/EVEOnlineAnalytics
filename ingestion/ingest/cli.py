@@ -52,17 +52,53 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
-    everef_parser.add_argument(
+def add_date_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "--start-date", required=True, help="Inclusive YYYY-MM-DD date."
     )
-    everef_parser.add_argument(
-        "--end-date", required=True, help="Inclusive YYYY-MM-DD date."
+    parser.add_argument("--end-date", required=True, help="Inclusive YYYY-MM-DD date.")
+
+
+def add_storage_args(parser: argparse.ArgumentParser, *, help_prefix: str) -> None:
+    parser.add_argument(
+        "--storage-target",
+        choices=STORAGE_TARGETS,
+        default=LOCAL_STORAGE_TARGET,
+        help=help_prefix,
     )
-    everef_parser.add_argument("--pipeline-name", default="everef_market_history")
-    everef_parser.add_argument("--dataset-name", default="everef_market_history")
-    everef_parser.add_argument("--destination", default="ducklake")
-    everef_parser.add_argument(
+    parser.add_argument(
+        "--data-root",
+        default=None,
+        help=(
+            "Mounted storage root used with --storage-target mounted; "
+            f"env fallback {DATA_ROOT_ENV_VAR}."
+        ),
+    )
+
+
+def add_raw_file_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--raw-root",
+        default=None,
+        help=f"Raw source-file cache root. Overrides {RAW_FILES_ROOT_ENV_VAR}.",
+    )
+    parser.add_argument(
+        "--raw-ledger-url",
+        default=None,
+        help=f"Raw source-file ledger URL. Overrides {RAW_FILES_LEDGER_URL_ENV_VAR}.",
+    )
+    parser.add_argument(
+        "--raw-max-copies-per-date",
+        default=None,
+        help=(
+            "Maximum raw file copies to keep per source date; 0 disables deletion. "
+            f"Overrides {RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR}."
+        ),
+    )
+
+
+def add_ducklake_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "--ducklake-name",
         default=None,
         help=(
@@ -70,7 +106,7 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
             f"Overrides {DUCKLAKE_NAME_ENV_VAR}, then defaults to eve_market."
         ),
     )
-    everef_parser.add_argument(
+    parser.add_argument(
         "--ducklake-catalog",
         default=None,
         help=(
@@ -78,7 +114,7 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
             f"Overrides {DUCKLAKE_CATALOG_ENV_VAR}, then defaults to local sqlite."
         ),
     )
-    everef_parser.add_argument(
+    parser.add_argument(
         "--ducklake-storage",
         default=None,
         help=(
@@ -86,21 +122,19 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
             f"Overrides {DUCKLAKE_STORAGE_ENV_VAR}, then --storage-target defaults."
         ),
     )
-    everef_parser.add_argument(
-        "--storage-target",
-        choices=STORAGE_TARGETS,
-        default=LOCAL_STORAGE_TARGET,
-        help=(
+
+
+def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
+    add_date_args(everef_parser)
+    everef_parser.add_argument("--pipeline-name", default="everef_market_history")
+    everef_parser.add_argument("--dataset-name", default="everef_market_history")
+    everef_parser.add_argument("--destination", default="ducklake")
+    add_ducklake_args(everef_parser)
+    add_storage_args(
+        everef_parser,
+        help_prefix=(
             "Default DuckLake storage target when --ducklake-storage "
             "and env override are unset."
-        ),
-    )
-    everef_parser.add_argument(
-        "--data-root",
-        default=None,
-        help=(
-            "Mounted storage root used with --storage-target mounted; "
-            f"env fallback {DATA_ROOT_ENV_VAR}."
         ),
     )
     everef_parser.add_argument("--base-url", default=None)
@@ -116,24 +150,7 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Download raw files first, then load from the raw-file cache.",
     )
-    everef_parser.add_argument(
-        "--raw-root",
-        default=None,
-        help=f"Raw source-file cache root. Overrides {RAW_FILES_ROOT_ENV_VAR}.",
-    )
-    everef_parser.add_argument(
-        "--raw-ledger-url",
-        default=None,
-        help=f"Raw source-file ledger URL. Overrides {RAW_FILES_LEDGER_URL_ENV_VAR}.",
-    )
-    everef_parser.add_argument(
-        "--raw-max-copies-per-date",
-        default=None,
-        help=(
-            "Maximum raw file copies to keep per source date; 0 disables deletion. "
-            f"Overrides {RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR}."
-        ),
-    )
+    add_raw_file_args(everef_parser)
     everef_parser.add_argument("--loader-file-format", default="parquet")
     everef_parser.add_argument("--dev-mode", action="store_true")
 
@@ -145,45 +162,15 @@ def build_raw_files_parser(raw_files_parser: argparse.ArgumentParser) -> None:
         "sync-everef-market-history",
         help="Download Everef market history CSV archives into the raw cache.",
     )
-    raw_sync_parser.add_argument(
-        "--start-date", required=True, help="Inclusive YYYY-MM-DD date."
-    )
-    raw_sync_parser.add_argument(
-        "--end-date", required=True, help="Inclusive YYYY-MM-DD date."
-    )
-    raw_sync_parser.add_argument(
-        "--storage-target",
-        choices=STORAGE_TARGETS,
-        default=LOCAL_STORAGE_TARGET,
-        help="Default raw cache target when --raw-root and env override are unset.",
-    )
-    raw_sync_parser.add_argument(
-        "--data-root",
-        default=None,
-        help=(
-            "Mounted storage root used with --storage-target mounted; "
-            f"env fallback {DATA_ROOT_ENV_VAR}."
+    add_date_args(raw_sync_parser)
+    add_storage_args(
+        raw_sync_parser,
+        help_prefix=(
+            "Default raw cache target when --raw-root and env override are unset."
         ),
     )
     raw_sync_parser.add_argument("--base-url", default=None)
-    raw_sync_parser.add_argument(
-        "--raw-root",
-        default=None,
-        help=f"Raw source-file cache root. Overrides {RAW_FILES_ROOT_ENV_VAR}.",
-    )
-    raw_sync_parser.add_argument(
-        "--raw-ledger-url",
-        default=None,
-        help=f"Raw source-file ledger URL. Overrides {RAW_FILES_LEDGER_URL_ENV_VAR}.",
-    )
-    raw_sync_parser.add_argument(
-        "--raw-max-copies-per-date",
-        default=None,
-        help=(
-            "Maximum raw file copies to keep per source date; 0 disables deletion. "
-            f"Overrides {RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR}."
-        ),
-    )
+    add_raw_file_args(raw_sync_parser)
 
 
 def main(argv: list[str] | None = None) -> int:
