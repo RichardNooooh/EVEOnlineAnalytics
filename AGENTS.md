@@ -70,6 +70,8 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, and PowerBI.
   scripts, pytest config, and locks in the scoped Python project that owns them,
   such as `ingestion/pyproject.toml` and `ingestion/uv.lock`, unless the repo is
   deliberately migrated to a root `uv` workspace.
+- Do not directly modify `uv.lock` or `pyproject.toml` if a `uv` command can do it by itself.
+  Example: Do not add a package directly to `pyproject.toml`; use `uv add {package}`.
 - SQL uses lowercase keywords, CTEs over subqueries, one model per file, and prefixes
   such as `stg_`, `int_`, `mart_`, and `feat_`.
 - OpenTofu uses standard HCL formatting with `tofu fmt`.
