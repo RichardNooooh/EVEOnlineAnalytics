@@ -30,27 +30,6 @@ class DbApiConnection(Protocol):
 Connect = Callable[[], DbApiConnection]
 
 
-class RawFileRepositoryProtocol(Protocol):
-    def find_latest_success(
-        self,
-        *,
-        source_name: str,
-        dataset_name: str,
-        source_date: str,
-        source_url: str,
-    ) -> RawFileRecord | None: ...
-    def insert(self, record: RawFileRecord) -> RawFileRecord: ...
-    def list_successes_for_source_date(
-        self,
-        *,
-        source_name: str,
-        dataset_name: str,
-        source_date: str,
-    ) -> list[RawFileRecord]: ...
-    def delete_successes_for_local_paths(self, local_paths: set[str]) -> None: ...
-    def touch_checked(self, record_id: int, checked_at: str) -> None: ...
-
-
 class RawFileRepository:
     """Persist raw source-file acquisition metadata through DB-API."""
 
