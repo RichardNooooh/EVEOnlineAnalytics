@@ -6,10 +6,11 @@ import pytest
 
 from ingest.raw_files.config import (
     MOUNTED_STORAGE_TARGET,
-    RAW_FILES_DB_ENV_VAR,
+    RAW_FILES_LEDGER_URL_ENV_VAR,
     RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
     RAW_FILES_ROOT_ENV_VAR,
     resolve_raw_files_config,
+    sqlite_ledger_url,
 )
 
 
@@ -17,12 +18,12 @@ def test_raw_files_config_resolves_local_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
-    monkeypatch.delenv(RAW_FILES_DB_ENV_VAR, raising=False)
+    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
 
     config = resolve_raw_files_config()
 
     assert str(config.raw_root).endswith("/ingestion/.local/raw")
-    assert config.db_path == config.raw_root / "raw_files.sqlite"
+    assert config.ledger_url == sqlite_ledger_url(config.raw_root / "raw_files.sqlite")
     assert config.max_copies_per_date == 5
 
 
@@ -31,7 +32,7 @@ def test_raw_files_config_resolves_mounted_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
-    monkeypatch.delenv(RAW_FILES_DB_ENV_VAR, raising=False)
+    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
 
     config = resolve_raw_files_config(
         storage_target=MOUNTED_STORAGE_TARGET,
@@ -39,7 +40,7 @@ def test_raw_files_config_resolves_mounted_target(
     )
 
     assert config.raw_root == tmp_path / "data" / "raw"
-    assert config.db_path == config.raw_root / "raw_files.sqlite"
+    assert config.ledger_url == sqlite_ledger_url(config.raw_root / "raw_files.sqlite")
 
 
 def test_raw_files_config_resolves_env_overrides(
@@ -47,14 +48,33 @@ def test_raw_files_config_resolves_env_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(RAW_FILES_ROOT_ENV_VAR, str(tmp_path / "env-raw"))
-    monkeypatch.setenv(RAW_FILES_DB_ENV_VAR, str(tmp_path / "env.sqlite"))
+    monkeypatch.setenv(RAW_FILES_LEDGER_URL_ENV_VAR, "postgresql://ledger.test/raw")
     monkeypatch.setenv(RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR, "0")
 
     config = resolve_raw_files_config()
 
     assert config.raw_root == tmp_path / "env-raw"
-    assert config.db_path == tmp_path / "env.sqlite"
+    assert config.ledger_url == "postgresql://ledger.test/raw"
     assert config.max_copies_per_date == 0
+
+
+def test_raw_files_config_accepts_explicit_ledger_url(tmp_path: Path) -> None:
+    config = resolve_raw_files_config(
+        raw_root=str(tmp_path / "raw"),
+        ledger_url="postgresql://ledger.test/raw",
+    )
+
+    assert config.ledger_url == "postgresql://ledger.test/raw"
+
+
+def test_raw_files_config_rejects_path_ledger_url(tmp_path: Path) -> None:
+    with pytest.raises(
+        ValueError, match="must be a sqlite, postgres, or postgresql URL"
+    ):
+        resolve_raw_files_config(
+            raw_root=str(tmp_path / "raw"),
+            ledger_url=str(tmp_path / "raw_files.sqlite"),
+        )
 
 
 def test_raw_files_config_accepts_explicit_max_copies(tmp_path: Path) -> None:

@@ -144,7 +144,7 @@ uv run --locked pytest
 
 Raw source-file acquisition is separate from dlt loading. It downloads Everef CSV
 archives into a local or mounted raw cache, records checksums and source headers in a
-SQLite ledger, and lets dlt read the cached file paths later.
+SQLite or PostgreSQL ledger, and lets dlt read the cached file paths later.
 
 Everef raw acquisition is intentionally thin: it adapts Everef probe metadata into a
 generic `RawFileSpec`, then delegates cache-hit detection, download, checksum, ledger,
@@ -159,8 +159,8 @@ uv --project ingestion run eve-market-ingest raw-files sync-everef-market-histor
   --end-date 2025-01-31
 ```
 
-Local raw cache defaults to `ingestion/.local/raw`. The SQLite ledger defaults to
-`ingestion/.local/raw/raw_files.sqlite`.
+Local raw cache defaults to `ingestion/.local/raw`. The ledger defaults to local
+SQLite at `ingestion/.local/raw/raw_files.sqlite`.
 
 For Airflow or Kubernetes, use the mounted target so raw files live under the shared
 data root:
@@ -175,13 +175,12 @@ uv --project ingestion run eve-market-ingest raw-files sync-everef-market-histor
 
 The mounted raw cache target resolves to `/opt/eve-market/data/raw` unless `--data-root`
 or `EVE_MARKET_DATA_ROOT` changes the mounted root. Override the raw cache directly with
-`--raw-root` or `EVE_MARKET_RAW_FILES_ROOT`. Override the SQLite ledger path with
-`--raw-ledger-db` or `EVE_MARKET_RAW_FILES_DB`.
+`--raw-root` or `EVE_MARKET_RAW_FILES_ROOT`. Override the ledger with
+`--raw-ledger-url` or `EVE_MARKET_RAW_FILES_LEDGER_URL`.
 
-SQLite is the first local-development ledger backend. Treat it as a single-writer
-ledger, especially when placed on mounted storage. A later local Compose phase should
-move the ledger to Postgres before running concurrent scheduler/worker workloads
-against the same metadata store.
+Use SQLite for direct local ingestion runs. Use PostgreSQL for Docker Compose and later
+k3s/Airflow deployments, while still treating raw-file acquisition as single-writer for
+the relevant publication scope.
 
 Load dlt from the raw cache:
 
@@ -217,10 +216,10 @@ analytical state remains DuckLake-backed.
 
 Everef source files are considered fresh when the source `content-length` and
 `last-modified` headers match the latest valid cached file. If the source changes in
-place while preserving both headers, this first SQLite-only implementation will not
-detect the change. If neither header is available, the file is downloaded again rather
-than treated as fresh. A later Postgres/local-compose phase should add stronger source
-metadata such as Everef `totals.json`, `ETag`, or an explicit force-refresh option.
+place while preserving both headers, the raw-file cache will not detect the change. If
+neither header is available, the file is downloaded again rather than treated as fresh.
+A later source-metadata phase should add stronger source metadata such as Everef
+`totals.json`, `ETag`, or an explicit force-refresh option.
 
 The same command can be run through the module entrypoint:
 
@@ -248,7 +247,7 @@ For raw-file behavior, keep tests split by boundary:
 
 - `test_raw_files_publisher.py` covers generic `RawFileSpec` and `publish_raw_file`
   cache/download/prune behavior.
-- `test_raw_files_repository.py` covers SQLite ledger persistence and query behavior.
+- `test_raw_files_repository.py` covers ledger persistence and backend SQL behavior.
 - `test_raw_files_everef.py` covers Everef adapter/spec/list-cache behavior.
 - `test_raw_files_config.py`, `test_raw_files_downloader.py`, and
   `test_raw_files_models.py` cover smaller supporting modules.
@@ -273,7 +272,7 @@ Useful options:
 - `--input-source`: CSV read source, `url` or `raw-cache`, defaults to `url`.
 - `--sync-raw`: download raw source files first, then load from `raw-cache`.
 - `--raw-root`: raw source-file cache root override.
-- `--raw-ledger-db`: raw source-file SQLite ledger override.
+- `--raw-ledger-url`: raw source-file ledger URL override.
 
 DuckLake storage URL precedence is explicit `--ducklake-storage`, then
 `EVE_MARKET_DUCKLAKE_STORAGE`, then the selected `--storage-target` default. For

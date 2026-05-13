@@ -25,7 +25,7 @@ from ingest.raw_files.config import (
 )
 from ingest.raw_files.models import RawFileRecord
 from ingest.raw_files.publisher import RawFileSpec, publish_raw_file
-from ingest.raw_files.repository import RawFileRepository
+from ingest.raw_files.repository import create_raw_file_repository
 
 SOURCE_NAME = "everef"
 DATASET_NAME = "market_history"
@@ -91,7 +91,7 @@ def list_cached_everef_market_history_files(
     parsed_start = parse_market_history_date(start_date)
     parsed_end = parse_market_history_date(end_date)
     resolved_config = config or resolve_raw_files_config()
-    repository = RawFileRepository(resolved_config.db_path)
+    repository = create_raw_file_repository(resolved_config.ledger_url)
 
     for market_date in iter_dates(parsed_start, parsed_end):
         source_url = market_history_file_url(market_date, base_url)

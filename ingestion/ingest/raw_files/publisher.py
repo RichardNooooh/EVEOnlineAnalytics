@@ -13,7 +13,7 @@ import requests
 from ingest.raw_files.config import RawFilesConfig
 from ingest.raw_files.downloader import download_with_sha256, sha256_file
 from ingest.raw_files.models import RawFileRecord
-from ingest.raw_files.repository import RawFileRepository
+from ingest.raw_files.repository import RawFileRepository, create_raw_file_repository
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ def publish_raw_file(
     http_client: Any = requests,
 ) -> RawFileRecord:
     """Download or reuse one raw source file and record acquisition metadata."""
-    resolved_repository = repository or RawFileRepository(config.db_path)
+    resolved_repository = repository or create_raw_file_repository(config.ledger_url)
     now = _utc_now()
     cached = resolved_repository.find_latest_success(
         source_name=spec.source_name,

@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 
 from conftest import FakeHttpClient, NoValidatorHttpClient, raw_files_config
-from ingest.raw_files.config import RawFilesConfig
+from ingest.raw_files.config import RawFilesConfig, sqlite_ledger_url
 from ingest.raw_files.publisher import RawFileSpec, publish_raw_file
 from ingest.raw_files.repository import RawFileRepository
 
@@ -83,7 +83,7 @@ def test_publish_raw_file_prunes_old_changed_copies_by_default(tmp_path: Path) -
         assert record.local_path is not None
         assert Path(record.local_path).exists()
 
-    repository = RawFileRepository(config.db_path)
+    repository = RawFileRepository(config.ledger_url)
     cached_records = repository.list_successes_for_source_date(
         source_name="source",
         dataset_name="dataset",
@@ -115,7 +115,7 @@ def test_publish_raw_file_prunes_old_changed_copies_per_date(tmp_path: Path) -> 
                 )
             )
 
-    repository = RawFileRepository(config.db_path)
+    repository = RawFileRepository(config.ledger_url)
     for source_date, records in records_by_date.items():
         assert records[0].local_path is not None
         assert not Path(records[0].local_path).exists()
@@ -137,7 +137,7 @@ def test_publish_raw_file_keeps_all_changed_copies_when_pruning_disabled(
 ) -> None:
     config = RawFilesConfig(
         raw_root=tmp_path / "raw",
-        db_path=tmp_path / "raw" / "raw_files.sqlite",
+        ledger_url=sqlite_ledger_url(tmp_path / "raw" / "raw_files.sqlite"),
         max_copies_per_date=0,
     )
     client = FakeHttpClient(b"raw bytes 0")
@@ -164,7 +164,7 @@ def test_publish_raw_file_keeps_all_changed_copies_when_pruning_disabled(
 def test_publish_raw_file_prunes_old_copies_on_cache_hit(tmp_path: Path) -> None:
     disabled_config = RawFilesConfig(
         raw_root=tmp_path / "raw",
-        db_path=tmp_path / "raw" / "raw_files.sqlite",
+        ledger_url=sqlite_ledger_url(tmp_path / "raw" / "raw_files.sqlite"),
         max_copies_per_date=0,
     )
     client = FakeHttpClient(b"raw bytes 0")
@@ -185,7 +185,7 @@ def test_publish_raw_file_prunes_old_copies_on_cache_hit(tmp_path: Path) -> None
 
     pruning_config = RawFilesConfig(
         raw_root=disabled_config.raw_root,
-        db_path=disabled_config.db_path,
+        ledger_url=disabled_config.ledger_url,
         max_copies_per_date=2,
     )
     cache_hit = publish_raw_file(
@@ -270,7 +270,7 @@ def test_publish_raw_file_records_failed_download(tmp_path: Path) -> None:
     except RuntimeError:
         pass
 
-    rows = RawFileRepository(config.db_path).list_successes_for_source_date(
+    rows = RawFileRepository(config.ledger_url).list_successes_for_source_date(
         source_name="source",
         dataset_name="dataset",
         source_date="2025-01-01",
