@@ -172,13 +172,15 @@ uv --project ingestion run eve-market-ingest raw-files sync-everef-market-histor
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --storage-target mounted \
-  --data-root /mnt/eve-market/data
+  --data-root /mnt/eve-market/data \
+  --raw-ledger-url postgresql://user:password@postgres.example/eve_market_raw_files
 ```
 
 The mounted raw cache target resolves to `/opt/eve-market/data/raw` unless `--data-root`
 or `EVE_MARKET_DATA_ROOT` changes the mounted root. Override the raw cache directly with
-`--raw-root` or `EVE_MARKET_RAW_FILES_ROOT`. Override the ledger with
-`--raw-ledger-url` or `EVE_MARKET_RAW_FILES_LEDGER_URL`.
+`--raw-root` or `EVE_MARKET_RAW_FILES_ROOT`. Mounted raw cache targets require an
+explicit durable ledger URL through `--raw-ledger-url` or
+`EVE_MARKET_RAW_FILES_LEDGER_URL`; they do not default to SQLite on shared storage.
 
 Use SQLite for direct local ingestion runs. Use PostgreSQL for Docker Compose and later
 k3s/Airflow deployments, while still treating raw-file acquisition as single-writer for
@@ -193,14 +195,17 @@ uv --project ingestion run eve-market-ingest everef-market-history \
   --input-source raw-cache
 ```
 
-When using the mounted cache, use the same storage target for both sync and load:
+When using the mounted cache, use the same storage target for both sync and load and
+provide durable DuckLake catalog and raw-file ledger URLs through arguments or env vars:
 
 ```bash
 uv --project ingestion run eve-market-ingest everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --input-source raw-cache \
-  --storage-target mounted
+  --storage-target mounted \
+  --ducklake-catalog postgresql://user:password@postgres.example/eve_market_ducklake \
+  --raw-ledger-url postgresql://user:password@postgres.example/eve_market_raw_files
 ```
 
 Or do both in one local command:

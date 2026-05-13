@@ -27,30 +27,21 @@ def mounted_data_root_path(data_root: str) -> Path:
 
 def resolve_mounted_data_root(data_root: str | None = None) -> str:
     """Resolve mounted data root by explicit, env, then default precedence."""
-    if data_root is not None:
-        if not data_root.strip():
-            msg = "data_root must not be empty"
-            raise ValueError(msg)
-        return data_root
-
-    env_data_root = os.getenv(DATA_ROOT_ENV_VAR)
-    if env_data_root is not None:
-        if not env_data_root.strip():
-            msg = f"{DATA_ROOT_ENV_VAR} must not be empty"
-            raise ValueError(msg)
-        return env_data_root
-
-    return DEFAULT_MOUNTED_DATA_ROOT
+    return resolve_config_value(
+        data_root,
+        env_var=DATA_ROOT_ENV_VAR,
+        default_value=DEFAULT_MOUNTED_DATA_ROOT,
+        value_name="data_root",
+    )
 
 
-def resolve_config_value(
+def resolve_optional_config_value(
     explicit_value: str | None,
     *,
     env_var: str,
-    default_value: str,
     value_name: str,
-) -> str:
-    """Resolve config by explicit, env, then default precedence."""
+) -> str | None:
+    """Resolve config by explicit, then env precedence with no default."""
     if explicit_value is not None:
         if not explicit_value.strip():
             msg = f"{value_name} must not be empty"
@@ -64,4 +55,22 @@ def resolve_config_value(
             raise ValueError(msg)
         return env_value
 
+    return None
+
+
+def resolve_config_value(
+    explicit_value: str | None,
+    *,
+    env_var: str,
+    default_value: str,
+    value_name: str,
+) -> str:
+    """Resolve config by explicit, env, then default precedence."""
+    resolved_value = resolve_optional_config_value(
+        explicit_value,
+        env_var=env_var,
+        value_name=value_name,
+    )
+    if resolved_value is not None:
+        return resolved_value
     return default_value

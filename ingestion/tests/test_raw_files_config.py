@@ -27,7 +27,24 @@ def test_raw_files_config_resolves_local_default(
     assert config.max_copies_per_date == 5
 
 
-def test_raw_files_config_resolves_mounted_target(
+def test_raw_files_config_rejects_mounted_target_without_ledger_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
+    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
+
+    with pytest.raises(
+        ValueError,
+        match="mounted raw-file storage requires an explicit ledger URL.*PostgreSQL",
+    ):
+        resolve_raw_files_config(
+            storage_target=MOUNTED_STORAGE_TARGET,
+            data_root=str(tmp_path / "data"),
+        )
+
+
+def test_raw_files_config_resolves_mounted_target_with_explicit_ledger_url(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -37,10 +54,46 @@ def test_raw_files_config_resolves_mounted_target(
     config = resolve_raw_files_config(
         storage_target=MOUNTED_STORAGE_TARGET,
         data_root=str(tmp_path / "data"),
+        ledger_url="postgresql://ledger.test/raw",
     )
 
     assert config.raw_root == tmp_path / "data" / "raw"
+    assert config.ledger_url == "postgresql://ledger.test/raw"
+
+
+def test_raw_files_config_allows_local_raw_root_with_mounted_storage_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
+    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
+
+    config = resolve_raw_files_config(
+        raw_root=str(tmp_path / "raw"),
+        storage_target=MOUNTED_STORAGE_TARGET,
+        data_root=str(tmp_path / "data"),
+    )
+
+    assert config.raw_root == tmp_path / "raw"
     assert config.ledger_url == sqlite_ledger_url(config.raw_root / "raw_files.sqlite")
+
+
+def test_raw_files_config_rejects_mounted_raw_root_without_ledger_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
+    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
+
+    with pytest.raises(
+        ValueError,
+        match="mounted raw-file storage requires an explicit ledger URL.*PostgreSQL",
+    ):
+        resolve_raw_files_config(
+            raw_root=str(tmp_path / "data" / "raw-v2"),
+            storage_target=MOUNTED_STORAGE_TARGET,
+            data_root=str(tmp_path / "data"),
+        )
 
 
 def test_raw_files_config_resolves_env_overrides(
