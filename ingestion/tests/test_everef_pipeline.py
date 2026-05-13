@@ -322,7 +322,7 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
                     "end_date": end_date,
                     "base_url": base_url,
                     "raw_root": str(config.raw_root),
-                    "db_path": str(config.db_path),
+                    "ledger_url": config.ledger_url,
                     "max_copies_per_date": config.max_copies_per_date,
                 },
             )
@@ -357,7 +357,7 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
         base_url="https://example.test/history",
         sync_raw=True,
         raw_root="/tmp/raw",
-        raw_ledger_db="/tmp/raw.sqlite",
+        raw_ledger_url="postgresql://ledger.test/raw",
         raw_max_copies_per_date="0",
     )
 
@@ -368,14 +368,14 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
         "end_date": "2025-01-01",
         "base_url": "https://example.test/history",
         "raw_root": "/tmp/raw",
-        "db_path": "/tmp/raw.sqlite",
+        "ledger_url": "postgresql://ledger.test/raw",
         "max_copies_per_date": 0,
     }
     assert calls[2][1]["input_source"] == "raw-cache"
     assert calls[2][1]["storage_target"] == "mounted"
     assert calls[2][1]["data_root"] == "/mnt/eve-market"
     assert calls[2][1]["raw_root"] == "/tmp/raw"
-    assert calls[2][1]["raw_ledger_db"] == "/tmp/raw.sqlite"
+    assert calls[2][1]["raw_ledger_url"] == "postgresql://ledger.test/raw"
 
 
 def test_cli_defaults_to_parquet_loader_format() -> None:
@@ -472,8 +472,8 @@ def test_cli_accepts_raw_file_sync_command() -> None:
             "2025-01-01",
             "--raw-root",
             "/tmp/raw",
-            "--raw-ledger-db",
-            "/tmp/raw.sqlite",
+            "--raw-ledger-url",
+            "postgresql://ledger.test/raw",
             "--raw-max-copies-per-date",
             "0",
         ]
@@ -482,7 +482,7 @@ def test_cli_accepts_raw_file_sync_command() -> None:
     assert args.command == "raw-files"
     assert args.raw_command == "sync-everef-market-history"
     assert args.raw_root == "/tmp/raw"
-    assert args.raw_ledger_db == "/tmp/raw.sqlite"
+    assert args.raw_ledger_url == "postgresql://ledger.test/raw"
     assert args.raw_max_copies_per_date == "0"
 
 

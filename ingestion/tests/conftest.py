@@ -7,7 +7,7 @@ from typing import TypeVar
 
 import pytest
 
-from ingest.raw_files.config import RawFilesConfig
+from ingest.raw_files.config import RawFilesConfig, sqlite_ledger_url
 from ingest.raw_files.models import RawFileRecord
 
 T = TypeVar("T")
@@ -75,7 +75,7 @@ class NoValidatorHttpClient(FakeHttpClient):
 def raw_files_config(tmp_path: Path, *, max_copies_per_date: int = 5) -> RawFilesConfig:
     return RawFilesConfig(
         raw_root=tmp_path / "raw",
-        db_path=tmp_path / "raw" / "raw_files.sqlite",
+        ledger_url=sqlite_ledger_url(tmp_path / "raw" / "raw_files.sqlite"),
         max_copies_per_date=max_copies_per_date,
     )
 

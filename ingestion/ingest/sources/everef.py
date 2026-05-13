@@ -82,14 +82,14 @@ def list_cached_market_history_files(
     end_date: date,
     base_url: str = BASE_URL,
     raw_root: str | None = None,
-    raw_ledger_db: str | None = None,
+    raw_ledger_url: str | None = None,
     storage_target: str = LOCAL_STORAGE_TARGET,
     data_root: str | None = None,
 ) -> Iterator[dict[str, object]]:
     """List cached Everef market history files for a date range."""
     config = resolve_raw_files_config(
         raw_root=raw_root,
-        db_path=raw_ledger_db,
+        ledger_url=raw_ledger_url,
         storage_target=storage_target,
         data_root=data_root,
     )
@@ -188,7 +188,7 @@ def everef_market_history_source(
     chunksize: int = DEFAULT_CHUNKSIZE,
     input_source: str = URL_INPUT_SOURCE,
     raw_root: str | None = None,
-    raw_ledger_db: str | None = None,
+    raw_ledger_url: str | None = None,
     storage_target: str = LOCAL_STORAGE_TARGET,
     data_root: str | None = None,
 ):
@@ -202,7 +202,7 @@ def everef_market_history_source(
             parsed_end_date,
             base_url,
             raw_root=raw_root,
-            raw_ledger_db=raw_ledger_db,
+            raw_ledger_url=raw_ledger_url,
             storage_target=storage_target,
             data_root=data_root,
         ) | read_market_history_csv(chunksize=chunksize)

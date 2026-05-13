@@ -38,7 +38,7 @@ def run_everef_market_history_pipeline(
     input_source: str = URL_INPUT_SOURCE,
     sync_raw: bool = False,
     raw_root: str | None = None,
-    raw_ledger_db: str | None = None,
+    raw_ledger_url: str | None = None,
     raw_max_copies_per_date: int | str | None = None,
     loader_file_format: str = "parquet",
     dev_mode: bool = False,
@@ -63,7 +63,7 @@ def run_everef_market_history_pipeline(
     if sync_raw:
         raw_config = resolve_raw_files_config(
             raw_root=raw_root,
-            db_path=raw_ledger_db,
+            ledger_url=raw_ledger_url,
             max_copies_per_date=raw_max_copies_per_date,
             storage_target=storage_target,
             data_root=data_root,
@@ -87,7 +87,7 @@ def run_everef_market_history_pipeline(
 
     if effective_input_source == RAW_CACHE_INPUT_SOURCE:
         source_kwargs["raw_root"] = raw_root
-        source_kwargs["raw_ledger_db"] = raw_ledger_db
+        source_kwargs["raw_ledger_url"] = raw_ledger_url
         source_kwargs["storage_target"] = storage_target
         source_kwargs["data_root"] = data_root
 
