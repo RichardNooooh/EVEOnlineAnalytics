@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from ingest.storage_config import (
     DATA_ROOT_ENV_VAR as DATA_ROOT_ENV_VAR,
@@ -22,17 +23,17 @@ from ingest.storage_config import (
 )
 
 RAW_FILES_ROOT_ENV_VAR = "EVE_MARKET_RAW_FILES_ROOT"
-RAW_FILES_DB_ENV_VAR = "EVE_MARKET_RAW_FILES_DB"
+RAW_FILES_LEDGER_URL_ENV_VAR = "EVE_MARKET_RAW_FILES_LEDGER_URL"
 RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR = "EVE_MARKET_RAW_FILES_MAX_COPIES_PER_DATE"
 DEFAULT_MAX_COPIES_PER_DATE = 5
 
 
 @dataclass(frozen=True)
 class RawFilesConfig:
-    """Resolved raw-file cache and SQLite ledger paths."""
+    """Resolved raw-file cache and ledger URL."""
 
     raw_root: Path
-    db_path: Path
+    ledger_url: str
     max_copies_per_date: int = DEFAULT_MAX_COPIES_PER_DATE
 
 
@@ -63,30 +64,66 @@ def raw_files_root_for_target(
 def resolve_raw_files_config(
     *,
     raw_root: str | None = None,
-    db_path: str | None = None,
+    ledger_url: str | None = None,
     max_copies_per_date: int | str | None = None,
     storage_target: str = LOCAL_STORAGE_TARGET,
     data_root: str | None = None,
 ) -> RawFilesConfig:
-    """Resolve raw-file cache root and SQLite ledger path."""
+    """Resolve raw-file cache root and acquisition ledger URL."""
     resolved_root = _resolve_optional_path(
         raw_root,
         env_var=RAW_FILES_ROOT_ENV_VAR,
         default=raw_files_root_for_target(storage_target, data_root),
         value_name="raw_root",
     )
-    resolved_db = _resolve_optional_path(
-        db_path,
-        env_var=RAW_FILES_DB_ENV_VAR,
-        default=resolved_root / "raw_files.sqlite",
-        value_name="db_path",
+    resolved_ledger_url = _resolve_ledger_url(
+        ledger_url=ledger_url,
+        default_ledger_path=resolved_root / "raw_files.sqlite",
     )
     resolved_max_copies = _resolve_max_copies_per_date(max_copies_per_date)
     return RawFilesConfig(
         raw_root=resolved_root,
-        db_path=resolved_db,
+        ledger_url=resolved_ledger_url,
         max_copies_per_date=resolved_max_copies,
     )
+
+
+def sqlite_ledger_url(ledger_path: Path) -> str:
+    """Return SQLite URL for an absolute database path."""
+    return f"sqlite:///{ledger_path.expanduser().resolve()}"
+
+
+def sqlite_path_from_ledger_url(ledger_url: str) -> Path:
+    """Return SQLite path from ledger URL."""
+    if ledger_url.startswith("sqlite:///"):
+        return Path(ledger_url.removeprefix("sqlite://")).expanduser().resolve()
+    msg = "ledger_url must be a SQLite URL"
+    raise ValueError(msg)
+
+
+def _resolve_ledger_url(
+    *,
+    ledger_url: str | None,
+    default_ledger_path: Path,
+) -> str:
+    if ledger_url is not None:
+        return _validate_ledger_url(ledger_url, "ledger_url")
+
+    env_ledger_url = os.getenv(RAW_FILES_LEDGER_URL_ENV_VAR)
+    if env_ledger_url is not None:
+        return _validate_ledger_url(env_ledger_url, RAW_FILES_LEDGER_URL_ENV_VAR)
+
+    return sqlite_ledger_url(default_ledger_path)
+
+
+def _validate_ledger_url(value: str, value_name: str) -> str:
+    if not value.strip():
+        msg = f"{value_name} must not be empty"
+        raise ValueError(msg)
+    if not urlparse(value).scheme:
+        msg = f"{value_name} must be a sqlite, postgres, or postgresql URL"
+        raise ValueError(msg)
+    return value
 
 
 def _resolve_max_copies_per_date(explicit_value: int | str | None) -> int:
