@@ -60,7 +60,9 @@ def run_everef_market_history_pipeline(
         dev_mode=dev_mode,
     )
 
-    if sync_raw:
+    effective_input_source = RAW_CACHE_INPUT_SOURCE if sync_raw else input_source
+    raw_config = None
+    if sync_raw or effective_input_source == RAW_CACHE_INPUT_SOURCE:
         raw_config = resolve_raw_files_config(
             raw_root=raw_root,
             ledger_url=raw_ledger_url,
@@ -68,6 +70,9 @@ def run_everef_market_history_pipeline(
             storage_target=storage_target,
             data_root=data_root,
         )
+
+    if sync_raw:
+        assert raw_config is not None
         acquire_everef_market_history_files(
             start_date,
             end_date,
@@ -81,15 +86,13 @@ def run_everef_market_history_pipeline(
     if chunksize is not None:
         source_kwargs["chunksize"] = chunksize
 
-    effective_input_source = RAW_CACHE_INPUT_SOURCE if sync_raw else input_source
     if effective_input_source != URL_INPUT_SOURCE:
         source_kwargs["input_source"] = effective_input_source
 
     if effective_input_source == RAW_CACHE_INPUT_SOURCE:
-        source_kwargs["raw_root"] = raw_root
-        source_kwargs["raw_ledger_url"] = raw_ledger_url
-        source_kwargs["storage_target"] = storage_target
-        source_kwargs["data_root"] = data_root
+        assert raw_config is not None
+        source_kwargs["raw_root"] = str(raw_config.raw_root)
+        source_kwargs["raw_ledger_url"] = raw_config.ledger_url
 
     return pipeline.run(
         everef_market_history_source(start_date, end_date, **source_kwargs),
