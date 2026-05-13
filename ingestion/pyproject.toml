@@ -22,6 +22,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["ingest"]
 
+[tool.uv]
+exclude-newer = "1 week"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
