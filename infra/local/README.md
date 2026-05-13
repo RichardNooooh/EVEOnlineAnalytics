@@ -13,7 +13,7 @@ or the TrueNAS-backed DuckLake storage contract.
 | `.local/data` | TrueNAS NFS DuckLake data-file storage |
 | local Postgres service | Airflow metadata PostgreSQL |
 | bind-mounted DAGs and project code | deployed Airflow image or DAG/code sync mechanism |
-| `eve-market-ingestion:local` job image | registry-pushed ingestion image for KubernetesPodOperator |
+| `eve-market-ingestion:local` job image | `ghcr.io/<owner>/eve-market-ingestion:<immutable-tag>` for KubernetesPodOperator |
 
 ## Services
 
@@ -89,7 +89,7 @@ make local-airflow-docker-smoke
 2. run locally
 3. validate through local Airflow
 4. commit
-5. build and test in CI
+5. validate in CI and publish GHCR image tags from trusted `master` builds
 6. deploy to k3s
 
 ## Notes
@@ -100,5 +100,5 @@ make local-airflow-docker-smoke
 - The Docker socket mount gives Airflow local control over the host Docker daemon. Keep
   this local-only; do not use this pattern in k3s.
 - Production Airflow remains managed by `infra/helm/airflow.yml` on k3s.
-- Production DAGs should use `KubernetesPodOperator` with immutable registry image tags,
-  not local Docker socket access.
+- Production DAGs should use `KubernetesPodOperator` with immutable GHCR image tags from
+  the `Ingestion Image` workflow, not local Docker socket access.

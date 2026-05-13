@@ -95,7 +95,7 @@ Expected loop:
 3. run locally against `.local/data`
 4. validate DAG behavior and outputs through local Airflow DockerOperator tasks
 5. commit code and contracts
-6. let CI build and test deployable image/artifacts
+6. let CI validate changes and publish GHCR image tags from trusted `master` builds
 7. deploy to k3s with Helm and KubernetesPodOperator task pods
 
 Local storage remains an approximation of production storage. `.local/data` stands in
@@ -104,5 +104,7 @@ metadata database, and bind-mounted DAGs/code stand in for the deployed Airflow 
 sync mechanism.
 
 Local Airflow may use DockerOperator with `eve-market-ingestion:local` to match the
-container boundary used later by KubernetesPodOperator. This Docker socket access is a
+container boundary used later by KubernetesPodOperator. The deployable ingestion image is
+published by the `Ingestion Image` GitHub Actions workflow as
+`ghcr.io/<owner>/eve-market-ingestion:<immutable-tag>`. Local Docker socket access is a
 local-only development shortcut and is not part of the k3s deployment contract.

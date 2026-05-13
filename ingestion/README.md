@@ -67,8 +67,10 @@ docker run --rm eve-market-ingestion:local everef-market-history \
 ```
 
 For Airflow DockerOperator local runs, build `eve-market-ingestion:local` before running
-the DAG. For later KubernetesPodOperator runs, push the same image to a registry with an
-immutable tag such as a git SHA and mount shared storage at `/opt/eve-market/data`.
+the DAG. The `Ingestion Image` GitHub Actions workflow builds the image on
+`ubuntu-latest` and publishes trusted `master` builds to
+`ghcr.io/<owner>/eve-market-ingestion`. Later KubernetesPodOperator runs should use an
+immutable `sha-*` tag and mount shared storage at `/opt/eve-market/data`.
 
 ```bash
 uv --project ingestion run eve-market-ingest everef-market-history \
