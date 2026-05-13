@@ -1,4 +1,6 @@
 apache-airflow-providers-postgres
+apache-airflow-providers-docker
+apache-airflow-providers-cncf-kubernetes
 dlt[duckdb]
 dbt-core
 dbt-duckdb

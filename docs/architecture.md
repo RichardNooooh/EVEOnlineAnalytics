@@ -75,6 +75,8 @@ Local-to-production mapping:
 - local Postgres approximates the Airflow metadata database
 - bind-mounted DAGs and source code approximate the deployed Airflow image or DAG/code
   sync mechanism
+- local DockerOperator task containers approximate KubernetesPodOperator pods that run
+  registry-pushed job images in k3s
 
 Local smoke runs may use the default SQLite DuckLake catalog. Any run using mounted
 DuckLake storage, including `--storage-target mounted` or an explicit mounted
