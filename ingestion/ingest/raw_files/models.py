@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+
+from ingest.raw_files.downloader import sha256_file
 
 
 @dataclass(frozen=True)
@@ -25,18 +28,27 @@ class RawFileRecord:
     status: str
     error_message: str | None = None
 
-    def to_source_item(self) -> dict[str, object]:
-        """Return dlt source metadata for this cached file."""
-        if self.local_path is None:
-            msg = "raw file record has no local_path"
-            raise ValueError(msg)
 
-        return {
-            "market_date": self.source_date,
-            "url": self.source_url,
-            "local_path": self.local_path,
-            "sha256": self.sha256,
-            "content_length": self.content_length,
-            "last_modified": self.last_modified,
-            "downloaded_at": self.downloaded_at,
-        }
+def cached_record_is_valid(record: RawFileRecord) -> bool:
+    """Return whether a cached raw-file ledger record matches its local file."""
+    if record.local_path is None or record.sha256 is None:
+        return False
+    return local_file_matches(
+        Path(record.local_path),
+        sha256=record.sha256,
+        downloaded_size=record.downloaded_size,
+    )
+
+
+def local_file_matches(
+    path: Path,
+    *,
+    sha256: str,
+    downloaded_size: int | None,
+) -> bool:
+    """Return whether a local raw cache file matches expected metadata."""
+    if not path.exists() or not path.is_file():
+        return False
+    if downloaded_size is not None and path.stat().st_size != downloaded_size:
+        return False
+    return sha256_file(path) == sha256

@@ -11,8 +11,12 @@ from uuid import uuid4
 import requests
 
 from ingest.raw_files.config import RawFilesConfig
-from ingest.raw_files.downloader import download_with_sha256, sha256_file
-from ingest.raw_files.models import RawFileRecord
+from ingest.raw_files.downloader import download_with_sha256
+from ingest.raw_files.models import (
+    RawFileRecord,
+    cached_record_is_valid,
+    local_file_matches,
+)
 from ingest.raw_files.repository import RawFileRepository, create_raw_file_repository
 
 
@@ -101,7 +105,7 @@ def _download_and_record(
 
         final_path = _cache_path(config.raw_root, spec, result.sha256)
         final_path.parent.mkdir(parents=True, exist_ok=True)
-        if final_path.exists() and _local_file_matches(
+        if final_path.exists() and local_file_matches(
             final_path,
             sha256=result.sha256,
             downloaded_size=result.downloaded_size,
@@ -165,30 +169,7 @@ def _cached_record_matches(record: RawFileRecord, spec: RawFileSpec) -> bool:
         return False
     if has_last_modified and record.last_modified != spec.last_modified:
         return False
-    return _cached_record_is_valid(record)
-
-
-def _cached_record_is_valid(record: RawFileRecord) -> bool:
-    if record.local_path is None or record.sha256 is None:
-        return False
-    return _local_file_matches(
-        Path(record.local_path),
-        sha256=record.sha256,
-        downloaded_size=record.downloaded_size,
-    )
-
-
-def _local_file_matches(
-    path: Path,
-    *,
-    sha256: str,
-    downloaded_size: int | None,
-) -> bool:
-    if not path.exists() or not path.is_file():
-        return False
-    if downloaded_size is not None and path.stat().st_size != downloaded_size:
-        return False
-    return sha256_file(path) == sha256
+    return cached_record_is_valid(record)
 
 
 def _prune_old_copies(

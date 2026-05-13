@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from datetime import date
-from pathlib import Path
 from typing import Any
 
 import requests
@@ -23,7 +22,7 @@ from ingest.raw_files.config import (
     RawFilesConfig,
     resolve_raw_files_config,
 )
-from ingest.raw_files.models import RawFileRecord
+from ingest.raw_files.models import RawFileRecord, cached_record_is_valid
 from ingest.raw_files.publisher import RawFileSpec, publish_raw_file
 from ingest.raw_files.repository import create_raw_file_repository
 
@@ -104,12 +103,12 @@ def list_cached_everef_market_history_files(
         if cached is None:
             msg = f"Everef raw file is not cached for {market_date.isoformat()}: {source_url}"
             raise FileNotFoundError(msg)
-        if not _cached_record_is_valid(cached):
+        if not cached_record_is_valid(cached):
             msg = (
                 f"Everef raw file cache record is invalid for {market_date.isoformat()}"
             )
             raise FileNotFoundError(msg)
-        yield cached.to_source_item()
+        yield _market_history_source_item(cached)
 
 
 def _probe_market_history_file(
@@ -145,17 +144,17 @@ def _market_history_raw_file_spec(item: dict[str, Any]) -> RawFileSpec:
     )
 
 
-def _cached_record_is_valid(record: RawFileRecord) -> bool:
-    if record.local_path is None or record.sha256 is None:
-        return False
-    path = Path(record.local_path)
-    if not path.exists() or not path.is_file():
-        return False
-    if (
-        record.downloaded_size is not None
-        and path.stat().st_size != record.downloaded_size
-    ):
-        return False
-    from ingest.raw_files.downloader import sha256_file
+def _market_history_source_item(record: RawFileRecord) -> dict[str, object]:
+    if record.local_path is None:
+        msg = "raw file record has no local_path"
+        raise ValueError(msg)
 
-    return sha256_file(path) == record.sha256
+    return {
+        "market_date": record.source_date,
+        "url": record.source_url,
+        "local_path": record.local_path,
+        "sha256": record.sha256,
+        "content_length": record.content_length,
+        "last_modified": record.last_modified,
+        "downloaded_at": record.downloaded_at,
+    }
