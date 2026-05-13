@@ -21,9 +21,13 @@ x-airflow-common: &airflow-common
     EVE_MARKET_DATA_ROOT: /opt/eve-market/data
     EVE_MARKET_DATASETS_ROOT: /opt/eve-market/datasets
     EVE_MARKET_DBT_PROJECT_DIR: /opt/eve-market/transform
+    EVE_MARKET_INGESTION_IMAGE: eve-market-ingestion:local
     PYTHONPATH: /opt/eve-market/ingestion
   user: "${AIRFLOW_UID:-50000}:0"
+  group_add:
+    - "${DOCKER_GID:-998}"
   volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
     - ../../orchestration/dags:/opt/airflow/dags
     - ../../ingestion:/opt/eve-market/ingestion
     - ../../transform:/opt/eve-market/transform
