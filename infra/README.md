@@ -66,16 +66,18 @@ support infrastructure rather than a local setup requirement.
 
 ### Optional CI/CD Runners
 
-The current shared CI/CD setup runs on GitHub Actions self-hosted runners with
-labels `[self-hosted, Linux, X64, eve, ci, python]`.
+The shared infrastructure and Python validation jobs run on GitHub Actions self-hosted
+runners with labels `[self-hosted, Linux, X64, eve, ci, python]`. The ingestion image
+workflow uses GitHub-hosted `ubuntu-latest` runners for Docker builds and GHCR publishing.
 
 Current layout:
 
 - 3 Debian 13 LXCs
 - 1 GitHub Actions runner per LXC
 
-This runner fleet is currently used by the repo, but it is optional. You can run
-the same checks locally with `make pre-commit-run` or `make validate`.
+This runner fleet is currently used by the repo for non-image validation, but it is
+optional. You can run the same checks locally with `make pre-commit-run` or
+`make validate`.
 
 ### Proxmox Cluster
 
@@ -134,8 +136,9 @@ Infrastructure changes are validated through both local hooks and shared CI:
 | Local hooks | OpenTofu formatting | `make -C infra tf-fmt` |
 | Local hooks | OpenTofu format + validate | `make -C infra tf-lint` |
 | GitHub Actions | Shared infra validation | `.github/workflows/infra-checks.yml` |
+| GitHub Actions | Ingestion image build and GHCR publish | `.github/workflows/ingestion-image.yml` |
 
-The current workflow fans out into three jobs on the self-hosted runner fleet:
+The infrastructure workflow fans out into three jobs on the self-hosted runner fleet:
 
 - `Ansible`: installs collections and runs `make ansible-lint`
 - `Terraform`: runs `make tf-lint`
