@@ -41,7 +41,7 @@ Expected development loop:
 2. run locally
 3. validate through local Airflow
 4. commit
-5. build and test in CI
+5. validate in CI and publish GHCR image tags from trusted `master` builds
 6. deploy to k3s
 
 See `infra/local/README.md` for local runtime details.
