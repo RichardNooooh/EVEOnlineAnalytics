@@ -11,7 +11,7 @@ or the TrueNAS-backed DuckLake storage contract.
 | Local runtime | Production approximation |
 |---|---|
 | `.local/data` | TrueNAS NFS DuckLake data-file storage |
-| local Postgres service | Airflow metadata PostgreSQL |
+| local Postgres service | Airflow metadata PostgreSQL plus separate `raw_files` ledger database |
 | bind-mounted DAGs and project code | deployed Airflow image or DAG/code sync mechanism |
 | `eve-market-ingestion:local` job image | `ghcr.io/<owner>/eve-market-ingestion:<immutable-tag>` for KubernetesPodOperator |
 
@@ -19,6 +19,7 @@ or the TrueNAS-backed DuckLake storage contract.
 
 - Airflow version from `infra/local/versions.txt` with `LocalExecutor`
 - Postgres metadata database
+- Raw file ledger database named `raw_files` with `raw_files` user
 - Mounted repo directories for DAGs, ingestion, dbt, contracts, local published data, and logs
 - Docker socket mount for local-only `DockerOperator` task containers
 
@@ -96,6 +97,9 @@ make local-airflow-docker-smoke
 
 - Keep real secrets out of git. Commit only `.env.example`.
 - Published datasets for this stack live under `.local/data`, not shared NFS.
+- The `raw_files` ledger DB/user is created by Postgres init scripts only when the
+  `postgres-data` volume is first initialized. If you already started the stack before
+  adding it, run `make local-airflow-reset CONFIRM=yes` or create the DB/user manually.
 - DuckDB files created by local experiments must stay local or scratch-only.
 - The Docker socket mount gives Airflow local control over the host Docker daemon. Keep
   this local-only; do not use this pattern in k3s.
