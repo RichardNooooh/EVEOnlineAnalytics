@@ -12,7 +12,7 @@ from ingest.cli_config import (
     RawFilesSyncCliConfig,
     StorageCliConfig,
 )
-from ingest.input_sources import INPUT_SOURCES, RAW_CACHE_INPUT_SOURCE
+from ingest.input_sources import INPUT_SOURCES
 from ingest.pipelines.everef import (
     run_everef_market_history_pipeline,
 )
@@ -141,6 +141,11 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
     everef_parser.add_argument("--base-url", default=None)
     everef_parser.add_argument("--chunksize", type=int, default=None)
     everef_parser.add_argument(
+        "--check-headers",
+        action="store_true",
+        help="Use HTTP headers with totals.json when detecting changed Everef files.",
+    )
+    everef_parser.add_argument(
         "--input-source",
         choices=INPUT_SOURCES,
         default=argparse.SUPPRESS,
@@ -171,6 +176,11 @@ def build_raw_files_parser(raw_files_parser: argparse.ArgumentParser) -> None:
         ),
     )
     raw_sync_parser.add_argument("--base-url", default=None)
+    raw_sync_parser.add_argument(
+        "--check-headers",
+        action="store_true",
+        help="Use HTTP headers with totals.json when detecting changed Everef files.",
+    )
     add_raw_file_args(raw_sync_parser)
 
 
@@ -214,6 +224,7 @@ def build_everef_market_history_config(
         "sync_raw": args.sync_raw,
         "dev_mode": args.dev_mode,
     }
+    config_kwargs["check_headers"] = args.check_headers
     _set_if_present(config_kwargs, args, "pipeline_name")
     _set_if_present(config_kwargs, args, "dataset_name")
     _set_if_present(config_kwargs, args, "destination")
@@ -224,14 +235,18 @@ def build_everef_market_history_config(
 
 def build_raw_files_sync_config(args: argparse.Namespace) -> RawFilesSyncCliConfig:
     """Map parsed args to typed raw-file sync CLI config."""
-    return RawFilesSyncCliConfig(
-        date_range=DateRangeCliConfig(
+    config_kwargs = {
+        "date_range": DateRangeCliConfig(
             start_date=args.start_date,
             end_date=args.end_date,
         ),
-        storage=_build_storage_config(args),
-        raw_files=_build_raw_files_config(args),
-        base_url=args.base_url,
+        "storage": _build_storage_config(args),
+        "raw_files": _build_raw_files_config(args),
+        "base_url": args.base_url,
+    }
+    config_kwargs["check_headers"] = args.check_headers
+    return RawFilesSyncCliConfig(
+        **config_kwargs,
     )
 
 

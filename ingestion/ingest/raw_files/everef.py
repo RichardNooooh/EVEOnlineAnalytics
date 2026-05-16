@@ -11,6 +11,7 @@ import requests
 
 from ingest.clients.everef import (
     BASE_URL,
+    fetch_market_history_totals,
     iter_dates,
     market_history_file_name,
     market_history_file_url,
@@ -40,28 +41,52 @@ def acquire_everef_market_history_files(
     base_url: str = BASE_URL,
     config: RawFilesConfig | None = None,
     http_client: Any = requests,
+    check_headers: bool = False,
 ) -> list[RawFileRecord]:
     """Download missing or changed Everef market-history files into raw cache."""
     parsed_start = parse_market_history_date(start_date)
     parsed_end = parse_market_history_date(end_date)
     resolved_config = config or resolve_raw_files_config()
     records: list[RawFileRecord] = []
+    totals = fetch_market_history_totals(
+        base_url=base_url,
+        http_client=http_client,
+        logger=logger,
+        request_exception_type=requests.RequestException,
+    )
+    repository = create_raw_file_repository(resolved_config.ledger_url)
 
     for market_date in iter_dates(parsed_start, parsed_end):
-        item = _probe_market_history_file(
-            market_date,
-            base_url=base_url,
-            http_client=http_client,
-        )
+        item = market_history_url_item(market_date, base_url)
+        if totals is not None:
+            source_row_count = totals.get(market_date.isoformat())
+            if source_row_count is None:
+                logger.warning(
+                    "Everef totals.json is missing market date %s: %s",
+                    market_date.isoformat(),
+                    item["url"],
+                )
+                continue
+            item["source_row_count"] = source_row_count
+        if check_headers:
+            item = _probe_market_history_file_item(item, http_client=http_client)
         if item is None:
             continue
+        cached = repository.find_latest_success(
+            source_name=SOURCE_NAME,
+            dataset_name=DATASET_NAME,
+            source_date=market_date.isoformat(),
+            source_url=item["url"],
+        )
         records.append(
             acquire_everef_market_history_file(
                 item,
                 config=resolved_config,
+                repository=repository,
                 http_client=http_client,
             )
         )
+        _warn_if_same_total_content_changed(cached, records[-1], item)
 
     return records
 
@@ -85,6 +110,7 @@ def sync_everef_market_history_files(
         base_url=config.base_url or BASE_URL,
         config=raw_config,
         http_client=http_client,
+        check_headers=config.check_headers,
     )
 
 
@@ -92,12 +118,14 @@ def acquire_everef_market_history_file(
     item: dict[str, Any],
     *,
     config: RawFilesConfig,
+    repository=None,
     http_client: Any = requests,
 ) -> RawFileRecord:
     """Acquire one probed Everef market-history file into raw cache."""
     return publish_raw_file(
         _market_history_raw_file_spec(item),
         config=config,
+        repository=repository,
         http_client=http_client,
     )
 
@@ -134,14 +162,11 @@ def list_cached_everef_market_history_files(
         yield _market_history_source_item(cached)
 
 
-def _probe_market_history_file(
-    market_date: date,
-    *,
-    base_url: str,
-    http_client: Any,
+def _probe_market_history_file_item(
+    item: dict[str, Any], *, http_client: Any
 ) -> dict[str, Any] | None:
     return probe_market_history_file_item(
-        market_history_url_item(market_date, base_url),
+        item,
         http_client=http_client,
         logger=logger,
         request_exception_type=requests.RequestException,
@@ -164,6 +189,30 @@ def _market_history_raw_file_spec(item: dict[str, Any]) -> RawFileSpec:
         ),
         content_length=item.get("content_length"),
         last_modified=item.get("last_modified"),
+        etag=item.get("etag"),
+        source_row_count=item.get("source_row_count"),
+    )
+
+
+def _warn_if_same_total_content_changed(
+    cached: RawFileRecord | None,
+    record: RawFileRecord,
+    item: dict[str, Any],
+) -> None:
+    source_row_count = item.get("source_row_count")
+    if (
+        cached is None
+        or source_row_count is None
+        or cached.source_row_count != source_row_count
+        or cached.sha256 is None
+        or record.sha256 is None
+        or cached.sha256 == record.sha256
+    ):
+        return
+    logger.warning(
+        "Everef market-history file changed with unchanged totals.json count for %s: %s",
+        record.source_date,
+        record.source_url,
     )
 
 

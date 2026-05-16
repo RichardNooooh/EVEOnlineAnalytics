@@ -65,6 +65,7 @@ def test_probe_market_history_file_yields_enriched_item() -> None:
             {
                 "content-length": "123",
                 "last-modified": "Wed, 01 Jan 2025 12:00:00 GMT",
+                "etag": '"etag-1"',
             },
         )
     )
@@ -80,6 +81,7 @@ def test_probe_market_history_file_yields_enriched_item() -> None:
         "url": "https://example.test/file.csv.bz2",
         "content_length": 123,
         "last_modified": "2025-01-01T12:00:00+00:00",
+        "etag": '"etag-1"',
     }
     assert fake_client.calls == [("https://example.test/file.csv.bz2", True)]
     assert item == {

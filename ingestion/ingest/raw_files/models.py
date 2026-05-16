@@ -22,6 +22,8 @@ class RawFileRecord:
     content_length: int | None
     downloaded_size: int | None
     last_modified: str | None
+    etag: str | None
+    source_row_count: int | None
     first_seen_at: str
     last_checked_at: str
     downloaded_at: str | None
