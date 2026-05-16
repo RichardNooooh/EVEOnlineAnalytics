@@ -2,6 +2,17 @@ from __future__ import annotations
 
 import pytest
 
+from ingest.cli import (
+    build_everef_market_history_config,
+    build_raw_files_sync_config,
+)
+from ingest.cli_config import (
+    DateRangeCliConfig,
+    EverefMarketHistoryCliConfig,
+    RawFilesCliConfig,
+    StorageCliConfig,
+)
+from ingest.input_sources import RAW_CACHE_INPUT_SOURCE
 from ingest.pipelines import everef
 from ingest.publishers import ducklake as ducklake_pub
 from ingest.storage_config import DATA_ROOT_ENV_VAR
@@ -350,15 +361,20 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
     monkeypatch.setattr(everef, "everef_market_history_source", fake_source)
 
     load_info = everef.run_everef_market_history_pipeline(
-        "2025-01-01",
-        "2025-01-01",
-        storage_target="mounted",
-        data_root="/mnt/eve-market",
-        base_url="https://example.test/history",
-        sync_raw=True,
-        raw_root="/tmp/raw",
-        raw_ledger_url="postgresql://ledger.test/raw",
-        raw_max_copies_per_date="0",
+        EverefMarketHistoryCliConfig(
+            date_range=DateRangeCliConfig("2025-01-01", "2025-01-01"),
+            storage=StorageCliConfig(
+                storage_target="mounted",
+                data_root="/mnt/eve-market",
+            ),
+            base_url="https://example.test/history",
+            sync_raw=True,
+            raw_files=RawFilesCliConfig(
+                raw_root="/tmp/raw",
+                raw_ledger_url="postgresql://ledger.test/raw",
+                raw_max_copies_per_date="0",
+            ),
+        )
     )
 
     assert load_info == "load-info"
@@ -413,11 +429,14 @@ def test_run_pipeline_raw_cache_resolves_config_for_source(
     monkeypatch.setattr(everef, "everef_market_history_source", fake_source)
 
     load_info = everef.run_everef_market_history_pipeline(
-        "2025-01-01",
-        "2025-01-01",
-        input_source="raw-cache",
-        raw_root=str(tmp_path / "raw"),
-        raw_ledger_url="postgresql://ledger.test/raw",
+        EverefMarketHistoryCliConfig(
+            date_range=DateRangeCliConfig("2025-01-01", "2025-01-01"),
+            input_source="raw-cache",
+            raw_files=RawFilesCliConfig(
+                raw_root=str(tmp_path / "raw"),
+                raw_ledger_url="postgresql://ledger.test/raw",
+            ),
+        )
     )
 
     assert load_info == "load-info"
@@ -440,10 +459,14 @@ def test_cli_defaults_to_parquet_loader_format() -> None:
         ]
     )
 
-    assert args.loader_file_format == "parquet"
-    assert args.destination == "ducklake"
-    assert args.storage_target == "local"
     assert args.data_root is None
+
+    config = build_everef_market_history_config(args)
+
+    assert config.loader_file_format == "parquet"
+    assert config.destination == "ducklake"
+    assert config.storage.storage_target == "local"
+    assert config.input_source == RAW_CACHE_INPUT_SOURCE
 
 
 def test_cli_accepts_mounted_storage_target() -> None:
@@ -461,7 +484,7 @@ def test_cli_accepts_mounted_storage_target() -> None:
         ]
     )
 
-    assert args.storage_target == "mounted"
+    assert build_everef_market_history_config(args).storage.storage_target == "mounted"
 
 
 def test_cli_accepts_data_root() -> None:
@@ -553,9 +576,68 @@ def test_cli_accepts_raw_cache_input_options() -> None:
         ]
     )
 
-    assert args.input_source == "raw-cache"
     assert args.sync_raw is True
     assert args.raw_max_copies_per_date == "9"
+
+    assert build_everef_market_history_config(args).input_source == "raw-cache"
+
+
+def test_build_everef_market_history_config_maps_args() -> None:
+    parser = everef_cli_parser()
+
+    args = parser.parse_args(
+        [
+            "everef-market-history",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2025-01-02",
+            "--base-url",
+            "https://example.test/history",
+            "--sync-raw",
+            "--raw-root",
+            "/tmp/raw",
+        ]
+    )
+
+    config = build_everef_market_history_config(args)
+
+    assert config == EverefMarketHistoryCliConfig(
+        date_range=DateRangeCliConfig("2025-01-01", "2025-01-02"),
+        base_url="https://example.test/history",
+        input_source=RAW_CACHE_INPUT_SOURCE,
+        sync_raw=True,
+        raw_files=RawFilesCliConfig(raw_root="/tmp/raw"),
+    )
+
+
+def test_build_raw_files_sync_config_maps_args() -> None:
+    parser = everef_cli_parser()
+
+    args = parser.parse_args(
+        [
+            "raw-files",
+            "sync-everef-market-history",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2025-01-02",
+            "--storage-target",
+            "mounted",
+            "--data-root",
+            "/mnt/eve-market",
+            "--raw-ledger-url",
+            "postgresql://ledger.test/raw",
+        ]
+    )
+
+    config = build_raw_files_sync_config(args)
+
+    assert config.date_range.start_date == "2025-01-01"
+    assert config.date_range.end_date == "2025-01-02"
+    assert config.storage.storage_target == "mounted"
+    assert config.storage.data_root == "/mnt/eve-market"
+    assert config.raw_files.raw_ledger_url == "postgresql://ledger.test/raw"
 
 
 def everef_cli_parser():

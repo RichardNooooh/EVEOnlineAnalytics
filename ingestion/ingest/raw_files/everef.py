@@ -18,6 +18,7 @@ from ingest.clients.everef import (
     parse_market_history_date,
     probe_market_history_file_item,
 )
+from ingest.cli_config import RawFilesSyncCliConfig
 from ingest.raw_files.config import (
     RawFilesConfig,
     resolve_raw_files_config,
@@ -63,6 +64,28 @@ def acquire_everef_market_history_files(
         )
 
     return records
+
+
+def sync_everef_market_history_files(
+    config: RawFilesSyncCliConfig,
+    *,
+    http_client: Any = requests,
+) -> list[RawFileRecord]:
+    """Resolve raw config from CLI args, then sync Everef market-history files."""
+    raw_config = resolve_raw_files_config(
+        raw_root=config.raw_files.raw_root,
+        ledger_url=config.raw_files.raw_ledger_url,
+        max_copies_per_date=config.raw_files.raw_max_copies_per_date,
+        storage_target=config.storage.storage_target,
+        data_root=config.storage.data_root,
+    )
+    return acquire_everef_market_history_files(
+        config.date_range.start_date,
+        config.date_range.end_date,
+        base_url=config.base_url or BASE_URL,
+        config=raw_config,
+        http_client=http_client,
+    )
 
 
 def acquire_everef_market_history_file(
