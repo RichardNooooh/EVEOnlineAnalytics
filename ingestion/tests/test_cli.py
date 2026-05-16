@@ -34,6 +34,7 @@ def test_cli_defaults_to_parquet_loader_format() -> None:
     assert config.destination == "ducklake"
     assert config.storage.storage_target == "local"
     assert config.input_source == RAW_CACHE_INPUT_SOURCE
+    assert config.check_headers is False
 
 
 def test_build_everef_market_history_config_maps_args() -> None:
@@ -65,6 +66,7 @@ def test_build_everef_market_history_config_maps_args() -> None:
             "/tmp/raw",
             "--raw-max-copies-per-date",
             "9",
+            "--check-headers",
         ]
     )
 
@@ -82,6 +84,7 @@ def test_build_everef_market_history_config_maps_args() -> None:
         ducklake_storage="file:///mnt/arg",
         input_source=URL_INPUT_SOURCE,
         sync_raw=True,
+        check_headers=True,
         raw_files=RawFilesCliConfig(
             raw_root="/tmp/raw",
             raw_max_copies_per_date="9",
@@ -110,6 +113,7 @@ def test_build_raw_files_sync_config_maps_args() -> None:
             "postgresql://ledger.test/raw",
             "--raw-max-copies-per-date",
             "0",
+            "--check-headers",
         ]
     )
 
@@ -125,6 +129,7 @@ def test_build_raw_files_sync_config_maps_args() -> None:
     assert config.raw_files.raw_root == "/tmp/raw"
     assert config.raw_files.raw_ledger_url == "postgresql://ledger.test/raw"
     assert config.raw_files.raw_max_copies_per_date == "0"
+    assert config.check_headers is True
 
 
 def cli_parser():

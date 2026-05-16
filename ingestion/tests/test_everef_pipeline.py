@@ -25,7 +25,7 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
         calls.append(("pipeline", kwargs))
         return FakePipeline()
 
-    def fake_acquire(start_date, end_date, *, base_url, config):
+    def fake_acquire(start_date, end_date, *, base_url, config, check_headers):
         calls.append(
             (
                 "acquire",
@@ -36,6 +36,7 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
                     "raw_root": str(config.raw_root),
                     "ledger_url": config.ledger_url,
                     "max_copies_per_date": config.max_copies_per_date,
+                    "check_headers": check_headers,
                 },
             )
         )
@@ -75,6 +76,7 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
                 raw_ledger_url="postgresql://ledger.test/raw",
                 raw_max_copies_per_date="0",
             ),
+            check_headers=True,
         )
     )
 
@@ -87,6 +89,7 @@ def test_run_pipeline_sync_raw_acquires_then_loads_from_cache(
         "raw_root": "/tmp/raw",
         "ledger_url": "postgresql://ledger.test/raw",
         "max_copies_per_date": 0,
+        "check_headers": True,
     }
     assert calls[2][1]["input_source"] == "raw-cache"
     assert calls[2][1]["raw_root"] == "/tmp/raw"

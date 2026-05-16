@@ -8,6 +8,7 @@ boundary.
 from __future__ import annotations
 
 import logging
+import json
 from collections.abc import Iterator, Mapping, MutableMapping
 from datetime import UTC, date, timedelta
 from email.utils import parsedate_to_datetime
@@ -34,6 +35,11 @@ def market_history_file_url(market_date: date, base_url: str = BASE_URL) -> str:
 def market_history_file_name(market_date: date) -> str:
     """Return the canonical Everef daily market history file name."""
     return f"market-history-{market_date.isoformat()}.csv.bz2"
+
+
+def market_history_totals_url(base_url: str = BASE_URL) -> str:
+    """Build Everef market-history totals.json URL."""
+    return f"{base_url.rstrip('/')}/totals.json"
 
 
 def iter_dates(start_date: date, end_date: date) -> Iterator[date]:
@@ -106,6 +112,51 @@ def probe_market_history_file_item(
     return enriched_item
 
 
+def fetch_market_history_totals(
+    *,
+    base_url: str = BASE_URL,
+    http_client: Any,
+    logger: logging.Logger,
+    request_exception_type: type[Exception] | tuple[type[Exception], ...] = Exception,
+) -> dict[str, int]:
+    """Fetch Everef totals.json as market_date -> row count."""
+    totals_url = market_history_totals_url(base_url)
+    try:
+        response = http_client.get(totals_url, stream=False)
+    except request_exception_type as exc:
+        msg = f"Everef totals fetch failed at {totals_url}: {exc}"
+        raise RuntimeError(msg) from exc
+
+    if response.status_code >= 400:
+        msg = f"Unexpected Everef status HTTP {response.status_code} for {totals_url}"
+        raise RuntimeError(msg)
+
+    try:
+        payload = json.loads(response.content)
+    except json.JSONDecodeError as exc:
+        msg = f"Everef totals.json is not valid JSON at {totals_url}: {exc}"
+        raise RuntimeError(msg) from exc
+
+    if not isinstance(payload, dict):
+        msg = f"Everef totals.json must be a JSON object at {totals_url}"
+        raise RuntimeError(msg)
+
+    totals: dict[str, int] = {}
+    for market_date, value in payload.items():
+        if not isinstance(market_date, str):
+            logger.warning("Everef totals.json has non-string key: %r", market_date)
+            continue
+        if not isinstance(value, int):
+            logger.warning(
+                "Everef totals.json has non-integer count for %s: %r",
+                market_date,
+                value,
+            )
+            continue
+        totals[market_date] = value
+    return totals
+
+
 def update_market_history_file_metadata(
     item: MutableMapping[str, Any],
     headers: Mapping[str, str],
@@ -137,6 +188,10 @@ def update_market_history_file_metadata(
             logger.warning("Everef is missing last-modified header for %s", item["url"])
     else:
         _update_last_modified(item, last_modified, logger=logger)
+
+    etag = headers.get("etag")
+    if etag is not None:
+        item["etag"] = etag
 
 
 def _update_content_length(
