@@ -33,10 +33,10 @@ Do not import from removed compatibility shims; use the canonical module paths a
 ## Everef Market History
 
 The Everef source lists expected daily CSV archives, probes each URL with `HEAD`, then
-streams readable `.csv.bz2` files into `dlt` in pandas chunks. By default, the dlt
-source still reads source URLs directly. Raw source-file acquisition is available as a
-separate cache step backed by SQLite for direct local runs or PostgreSQL for deployed
-local/cluster runtimes.
+streams readable `.csv.bz2` files into `dlt` in pandas chunks. By default, the CLI now
+loads from raw cache and raises `FileNotFoundError` if expected raw files were not
+synced yet. Raw source-file acquisition is available as a separate cache step backed by
+SQLite for direct local runs or PostgreSQL for deployed local/cluster runtimes.
 
 ## Container Image
 
@@ -65,6 +65,7 @@ image name:
 docker run --rm eve-market-ingestion:local everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
+  --sync-raw \
   --dev-mode
 ```
 
@@ -78,6 +79,7 @@ immutable `sha-*` tag and mount shared storage at `/opt/eve-market/data`.
 uv --project ingestion run eve-market-ingest everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
+  --sync-raw \
   --dev-mode
 ```
 
@@ -186,13 +188,12 @@ Use SQLite for direct local ingestion runs. Use PostgreSQL for Docker Compose an
 k3s/Airflow deployments, while still treating raw-file acquisition as single-writer for
 the relevant publication scope.
 
-Load dlt from the raw cache:
+Load dlt from raw cache after sync:
 
 ```bash
 uv --project ingestion run eve-market-ingest everef-market-history \
   --start-date 2025-01-01 \
-  --end-date 2025-01-31 \
-  --input-source raw-cache
+  --end-date 2025-01-31
 ```
 
 When using the mounted cache, use the same storage target for both sync and load and
@@ -202,7 +203,6 @@ provide durable DuckLake catalog and raw-file ledger URLs through arguments or e
 uv --project ingestion run eve-market-ingest everef-market-history \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
-  --input-source raw-cache \
   --storage-target mounted \
   --ducklake-catalog postgresql://user:password@postgres.example/eve_market_ducklake \
   --raw-ledger-url postgresql://user:password@postgres.example/eve_market_raw_files
@@ -217,9 +217,10 @@ uv --project ingestion run eve-market-ingest everef-market-history \
   --sync-raw
 ```
 
-`--sync-raw` downloads changed files first, then loads dlt from the raw cache. The raw
-cache is a source acquisition ledger, not the dataset publication manifest. Published
-analytical state remains DuckLake-backed.
+`--sync-raw` downloads changed files first, then loads dlt from raw cache. Without it,
+default CLI behavior expects cache entries to exist already and raises if they are
+missing. Raw cache is source acquisition ledger, not dataset publication manifest.
+Published analytical state remains DuckLake-backed.
 
 Everef source files are considered fresh when the source `content-length` and
 `last-modified` headers match the latest valid cached file. If the source changes in
