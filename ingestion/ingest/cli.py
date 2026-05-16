@@ -5,7 +5,14 @@ from __future__ import annotations
 import argparse
 import logging
 
-from ingest.clients.everef import BASE_URL
+from ingest.cli_config import (
+    DateRangeCliConfig,
+    EverefMarketHistoryCliConfig,
+    RawFilesCliConfig,
+    RawFilesSyncCliConfig,
+    StorageCliConfig,
+)
+from ingest.input_sources import INPUT_SOURCES, RAW_CACHE_INPUT_SOURCE
 from ingest.pipelines.everef import (
     run_everef_market_history_pipeline,
 )
@@ -18,16 +25,10 @@ from ingest.raw_files.config import (
     RAW_FILES_LEDGER_URL_ENV_VAR,
     RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
     RAW_FILES_ROOT_ENV_VAR,
-    resolve_raw_files_config,
 )
-from ingest.raw_files.everef import acquire_everef_market_history_files
-from ingest.sources.everef import (
-    INPUT_SOURCES,
-    URL_INPUT_SOURCE,
-)
+from ingest.raw_files.everef import sync_everef_market_history_files
 from ingest.storage_config import (
     DATA_ROOT_ENV_VAR,
-    LOCAL_STORAGE_TARGET,
     STORAGE_TARGETS,
 )
 
@@ -63,7 +64,7 @@ def add_storage_args(parser: argparse.ArgumentParser, *, help_prefix: str) -> No
     parser.add_argument(
         "--storage-target",
         choices=STORAGE_TARGETS,
-        default=LOCAL_STORAGE_TARGET,
+        default=argparse.SUPPRESS,
         help=help_prefix,
     )
     parser.add_argument(
@@ -126,9 +127,9 @@ def add_ducklake_args(parser: argparse.ArgumentParser) -> None:
 
 def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
     add_date_args(everef_parser)
-    everef_parser.add_argument("--pipeline-name", default="everef_market_history")
-    everef_parser.add_argument("--dataset-name", default="everef_market_history")
-    everef_parser.add_argument("--destination", default="ducklake")
+    everef_parser.add_argument("--pipeline-name", default=argparse.SUPPRESS)
+    everef_parser.add_argument("--dataset-name", default=argparse.SUPPRESS)
+    everef_parser.add_argument("--destination", default=argparse.SUPPRESS)
     add_ducklake_args(everef_parser)
     add_storage_args(
         everef_parser,
@@ -142,7 +143,7 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
     everef_parser.add_argument(
         "--input-source",
         choices=INPUT_SOURCES,
-        default=URL_INPUT_SOURCE,
+        default=argparse.SUPPRESS,
         help="Read CSVs from source URLs or from the raw-file cache.",
     )
     everef_parser.add_argument(
@@ -151,7 +152,7 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
         help="Download raw files first, then load from the raw-file cache.",
     )
     add_raw_file_args(everef_parser)
-    everef_parser.add_argument("--loader-file-format", default="parquet")
+    everef_parser.add_argument("--loader-file-format", default=argparse.SUPPRESS)
     everef_parser.add_argument("--dev-mode", action="store_true")
 
 
@@ -180,48 +181,81 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "everef-market-history":
         load_info = run_everef_market_history_pipeline(
-            args.start_date,
-            args.end_date,
-            pipeline_name=args.pipeline_name,
-            dataset_name=args.dataset_name,
-            destination=args.destination,
-            ducklake_name=args.ducklake_name,
-            ducklake_catalog=args.ducklake_catalog,
-            ducklake_storage=args.ducklake_storage,
-            storage_target=args.storage_target,
-            data_root=args.data_root,
-            base_url=args.base_url,
-            chunksize=args.chunksize,
-            input_source=args.input_source,
-            sync_raw=args.sync_raw,
-            raw_root=args.raw_root,
-            raw_ledger_url=args.raw_ledger_url,
-            raw_max_copies_per_date=args.raw_max_copies_per_date,
-            loader_file_format=args.loader_file_format,
-            dev_mode=args.dev_mode,
+            build_everef_market_history_config(args)
         )
         print(load_info)
         return 0
 
     if args.command == "raw-files" and args.raw_command == "sync-everef-market-history":
-        config = resolve_raw_files_config(
-            raw_root=args.raw_root,
-            ledger_url=args.raw_ledger_url,
-            max_copies_per_date=args.raw_max_copies_per_date,
-            storage_target=args.storage_target,
-            data_root=args.data_root,
-        )
-        records = acquire_everef_market_history_files(
-            args.start_date,
-            args.end_date,
-            base_url=args.base_url or BASE_URL,
-            config=config,
-        )
+        records = sync_everef_market_history_files(build_raw_files_sync_config(args))
         print(f"Synced {len(records)} Everef market history raw files")
         return 0
 
     parser.print_help()
     return 2
+
+
+def build_everef_market_history_config(
+    args: argparse.Namespace,
+) -> EverefMarketHistoryCliConfig:
+    """Map parsed args to typed Everef market-history CLI config."""
+    config_kwargs = {
+        "date_range": DateRangeCliConfig(
+            start_date=args.start_date,
+            end_date=args.end_date,
+        ),
+        "storage": _build_storage_config(args),
+        "raw_files": _build_raw_files_config(args),
+        "ducklake_name": args.ducklake_name,
+        "ducklake_catalog": args.ducklake_catalog,
+        "ducklake_storage": args.ducklake_storage,
+        "base_url": args.base_url,
+        "chunksize": args.chunksize,
+        "sync_raw": args.sync_raw,
+        "dev_mode": args.dev_mode,
+    }
+    _set_if_present(config_kwargs, args, "pipeline_name")
+    _set_if_present(config_kwargs, args, "dataset_name")
+    _set_if_present(config_kwargs, args, "destination")
+    _set_if_present(config_kwargs, args, "input_source")
+    _set_if_present(config_kwargs, args, "loader_file_format")
+    return EverefMarketHistoryCliConfig(**config_kwargs)
+
+
+def build_raw_files_sync_config(args: argparse.Namespace) -> RawFilesSyncCliConfig:
+    """Map parsed args to typed raw-file sync CLI config."""
+    return RawFilesSyncCliConfig(
+        date_range=DateRangeCliConfig(
+            start_date=args.start_date,
+            end_date=args.end_date,
+        ),
+        storage=_build_storage_config(args),
+        raw_files=_build_raw_files_config(args),
+        base_url=args.base_url,
+    )
+
+
+def _set_if_present(
+    config_kwargs: dict[str, object],
+    args: argparse.Namespace,
+    arg_name: str,
+) -> None:
+    if hasattr(args, arg_name):
+        config_kwargs[arg_name] = getattr(args, arg_name)
+
+
+def _build_storage_config(args: argparse.Namespace) -> StorageCliConfig:
+    config_kwargs: dict[str, object] = {"data_root": args.data_root}
+    _set_if_present(config_kwargs, args, "storage_target")
+    return StorageCliConfig(**config_kwargs)
+
+
+def _build_raw_files_config(args: argparse.Namespace) -> RawFilesCliConfig:
+    return RawFilesCliConfig(
+        raw_root=args.raw_root,
+        raw_ledger_url=args.raw_ledger_url,
+        raw_max_copies_per_date=args.raw_max_copies_per_date,
+    )
 
 
 if __name__ == "__main__":

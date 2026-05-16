@@ -28,6 +28,7 @@ from ingest.contracts.market_history import (
     MARKET_HISTORY_PRIMARY_KEY,
     validate_market_history_chunk,
 )
+from ingest.input_sources import INPUT_SOURCES, RAW_CACHE_INPUT_SOURCE, URL_INPUT_SOURCE
 from ingest.raw_files.config import (
     LOCAL_STORAGE_TARGET,
     resolve_raw_files_config,
@@ -37,9 +38,6 @@ from ingest.raw_files.everef import (
 )
 
 DEFAULT_CHUNKSIZE = 20_000
-URL_INPUT_SOURCE = "url"
-RAW_CACHE_INPUT_SOURCE = "raw-cache"
-INPUT_SOURCES = (URL_INPUT_SOURCE, RAW_CACHE_INPUT_SOURCE)
 
 logger = logging.getLogger(__name__)
 
