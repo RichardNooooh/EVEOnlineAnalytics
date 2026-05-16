@@ -32,6 +32,8 @@ class RawFileSpec:
     cache_relative_parts: tuple[str, ...]
     content_length: int | None = None
     last_modified: str | None = None
+    etag: str | None = None
+    source_row_count: int | None = None
 
 
 def publish_raw_file(
@@ -125,6 +127,8 @@ def _download_and_record(
             content_length=spec.content_length,
             downloaded_size=result.downloaded_size,
             last_modified=spec.last_modified,
+            etag=spec.etag,
+            source_row_count=spec.source_row_count,
             first_seen_at=now,
             last_checked_at=now,
             downloaded_at=now,
@@ -144,6 +148,8 @@ def _download_and_record(
             content_length=spec.content_length,
             downloaded_size=None,
             last_modified=spec.last_modified,
+            etag=spec.etag,
+            source_row_count=spec.source_row_count,
             first_seen_at=now,
             last_checked_at=now,
             downloaded_at=None,
@@ -163,11 +169,22 @@ def _cache_path(raw_root: Path, spec: RawFileSpec, sha256: str) -> Path:
 def _cached_record_matches(record: RawFileRecord, spec: RawFileSpec) -> bool:
     has_content_length = spec.content_length is not None
     has_last_modified = spec.last_modified is not None
-    if not has_content_length and not has_last_modified:
+    has_etag = spec.etag is not None
+    has_source_row_count = spec.source_row_count is not None
+    if (
+        not has_content_length
+        and not has_last_modified
+        and not has_etag
+        and not has_source_row_count
+    ):
         return False
     if has_content_length and record.content_length != spec.content_length:
         return False
     if has_last_modified and record.last_modified != spec.last_modified:
+        return False
+    if has_etag and record.etag != spec.etag:
+        return False
+    if has_source_row_count and record.source_row_count != spec.source_row_count:
         return False
     return cached_record_is_valid(record)
 

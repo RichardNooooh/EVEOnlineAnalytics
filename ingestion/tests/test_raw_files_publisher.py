@@ -59,6 +59,20 @@ def test_publish_raw_file_redownloads_when_remote_metadata_changes(
     assert len(client.get_calls) == 2
 
 
+def test_publish_raw_file_uses_totals_count_as_change_detector(tmp_path: Path) -> None:
+    config = raw_files_config(tmp_path)
+    client = FakeHttpClient(b"raw bytes")
+    spec = _spec(
+        content_length=None, last_modified=None, etag=None, source_row_count=42
+    )
+
+    first = publish_raw_file(spec, config=config, http_client=client)
+    second = publish_raw_file(spec, config=config, http_client=client)
+
+    assert first.local_path == second.local_path
+    assert len(client.get_calls) == 1
+
+
 def test_publish_raw_file_prunes_old_changed_copies_by_default(tmp_path: Path) -> None:
     config = raw_files_config(tmp_path)
     client = FakeHttpClient(b"raw bytes 0")
@@ -251,7 +265,7 @@ def test_publish_raw_file_redownloads_when_source_has_no_validators(
 ) -> None:
     config = raw_files_config(tmp_path)
     client = NoValidatorHttpClient(b"raw bytes")
-    spec = _spec(content_length=None, last_modified=None)
+    spec = _spec(content_length=None, last_modified=None, etag=None)
 
     first = publish_raw_file(spec, config=config, http_client=client)
     second = publish_raw_file(spec, config=config, http_client=client)
@@ -284,6 +298,8 @@ def _spec(
     cache_date: str = "2025-01-01",
     content_length: int | None = None,
     last_modified: str | None = "2025-01-01T12:00:00+00:00",
+    etag: str | None = '"etag-1"',
+    source_row_count: int | None = None,
 ) -> RawFileSpec:
     return RawFileSpec(
         source_name="source",
@@ -294,4 +310,6 @@ def _spec(
         cache_relative_parts=("source", "dataset", f"date={cache_date}"),
         content_length=content_length,
         last_modified=last_modified,
+        etag=etag,
+        source_row_count=source_row_count,
     )

@@ -51,6 +51,7 @@ class EverefMarketHistoryCliConfig:
     chunksize: int | None = None
     input_source: str = RAW_CACHE_INPUT_SOURCE
     sync_raw: bool = False
+    check_headers: bool = False
     loader_file_format: str = "parquet"
     dev_mode: bool = False
 
@@ -63,3 +64,4 @@ class RawFilesSyncCliConfig:
     storage: StorageCliConfig = field(default_factory=StorageCliConfig)
     raw_files: RawFilesCliConfig = field(default_factory=RawFilesCliConfig)
     base_url: str | None = None
+    check_headers: bool = False

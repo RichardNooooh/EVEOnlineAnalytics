@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from itertools import islice
+import json
 from pathlib import Path
 from typing import TypeVar
 
@@ -15,10 +16,17 @@ T = TypeVar("T")
 
 class FakeHttpClient:
     def __init__(
-        self, content: bytes, *, last_modified: str = "Wed, 01 Jan 2025 12:00:00 GMT"
+        self,
+        content: bytes,
+        *,
+        last_modified: str = "Wed, 01 Jan 2025 12:00:00 GMT",
+        etag: str = '"etag-1"',
+        totals: dict[str, int] | None = None,
     ) -> None:
         self.content = content
         self.last_modified = last_modified
+        self.etag = etag
+        self.totals = totals or {}
         self.head_calls: list[str] = []
         self.get_calls: list[str] = []
 
@@ -30,12 +38,14 @@ class FakeHttpClient:
             headers={
                 "content-length": str(len(self.content)),
                 "last-modified": self.last_modified,
+                "etag": self.etag,
             },
         )
 
-    def get(self, url: str, *, stream: bool) -> "FakeResponse":
-        assert stream is True
+    def get(self, url: str, *, stream: bool = False) -> "FakeResponse":
         self.get_calls.append(url)
+        if url.endswith("/totals.json"):
+            return FakeResponse(200, content=json.dumps(self.totals).encode())
         return FakeResponse(200, content=self.content)
 
 
@@ -91,6 +101,8 @@ def raw_file_record(
     content_length: int | None = 3,
     downloaded_size: int | None = 3,
     last_modified: str | None = "2025-01-01T12:00:00+00:00",
+    etag: str | None = '"etag-1"',
+    source_row_count: int | None = 3,
     first_seen_at: str = "2025-01-01T12:00:00+00:00",
     last_checked_at: str = "2025-01-01T12:00:00+00:00",
     downloaded_at: str | None = "2025-01-01T12:00:00+00:00",
@@ -108,6 +120,8 @@ def raw_file_record(
         content_length=content_length,
         downloaded_size=downloaded_size,
         last_modified=last_modified,
+        etag=etag,
+        source_row_count=source_row_count,
         first_seen_at=first_seen_at,
         last_checked_at=last_checked_at,
         downloaded_at=downloaded_at,

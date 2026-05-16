@@ -83,12 +83,14 @@ class RawFileRepository:
                         content_length,
                         downloaded_size,
                         last_modified,
+                        etag,
+                        source_row_count,
                         first_seen_at,
                         last_checked_at,
                         downloaded_at,
                         status,
                         error_message
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     {self._backend.returning_id_clause}
                     """
                 ),
@@ -102,6 +104,8 @@ class RawFileRepository:
                     record.content_length,
                     record.downloaded_size,
                     record.last_modified,
+                    record.etag,
+                    record.source_row_count,
                     record.first_seen_at,
                     record.last_checked_at,
                     record.downloaded_at,
@@ -176,6 +180,13 @@ class RawFileRepository:
     def _init_db(self) -> None:
         with self._backend.connect() as conn:
             conn.execute(self._backend.create_table_sql)
+            _ensure_column(conn, "etag", "text", placeholder=self._backend.placeholder)
+            _ensure_column(
+                conn,
+                "source_row_count",
+                "integer",
+                placeholder=self._backend.placeholder,
+            )
             conn.execute(
                 """
                 create index if not exists idx_raw_file_success_lookup
@@ -244,6 +255,8 @@ def _backend_for_ledger_url(ledger_url: str) -> _Backend:
                     content_length integer,
                     downloaded_size integer,
                     last_modified text,
+                    etag text,
+                    source_row_count integer,
                     first_seen_at text not null,
                     last_checked_at text not null,
                     downloaded_at text,
@@ -269,6 +282,8 @@ def _backend_for_ledger_url(ledger_url: str) -> _Backend:
                     content_length integer,
                     downloaded_size integer,
                     last_modified text,
+                    etag text,
+                    source_row_count integer,
                     first_seen_at text not null,
                     last_checked_at text not null,
                     downloaded_at text,
@@ -311,6 +326,30 @@ def _record_from_row(
             for column, value in zip(description, row, strict=True)
         }
     return RawFileRecord(**values)
+
+
+def _ensure_column(
+    conn: DbApiConnection,
+    column_name: str,
+    column_type: str,
+    *,
+    placeholder: str,
+) -> None:
+    if placeholder == "?":
+        cursor = conn.execute("pragma table_info(raw_file_acquisitions)")
+        existing_columns = {
+            str(row[1] if not isinstance(row, dict) else row["name"])
+            for row in cursor.fetchall()
+        }
+        if column_name not in existing_columns:
+            conn.execute(
+                f"alter table raw_file_acquisitions add column {column_name} {column_type}"
+            )
+        return
+
+    conn.execute(
+        f"alter table raw_file_acquisitions add column if not exists {column_name} {column_type}"
+    )
 
 
 def _column_name(column: Any) -> str:

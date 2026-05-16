@@ -57,6 +57,7 @@ def run_everef_market_history_pipeline(
             config.date_range.end_date,
             base_url=config.base_url or BASE_URL,
             config=raw_config,
+            check_headers=config.check_headers,
         )
 
     source_kwargs: dict[str, Any] = {}
