@@ -222,12 +222,12 @@ default CLI behavior expects cache entries to exist already and raises if they a
 missing. Raw cache is source acquisition ledger, not dataset publication manifest.
 Published analytical state remains DuckLake-backed.
 
-Everef source files are considered fresh when the source `content-length` and
-`last-modified` headers match the latest valid cached file. If the source changes in
-place while preserving both headers, the raw-file cache will not detect the change. If
-neither header is available, the file is downloaded again rather than treated as fresh.
-A later source-metadata phase should add stronger source metadata such as Everef
-`totals.json`, `ETag`, or an explicit force-refresh option.
+Everef raw sync now uses `totals.json` as partition-level change detector by default.
+Add `--check-headers` to also use `content-length`, `last-modified`, and `ETag` when
+probing file changes. When `totals.json` row count stays the same but a re-downloaded
+file hash changes, ingestion logs a warning for a same-count content change. If no
+usable validators are available, the file is downloaded again rather than treated as
+fresh.
 
 The same command can be run through the module entrypoint:
 
