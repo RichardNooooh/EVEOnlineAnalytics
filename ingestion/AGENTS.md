@@ -51,6 +51,9 @@ or ingestion tests.
 - Use Python + dlt for source-specific extraction and publication.
 - Publish through DuckLake table commits or merge/delete semantics.
 - Preserve single-writer publication for the dataset scope.
+- Use local SQLite DuckLake catalogs only for local development and smoke tests.
+- Use PostgreSQL DuckLake catalogs for mounted/shared DuckLake storage in Docker,
+  Airflow, and Kubernetes-style runs.
 - Do not write durable shared `.duckdb` files.
 - Keep DuckDB scratch databases local or transient only.
 - Update dataset contracts and docs when source semantics change.
