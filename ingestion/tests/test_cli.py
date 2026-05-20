@@ -18,7 +18,8 @@ def test_cli_defaults_to_parquet_loader_format() -> None:
 
     args = parser.parse_args(
         [
-            "everef-market-history",
+            "everef",
+            "run-pipeline",
             "--start-date",
             "2025-01-01",
             "--end-date",
@@ -42,7 +43,8 @@ def test_build_everef_market_history_config_maps_args() -> None:
 
     args = parser.parse_args(
         [
-            "everef-market-history",
+            "everef",
+            "run-pipeline",
             "--start-date",
             "2025-01-01",
             "--end-date",
@@ -97,8 +99,8 @@ def test_build_raw_files_sync_config_maps_args() -> None:
 
     args = parser.parse_args(
         [
-            "raw-files",
-            "sync-everef-market-history",
+            "everef",
+            "sync-raw-files",
             "--start-date",
             "2025-01-01",
             "--end-date",
@@ -117,8 +119,8 @@ def test_build_raw_files_sync_config_maps_args() -> None:
         ]
     )
 
-    assert args.command == "raw-files"
-    assert args.raw_command == "sync-everef-market-history"
+    assert args.command == "everef"
+    assert args.everef_command == "sync-raw-files"
 
     config = build_raw_files_sync_config(args)
 
