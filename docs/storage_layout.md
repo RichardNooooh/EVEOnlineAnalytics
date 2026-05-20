@@ -35,6 +35,11 @@ a shared SQLite file on NFS. Direct local ingestion defaults to a local SQLite l
 while Docker Compose and k3s/Airflow-style deployments use PostgreSQL via
 `--raw-ledger-url`.
 
+The packaged host ingestion CLI keeps `dlt` runtime state repo-local under
+`ingestion/.dlt/.var/<profile>/` and `ingestion/.local/`. Containerized Docker,
+Airflow, and Kubernetes runs should use explicit ephemeral scratch for `dlt` runtime
+state rather than shared NFS or DuckLake durable storage paths.
+
 ## Dataset Naming
 
 Planned table naming convention:
@@ -96,7 +101,11 @@ The manifest is supporting metadata, not a replacement for DuckLake catalog stat
 Scratch compute state is not part of the shared layout above.
 
 - local DuckDB work DBs belong on pod-local scratch
+- `dlt` runtime state for containerized runs belongs on explicit ephemeral scratch
 - temporary publication paths must be treated as unpublished
 - shared durable storage is only for published table data files and supporting metadata
 - SQLite DuckLake catalogs belong only to local smoke storage, not mounted/shared
   DuckLake storage
+
+Future hardening may move containers to read-only root filesystems with explicit
+scratch mounts; that does not change the durable storage layout above.
