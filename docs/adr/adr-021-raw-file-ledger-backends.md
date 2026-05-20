@@ -29,9 +29,9 @@ deployments.
 Use URL-selected raw source-file ledger backends.
 
 - Direct local ingestion defaults to SQLite at `sqlite:///<raw-root>/raw_files.sqlite`.
-- Docker Compose uses PostgreSQL through `EVE_MARKET_RAW_FILES_LEDGER_URL`.
-- Future k3s/Airflow ingestion pods should receive `EVE_MARKET_RAW_FILES_LEDGER_URL`
-  from Kubernetes Secrets.
+- Docker Compose uses PostgreSQL through `--raw-ledger-url`.
+- Future k3s/Airflow ingestion pods should pass `--raw-ledger-url` from their job
+  configuration or secrets.
 - The raw-file ledger remains single-writer for the relevant acquisition scope.
 - The raw-file ledger is separate from the DuckLake catalog and from durable analytical
   table state.

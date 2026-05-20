@@ -16,21 +16,8 @@ from ingest.input_sources import INPUT_SOURCES
 from ingest.pipelines.everef import (
     run_everef_market_history_pipeline,
 )
-from ingest.publishers.ducklake import (
-    DUCKLAKE_CATALOG_ENV_VAR,
-    DUCKLAKE_NAME_ENV_VAR,
-    DUCKLAKE_STORAGE_ENV_VAR,
-)
-from ingest.raw_files.config import (
-    RAW_FILES_LEDGER_URL_ENV_VAR,
-    RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
-    RAW_FILES_ROOT_ENV_VAR,
-)
 from ingest.raw_files.everef import sync_everef_market_history_files
-from ingest.storage_config import (
-    DATA_ROOT_ENV_VAR,
-    STORAGE_TARGETS,
-)
+from ingest.storage_config import DEFAULT_MOUNTED_DATA_ROOT, STORAGE_TARGETS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -78,7 +65,7 @@ def add_storage_args(parser: argparse.ArgumentParser, *, help_prefix: str) -> No
         default=None,
         help=(
             "Mounted storage root used with --storage-target mounted; "
-            f"env fallback {DATA_ROOT_ENV_VAR}."
+            f"defaults to {DEFAULT_MOUNTED_DATA_ROOT}."
         ),
     )
 
@@ -87,20 +74,17 @@ def add_raw_file_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--raw-root",
         default=None,
-        help=f"Raw source-file cache root. Overrides {RAW_FILES_ROOT_ENV_VAR}.",
+        help="Raw source-file cache root.",
     )
     parser.add_argument(
         "--raw-ledger-url",
         default=None,
-        help=f"Raw source-file ledger URL. Overrides {RAW_FILES_LEDGER_URL_ENV_VAR}.",
+        help="Raw source-file ledger URL.",
     )
     parser.add_argument(
         "--raw-max-copies-per-date",
         default=None,
-        help=(
-            "Maximum raw file copies to keep per source date; 0 disables deletion. "
-            f"Overrides {RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR}."
-        ),
+        help="Maximum raw file copies to keep per source date; 0 disables deletion.",
     )
 
 
@@ -108,26 +92,17 @@ def add_ducklake_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--ducklake-name",
         default=None,
-        help=(
-            "DuckLake attach name. "
-            f"Overrides {DUCKLAKE_NAME_ENV_VAR}, then defaults to eve_market."
-        ),
+        help="DuckLake attach name. Defaults to eve_market.",
     )
     parser.add_argument(
         "--ducklake-catalog",
         default=None,
-        help=(
-            "DuckLake catalog URL. "
-            f"Overrides {DUCKLAKE_CATALOG_ENV_VAR}, then defaults to local sqlite."
-        ),
+        help="DuckLake catalog URL. Defaults to local sqlite.",
     )
     parser.add_argument(
         "--ducklake-storage",
         default=None,
-        help=(
-            "DuckLake storage URL. "
-            f"Overrides {DUCKLAKE_STORAGE_ENV_VAR}, then --storage-target defaults."
-        ),
+        help="DuckLake storage URL. Defaults from --storage-target.",
     )
 
 
@@ -140,8 +115,7 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
     add_storage_args(
         everef_parser,
         help_prefix=(
-            "Default DuckLake storage target when --ducklake-storage "
-            "and env override are unset."
+            "Default DuckLake storage target when --ducklake-storage is unset."
         ),
     )
     everef_parser.add_argument("--base-url", default=None)
@@ -171,9 +145,7 @@ def build_raw_files_parser(raw_files_parser: argparse.ArgumentParser) -> None:
     add_date_args(raw_files_parser)
     add_storage_args(
         raw_files_parser,
-        help_prefix=(
-            "Default raw cache target when --raw-root and env override are unset."
-        ),
+        help_prefix=("Default raw cache target when --raw-root is unset."),
     )
     raw_files_parser.add_argument("--base-url", default=None)
     raw_files_parser.add_argument(

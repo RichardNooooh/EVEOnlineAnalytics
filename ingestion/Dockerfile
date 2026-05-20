@@ -6,7 +6,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    EVE_MARKET_DATA_ROOT=/opt/eve-market/data \
     HOME=/app \
     PATH="/app/.venv/bin:${PATH}"
 
@@ -39,5 +38,5 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 USER app
 
-ENTRYPOINT ["eve-market-ingest"]
+ENTRYPOINT ["eve-ingest"]
 CMD ["--help"]

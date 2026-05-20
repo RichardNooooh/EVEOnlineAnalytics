@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import unquote, urlparse
@@ -20,9 +19,6 @@ from ingest.storage_config import (
     resolve_mounted_data_root,
 )
 
-DUCKLAKE_NAME_ENV_VAR = "EVE_MARKET_DUCKLAKE_NAME"
-DUCKLAKE_CATALOG_ENV_VAR = "EVE_MARKET_DUCKLAKE_CATALOG"
-DUCKLAKE_STORAGE_ENV_VAR = "EVE_MARKET_DUCKLAKE_STORAGE"
 DEFAULT_DUCKLAKE_NAME = "eve_market"
 
 
@@ -77,19 +73,12 @@ def resolve_ducklake_storage(
     storage_target: str,
     data_root: str | None,
 ) -> str:
-    """Resolve DuckLake storage by explicit, env, target, then local precedence."""
+    """Resolve DuckLake storage by explicit value or storage target."""
     if ducklake_storage is not None:
         if not ducklake_storage.strip():
             msg = "ducklake_storage must not be empty"
             raise ValueError(msg)
         return ducklake_storage
-
-    env_storage = os.getenv(DUCKLAKE_STORAGE_ENV_VAR)
-    if env_storage is not None:
-        if not env_storage.strip():
-            msg = f"{DUCKLAKE_STORAGE_ENV_VAR} must not be empty"
-            raise ValueError(msg)
-        return env_storage
 
     return ducklake_storage_for_target(storage_target, data_root)
 
@@ -129,7 +118,7 @@ def validate_mounted_ducklake_catalog(
 
     msg = (
         "mounted DuckLake storage requires a non-local catalog such as PostgreSQL; "
-        f"set ducklake_catalog or {DUCKLAKE_CATALOG_ENV_VAR} to a PostgreSQL catalog URL"
+        "set ducklake_catalog to a PostgreSQL catalog URL"
     )
     raise ValueError(msg)
 
@@ -151,13 +140,11 @@ def build_destination_config(
 
     name = resolve_config_value(
         ducklake_name,
-        env_var=DUCKLAKE_NAME_ENV_VAR,
         default_value=DEFAULT_DUCKLAKE_NAME,
         value_name="ducklake_name",
     )
     catalog = resolve_config_value(
         ducklake_catalog,
-        env_var=DUCKLAKE_CATALOG_ENV_VAR,
         default_value=local_ducklake_catalog(),
         value_name="ducklake_catalog",
     )
