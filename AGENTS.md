@@ -80,6 +80,8 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, and PowerBI.
   `refactor:`, or `fix:` followed by a capitalized action verb.
 - Commit bodies should use one `{prefix}: {Verb}...` line per change and append
   `Co-Authored-By: GPT-5.5 (high) via OpenCode`.
+- When faced with **any** architectural/design/coding decision, ask before proceeding instead
+  of coming up with some half-baked solution.
 
 ## Common Task Routing
 
