@@ -1,0 +1,8 @@
+eve_market_transform:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', '/tmp/eve_market_transform.duckdb') }}"
+      schema: main
+      threads: "{{ env_var('DBT_THREADS', '4') | int }}"
