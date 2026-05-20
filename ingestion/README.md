@@ -13,7 +13,7 @@ are still one command from repo root:
 docker build -f ingestion/Dockerfile -t eve-market-ingestion:local ingestion
 ```
 
-The container entrypoint is `eve-market-ingest`, so pass normal CLI args after the
+The container entrypoint is `eve-ingest`, so pass normal CLI args after the
 image name.
 
 ## Airflow + Docker
@@ -22,7 +22,7 @@ Build or pull `eve-market-ingestion` first, then run normal CLI args in the
 container. Example local-style run with raw sync included:
 
 ```bash
-docker run --rm eve-market-ingestion:local everef-market-history \
+docker run --rm eve-market-ingestion:local everef run-pipeline \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --sync-raw \
@@ -32,7 +32,7 @@ docker run --rm eve-market-ingestion:local everef-market-history \
 For direct host execution with same defaults:
 
 ```bash
-uv --project ingestion run eve-market-ingest everef-market-history \
+uv --project ingestion run eve-ingest everef run-pipeline \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --sync-raw
@@ -47,7 +47,7 @@ Mounted/shared DuckLake storage needs durable catalog such as PostgreSQL. Local
 SQLite catalog is only for local smoke tests.
 
 ```bash
-uv --project ingestion run eve-market-ingest everef-market-history \
+uv --project ingestion run eve-ingest everef run-pipeline \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --storage-target mounted \
@@ -61,7 +61,7 @@ mount shared storage there, or set `--data-root` / `EVE_MARKET_DATA_ROOT`.
 Raw-file sync can also run as separate step before load:
 
 ```bash
-uv --project ingestion run eve-market-ingest raw-files sync-everef-market-history \
+uv --project ingestion run eve-ingest everef sync-raw-files \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --storage-target mounted \
