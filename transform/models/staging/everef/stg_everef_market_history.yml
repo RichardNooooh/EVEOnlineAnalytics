@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: stg_everef_market_history
+    description: Typed Everef market-history staging model with ESI average preserved as VWAP.
+    columns:
+      - name: source
+        description: Source identifier for published raw rows.
+        tests:
+          - not_null
+      - name: date
+        description: Source market date.
+        tests:
+          - not_null
+      - name: region_id
+        description: Market region identifier.
+        tests:
+          - not_null
+      - name: type_id
+        description: Item type identifier.
+        tests:
+          - not_null
+      - name: average
+        description: Volume-weighted average price from ESI market history.
+        tests:
+          - not_null

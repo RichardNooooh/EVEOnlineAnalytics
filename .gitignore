@@ -168,6 +168,8 @@ data/
 *.csv
 *.parquet
 # *.json
+!transform/models/
+!transform/models/**
 !transform/**/*.yml
 !transform/**/*.yaml
 *.xlsx

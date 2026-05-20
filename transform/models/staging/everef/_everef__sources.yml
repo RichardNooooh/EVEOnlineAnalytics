@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: everef
+    description: Raw Everef market-history publication contract staged for dbt cleanup.
+    schema: main
+    tables:
+      - name: raw_market_history
+        description: Daily market-history rows published from Everef archives.
+        columns:
+          - name: date
+            description: Source market date for this observation.
+          - name: region_id
+            description: Market region identifier.
+          - name: type_id
+            description: Item type identifier.
+          - name: average
+            description: ESI market-history volume-weighted average price.
