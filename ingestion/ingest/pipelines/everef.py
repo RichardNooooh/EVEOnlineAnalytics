@@ -6,6 +6,7 @@ from typing import Any
 
 import dlt
 
+from ingest import activate_dlt_workspace
 from ingest.clients.everef import BASE_URL
 from ingest.cli_config import EverefMarketHistoryCliConfig
 from ingest.input_sources import RAW_CACHE_INPUT_SOURCE, URL_INPUT_SOURCE
@@ -21,6 +22,8 @@ def run_everef_market_history_pipeline(
     config: EverefMarketHistoryCliConfig,
 ) -> Any:
     """Run the Everef market history source through a dlt pipeline."""
+    activate_dlt_workspace()
+
     destination_config = _build_destination_config(
         config.destination,
         config.ducklake_name,

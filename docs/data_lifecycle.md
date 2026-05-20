@@ -32,6 +32,11 @@ An Airflow task or batch job fetches source records from everef.net or ESI.
 The writer produces candidate data in job-local or unpublished state before it becomes
 visible table state.
 
+For ingestion, this includes `dlt` runtime state. The packaged host CLI keeps that
+state repo-local under `ingestion/.dlt/.var/<profile>/` and `ingestion/.local/`, while
+Docker, Airflow, and Kubernetes-style runs should place it on explicit ephemeral
+scratch separate from DuckLake durable storage and shared mounts.
+
 ### 3. Validate
 
 The writer validates:
@@ -73,6 +78,8 @@ The architecture expects source corrections and replay.
 - retry logic must preserve idempotent publication semantics
 - mounted/shared DuckLake storage must use a non-local durable catalog such as
   PostgreSQL; local SQLite catalogs are limited to local smoke tests
+- durable state remains DuckLake data plus PostgreSQL-backed services, not container
+  runtime scratch
 
 ## Planned dbt Lifecycle
 
@@ -103,8 +110,16 @@ for TrueNAS NFS DuckLake data-file storage, local Postgres stands in for the Air
 metadata database and raw-file acquisition ledger, and bind-mounted DAGs/code stand in
 for the deployed Airflow image or sync mechanism.
 
+Within that split, the packaged host CLI uses repo-local `dlt` state under
+`ingestion/.dlt/.var/<profile>/` and `ingestion/.local/`, while containerized local
+Airflow and later k3s runs should use explicit ephemeral scratch for `dlt` runtime
+state.
+
 Local Airflow may use DockerOperator with `eve-market-ingestion:local` to match the
 container boundary used later by KubernetesPodOperator. The deployable ingestion image is
 published by the `Ingestion Image` GitHub Actions workflow as
 `ghcr.io/<owner>/eve-market-ingestion:<immutable-tag>`. Local Docker socket access is a
 local-only development shortcut and is not part of the k3s deployment contract.
+
+Future hardening may move containerized runtimes to read-only root filesystems with
+explicit scratch mounts.

@@ -11,6 +11,8 @@ build/
 *.egg-info/
 
 .dlt/secrets.toml
+.dlt/.workspace
+.dlt/.var/
 .dlt/pipelines/
 .dlt/.sources/
 
