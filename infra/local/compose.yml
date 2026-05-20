@@ -26,7 +26,7 @@ x-airflow-common: &airflow-common
     PYTHONPATH: /opt/eve-market/ingestion
   user: "${AIRFLOW_UID:-50000}:0"
   group_add:
-    - "${DOCKER_GID:-998}"
+    - "${DOCKER_GID:-1001}"
   volumes:
     - /var/run/docker.sock:/var/run/docker.sock
     - ../../orchestration/dags:/opt/airflow/dags
@@ -35,6 +35,8 @@ x-airflow-common: &airflow-common
     - ../../datasets:/opt/eve-market/datasets
     - ../../.local/data:/opt/eve-market/data
     - ../../.local/logs:/opt/airflow/logs
+  networks:
+    - local_jobs
   depends_on:
     postgres:
       condition: service_healthy
@@ -55,6 +57,8 @@ services:
     volumes:
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - local_jobs
 
   airflow-init:
     <<: *airflow-common
@@ -109,3 +113,7 @@ services:
 
 volumes:
   postgres-data:
+
+networks:
+  local_jobs:
+    name: eve-market-airflow-local
