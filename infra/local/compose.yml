@@ -18,6 +18,9 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/local/.env}@postgres:5432/${POSTGRES_DB:-airflow}
     AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+    EVE_MARKET_LOCAL_DATA_HOST_PATH: ${EVE_MARKET_LOCAL_DATA_HOST_PATH:?Set EVE_MARKET_LOCAL_DATA_HOST_PATH in infra/local/.env}
+    INGESTION_APP_GID: ${INGESTION_APP_GID:-10001}
+    INGESTION_APP_UID: ${INGESTION_APP_UID:-10001}
     PYTHONPATH: /opt/eve-market/ingestion
   user: "${AIRFLOW_UID:-50000}:0"
   group_add:
@@ -64,7 +67,8 @@ services:
       - |
         set -e
         mkdir -p /opt/airflow/logs /opt/eve-market/data
-        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/logs /opt/eve-market/data
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/logs
+        chown -R "${INGESTION_APP_UID:-10001}:${INGESTION_APP_GID:-10001}" /opt/eve-market/data
         exec /entrypoint bash -c 'set -e; airflow db migrate; airflow users create --username "${AIRFLOW_ADMIN_USERNAME:-admin}" --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" --firstname Local --lastname Admin --role Admin --email "${AIRFLOW_ADMIN_EMAIL:-admin@example.com}" || true'
 
   airflow-api-server:
