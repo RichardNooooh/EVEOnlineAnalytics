@@ -53,6 +53,15 @@ Build the ingestion task image used by local `DockerOperator` DAGs:
 make ingestion-image
 ```
 
+Set `EVE_MARKET_LOCAL_DATA_HOST_PATH` in `infra/local/.env` to the host path for
+this repo's `.local/data` directory. `DockerOperator` bind mounts are evaluated by
+the host Docker daemon, not from inside the Airflow container, so child task
+containers need that explicit host path to persist DuckLake data files.
+
+Local mounted data is owned by `INGESTION_APP_UID`/`INGESTION_APP_GID` so the
+ingestion image can create `/opt/eve-market/data/raw` and DuckLake files during a
+backfill. Keep those values aligned with the `ingestion/Dockerfile` runtime user.
+
 If the Airflow container cannot reach Docker, set `DOCKER_GID` in `infra/local/.env` to
 the host Docker group ID from `getent group docker | cut -d: -f3`.
 
