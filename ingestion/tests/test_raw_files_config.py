@@ -6,20 +6,12 @@ import pytest
 
 from ingest.raw_files.config import (
     MOUNTED_STORAGE_TARGET,
-    RAW_FILES_LEDGER_URL_ENV_VAR,
-    RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
-    RAW_FILES_ROOT_ENV_VAR,
     resolve_raw_files_config,
     sqlite_ledger_url,
 )
 
 
-def test_raw_files_config_resolves_local_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
-    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
-
+def test_raw_files_config_resolves_local_default() -> None:
     config = resolve_raw_files_config()
 
     assert str(config.raw_root).endswith("/ingestion/.local/raw")
@@ -29,11 +21,7 @@ def test_raw_files_config_resolves_local_default(
 
 def test_raw_files_config_rejects_mounted_target_without_ledger_url(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
-    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
-
     with pytest.raises(
         ValueError,
         match="mounted raw-file storage requires an explicit ledger URL.*PostgreSQL",
@@ -46,11 +34,7 @@ def test_raw_files_config_rejects_mounted_target_without_ledger_url(
 
 def test_raw_files_config_resolves_mounted_target_with_explicit_ledger_url(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
-    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
-
     config = resolve_raw_files_config(
         storage_target=MOUNTED_STORAGE_TARGET,
         data_root=str(tmp_path / "data"),
@@ -63,11 +47,7 @@ def test_raw_files_config_resolves_mounted_target_with_explicit_ledger_url(
 
 def test_raw_files_config_allows_local_raw_root_with_mounted_storage_target(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
-    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
-
     config = resolve_raw_files_config(
         raw_root=str(tmp_path / "raw"),
         storage_target=MOUNTED_STORAGE_TARGET,
@@ -80,11 +60,7 @@ def test_raw_files_config_allows_local_raw_root_with_mounted_storage_target(
 
 def test_raw_files_config_rejects_mounted_raw_root_without_ledger_url(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv(RAW_FILES_ROOT_ENV_VAR, raising=False)
-    monkeypatch.delenv(RAW_FILES_LEDGER_URL_ENV_VAR, raising=False)
-
     with pytest.raises(
         ValueError,
         match="mounted raw-file storage requires an explicit ledger URL.*PostgreSQL",
@@ -94,21 +70,6 @@ def test_raw_files_config_rejects_mounted_raw_root_without_ledger_url(
             storage_target=MOUNTED_STORAGE_TARGET,
             data_root=str(tmp_path / "data"),
         )
-
-
-def test_raw_files_config_resolves_env_overrides(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(RAW_FILES_ROOT_ENV_VAR, str(tmp_path / "env-raw"))
-    monkeypatch.setenv(RAW_FILES_LEDGER_URL_ENV_VAR, "postgresql://ledger.test/raw")
-    monkeypatch.setenv(RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR, "0")
-
-    config = resolve_raw_files_config()
-
-    assert config.raw_root == tmp_path / "env-raw"
-    assert config.ledger_url == "postgresql://ledger.test/raw"
-    assert config.max_copies_per_date == 0
 
 
 def test_raw_files_config_accepts_explicit_ledger_url(tmp_path: Path) -> None:

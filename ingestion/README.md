@@ -56,7 +56,7 @@ uv --project ingestion run eve-ingest everef run-pipeline \
 ```
 
 Mounted storage resolves under `/opt/eve-market/data` by default. Workload must
-mount shared storage there, or set `--data-root` / `EVE_MARKET_DATA_ROOT`.
+mount shared storage there, or set `--data-root`.
 
 Raw-file sync can also run as separate step before load:
 

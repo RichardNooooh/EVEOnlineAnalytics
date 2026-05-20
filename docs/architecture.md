@@ -81,14 +81,13 @@ Local-to-production mapping:
 
 Local smoke runs may use the default SQLite DuckLake catalog. Any run using mounted
 DuckLake storage, including `--storage-target mounted` or an explicit mounted
-`EVE_MARKET_DUCKLAKE_STORAGE`, must use a non-local catalog such as PostgreSQL through
-`--ducklake-catalog` or `EVE_MARKET_DUCKLAKE_CATALOG`.
+`--ducklake-storage`, must use a non-local catalog such as PostgreSQL through
+`--ducklake-catalog`.
 
 Raw source-file acquisition uses a separate ledger from the DuckLake publication
 catalog. Direct local ingestion defaults to a local SQLite raw ledger. Docker Compose and
-production-style k3s/Airflow deployments use PostgreSQL through
-`EVE_MARKET_RAW_FILES_LEDGER_URL`, while preserving single-writer acquisition semantics
-for the relevant publication scope.
+production-style k3s/Airflow deployments use PostgreSQL through `--raw-ledger-url`,
+while preserving single-writer acquisition semantics for the relevant publication scope.
 
 Local commands:
 

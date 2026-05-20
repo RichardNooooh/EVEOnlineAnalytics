@@ -18,11 +18,6 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/local/.env}@postgres:5432/${POSTGRES_DB:-airflow}
     AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
-    EVE_MARKET_DATA_ROOT: /opt/eve-market/data
-    EVE_MARKET_DATASETS_ROOT: /opt/eve-market/datasets
-    EVE_MARKET_DBT_PROJECT_DIR: /opt/eve-market/transform
-    EVE_MARKET_INGESTION_IMAGE: eve-market-ingestion:local
-    EVE_MARKET_RAW_FILES_LEDGER_URL: postgresql://raw_files:${RAW_FILES_POSTGRES_PASSWORD:?Set RAW_FILES_POSTGRES_PASSWORD in infra/local/.env}@postgres:5432/raw_files
     PYTHONPATH: /opt/eve-market/ingestion
   user: "${AIRFLOW_UID:-50000}:0"
   group_add:

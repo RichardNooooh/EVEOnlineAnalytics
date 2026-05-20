@@ -26,15 +26,14 @@ mounted/shared deployments, the DuckLake catalog must use non-local durable stor
 as PostgreSQL. A local SQLite DuckLake catalog is only for local smoke tests, and mounted
 DuckLake storage with a SQLite catalog is rejected.
 
-Ingestion resolves DuckLake storage from explicit `--ducklake-storage`, then
-`EVE_MARKET_DUCKLAKE_STORAGE`, then the selected storage target. The mounted target uses
-the shared data root and requires a PostgreSQL-style catalog from `--ducklake-catalog` or
-`EVE_MARKET_DUCKLAKE_CATALOG`.
+Ingestion resolves DuckLake storage from explicit `--ducklake-storage`, then the
+selected storage target. The mounted target uses the shared data root and requires a
+PostgreSQL-style catalog from `--ducklake-catalog`.
 
 `raw/` stores cached source files before dlt publication. Its acquisition ledger is not
 a shared SQLite file on NFS. Direct local ingestion defaults to a local SQLite ledger,
 while Docker Compose and k3s/Airflow-style deployments use PostgreSQL via
-`EVE_MARKET_RAW_FILES_LEDGER_URL`.
+`--raw-ledger-url`.
 
 ## Dataset Naming
 

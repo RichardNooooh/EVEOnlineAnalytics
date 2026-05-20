@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ingest.storage_config import (
-    DATA_ROOT_ENV_VAR as DATA_ROOT_ENV_VAR,
-)
-from ingest.storage_config import (
-    DEFAULT_MOUNTED_DATA_ROOT as DEFAULT_MOUNTED_DATA_ROOT,
-)
 from ingest.storage_config import (
     LOCAL_STORAGE_TARGET,
     MOUNTED_STORAGE_TARGET,
@@ -23,9 +16,6 @@ from ingest.storage_config import (
     resolve_optional_config_value,
 )
 
-RAW_FILES_ROOT_ENV_VAR = "EVE_MARKET_RAW_FILES_ROOT"
-RAW_FILES_LEDGER_URL_ENV_VAR = "EVE_MARKET_RAW_FILES_LEDGER_URL"
-RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR = "EVE_MARKET_RAW_FILES_MAX_COPIES_PER_DATE"
 DEFAULT_MAX_COPIES_PER_DATE = 5
 
 
@@ -73,7 +63,6 @@ def resolve_raw_files_config(
     """Resolve raw-file cache root and acquisition ledger URL."""
     resolved_root_value = resolve_optional_config_value(
         raw_root,
-        env_var=RAW_FILES_ROOT_ENV_VAR,
         value_name="raw_root",
     )
     if resolved_root_value is not None:
@@ -94,13 +83,6 @@ def resolve_raw_files_config(
         resolved_max_copies = _parse_max_copies_per_date(
             max_copies_per_date,
             "max_copies_per_date",
-        )
-    elif (
-        env_max_copies := os.getenv(RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR)
-    ) is not None:
-        resolved_max_copies = _parse_max_copies_per_date(
-            env_max_copies,
-            RAW_FILES_MAX_COPIES_PER_DATE_ENV_VAR,
         )
     else:
         resolved_max_copies = DEFAULT_MAX_COPIES_PER_DATE
@@ -133,7 +115,6 @@ def _resolve_ledger_url(
 ) -> str:
     resolved_ledger_url = resolve_optional_config_value(
         ledger_url,
-        env_var=RAW_FILES_LEDGER_URL_ENV_VAR,
         value_name="ledger_url",
     )
     if resolved_ledger_url is not None:
@@ -142,7 +123,7 @@ def _resolve_ledger_url(
     if requires_explicit_ledger:
         msg = (
             "mounted raw-file storage requires an explicit ledger URL such as "
-            f"PostgreSQL; set ledger_url or {RAW_FILES_LEDGER_URL_ENV_VAR}"
+            "PostgreSQL; set ledger_url"
         )
         raise ValueError(msg)
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from ingest.publishers import ducklake as ducklake_pub
-from ingest.storage_config import DATA_ROOT_ENV_VAR
 
 
 class FakeDuckLakeCredentials:
@@ -28,10 +27,6 @@ def test_ducklake_destination_uses_local_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_ducklake(monkeypatch)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_NAME_ENV_VAR, raising=False)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_CATALOG_ENV_VAR, raising=False)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, raising=False)
-    monkeypatch.delenv(DATA_ROOT_ENV_VAR, raising=False)
 
     destination_config = ducklake_pub.build_destination_config("ducklake")
 
@@ -54,8 +49,6 @@ def test_ducklake_destination_creates_local_paths(
     tmp_path,
 ) -> None:
     patch_ducklake(monkeypatch)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_CATALOG_ENV_VAR, raising=False)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, raising=False)
     monkeypatch.setattr(
         ducklake_pub, "local_ducklake_root", lambda: tmp_path / "ducklake"
     )
@@ -67,34 +60,10 @@ def test_ducklake_destination_creates_local_paths(
     assert (tmp_path / "ducklake/files").is_dir()
 
 
-def test_ducklake_destination_uses_env_overrides(
+def test_ducklake_destination_uses_explicit_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_ducklake(monkeypatch)
-    monkeypatch.setenv(ducklake_pub.DUCKLAKE_NAME_ENV_VAR, "env_lake")
-    monkeypatch.setenv(
-        ducklake_pub.DUCKLAKE_CATALOG_ENV_VAR, "postgresql://env/catalog"
-    )
-    monkeypatch.setenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, "file:///mnt/env")
-
-    destination_config = ducklake_pub.build_destination_config("ducklake")
-
-    credentials = destination_config["credentials"]
-    assert credentials.name == "env_lake"
-    assert credentials.catalog == "postgresql://env/catalog"
-    assert credentials.storage == "file:///mnt/env"
-
-
-def test_ducklake_destination_explicit_args_override_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    patch_ducklake(monkeypatch)
-    monkeypatch.setenv(ducklake_pub.DUCKLAKE_NAME_ENV_VAR, "env_lake")
-    monkeypatch.setenv(
-        ducklake_pub.DUCKLAKE_CATALOG_ENV_VAR, "postgresql://env/catalog"
-    )
-    monkeypatch.setenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, "file:///mnt/env")
-
     destination_config = ducklake_pub.build_destination_config(
         "ducklake",
         "arg_lake",
@@ -112,9 +81,6 @@ def test_ducklake_destination_rejects_mounted_storage_with_default_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_ducklake(monkeypatch)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_CATALOG_ENV_VAR, raising=False)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, raising=False)
-    monkeypatch.delenv(DATA_ROOT_ENV_VAR, raising=False)
 
     with pytest.raises(
         ValueError,
@@ -130,8 +96,6 @@ def test_ducklake_destination_uses_mounted_storage_target_with_explicit_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_ducklake(monkeypatch)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, raising=False)
-    monkeypatch.delenv(DATA_ROOT_ENV_VAR, raising=False)
 
     destination_config = ducklake_pub.build_destination_config(
         "ducklake",
@@ -151,8 +115,6 @@ def test_ducklake_destination_rejects_explicit_mounted_storage_with_default_cata
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_ducklake(monkeypatch)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_CATALOG_ENV_VAR, raising=False)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, raising=False)
 
     with pytest.raises(
         ValueError,
@@ -165,41 +127,17 @@ def test_ducklake_destination_rejects_explicit_mounted_storage_with_default_cata
         )
 
 
-def test_ducklake_destination_rejects_env_mounted_storage_with_default_catalog(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    patch_ducklake(monkeypatch)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_CATALOG_ENV_VAR, raising=False)
-    monkeypatch.setenv(
-        ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR,
-        ducklake_pub.mounted_ducklake_storage("/mnt/data"),
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="mounted DuckLake storage requires a non-local catalog.*PostgreSQL",
-    ):
-        ducklake_pub.build_destination_config("ducklake", data_root="/mnt/data")
-
-
-@pytest.mark.parametrize("storage_source", ["explicit", "env"])
 def test_ducklake_destination_allows_mounted_storage_with_postgres_catalog(
     monkeypatch: pytest.MonkeyPatch,
-    storage_source: str,
 ) -> None:
     patch_ducklake(monkeypatch)
     mounted_storage = ducklake_pub.mounted_ducklake_storage("/mnt/data")
-    kwargs = (
-        {"ducklake_storage": mounted_storage} if storage_source == "explicit" else {}
-    )
-    if storage_source == "env":
-        monkeypatch.setenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, mounted_storage)
 
     destination_config = ducklake_pub.build_destination_config(
         "ducklake",
         ducklake_catalog="postgresql://lake/catalog",
         data_root="/mnt/data",
-        **kwargs,
+        ducklake_storage=mounted_storage,
     )
 
     credentials = destination_config["credentials"]
@@ -211,8 +149,6 @@ def test_ducklake_destination_uses_data_root_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_ducklake(monkeypatch)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, raising=False)
-    monkeypatch.setenv(DATA_ROOT_ENV_VAR, "/mnt/env-root")
 
     destination_config = ducklake_pub.build_destination_config(
         "ducklake",
@@ -229,7 +165,6 @@ def test_ducklake_storage_override_skips_mounted_data_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patch_ducklake(monkeypatch)
-    monkeypatch.setenv(DATA_ROOT_ENV_VAR, "")
 
     destination_config = ducklake_pub.build_destination_config(
         "ducklake",
@@ -260,35 +195,3 @@ def test_ducklake_destination_rejects_empty_explicit_values(
 
     with pytest.raises(ValueError, match=message):
         ducklake_pub.build_destination_config("ducklake", **kwargs)
-
-
-@pytest.mark.parametrize(
-    ("env_var", "message"),
-    [
-        (ducklake_pub.DUCKLAKE_NAME_ENV_VAR, ducklake_pub.DUCKLAKE_NAME_ENV_VAR),
-        (ducklake_pub.DUCKLAKE_CATALOG_ENV_VAR, ducklake_pub.DUCKLAKE_CATALOG_ENV_VAR),
-        (ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR),
-    ],
-)
-def test_ducklake_destination_rejects_empty_env_values(
-    monkeypatch: pytest.MonkeyPatch,
-    env_var: str,
-    message: str,
-) -> None:
-    patch_ducklake(monkeypatch)
-    monkeypatch.setenv(env_var, "")
-
-    with pytest.raises(ValueError, match=message):
-        ducklake_pub.build_destination_config("ducklake")
-
-
-def test_ducklake_destination_rejects_empty_env_data_root(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    patch_ducklake(monkeypatch)
-    monkeypatch.delenv(ducklake_pub.DUCKLAKE_STORAGE_ENV_VAR, raising=False)
-    monkeypatch.delenv(DATA_ROOT_ENV_VAR, raising=False)
-    monkeypatch.setenv(DATA_ROOT_ENV_VAR, "")
-
-    with pytest.raises(ValueError, match=DATA_ROOT_ENV_VAR):
-        ducklake_pub.build_destination_config("ducklake", storage_target="mounted")
