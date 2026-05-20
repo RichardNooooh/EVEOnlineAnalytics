@@ -36,20 +36,26 @@ from ingest.storage_config import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run EVE market ingestion jobs.")
     subparsers = parser.add_subparsers(dest="command")
+    subparsers.required = True
 
     everef_parser = subparsers.add_parser(
-        "everef-market-history",
+        "everef",
+        help="Run Everef ingestion commands.",
+    )
+    everef_subparsers = everef_parser.add_subparsers(dest="everef_command")
+    everef_subparsers.required = True
+
+    everef_run_pipeline_parser = everef_subparsers.add_parser(
+        "run-pipeline",
         help="Ingest Everef daily market history CSV archives.",
     )
+    build_everef_parser(everef_run_pipeline_parser)
 
-    build_everef_parser(everef_parser)
-
-    raw_files_parser = subparsers.add_parser(
-        "raw-files",
-        help="Manage raw source-file acquisition caches.",
+    everef_sync_raw_parser = everef_subparsers.add_parser(
+        "sync-raw-files",
+        help="Download Everef market history CSV archives into raw cache.",
     )
-
-    build_raw_files_parser(raw_files_parser)
+    build_raw_files_parser(everef_sync_raw_parser)
     return parser
 
 
@@ -162,26 +168,20 @@ def build_everef_parser(everef_parser: argparse.ArgumentParser) -> None:
 
 
 def build_raw_files_parser(raw_files_parser: argparse.ArgumentParser) -> None:
-    raw_subparsers = raw_files_parser.add_subparsers(dest="raw_command")
-    raw_subparsers.required = True
-    raw_sync_parser = raw_subparsers.add_parser(
-        "sync-everef-market-history",
-        help="Download Everef market history CSV archives into the raw cache.",
-    )
-    add_date_args(raw_sync_parser)
+    add_date_args(raw_files_parser)
     add_storage_args(
-        raw_sync_parser,
+        raw_files_parser,
         help_prefix=(
             "Default raw cache target when --raw-root and env override are unset."
         ),
     )
-    raw_sync_parser.add_argument("--base-url", default=None)
-    raw_sync_parser.add_argument(
+    raw_files_parser.add_argument("--base-url", default=None)
+    raw_files_parser.add_argument(
         "--check-headers",
         action="store_true",
         help="Use HTTP headers with totals.json when detecting changed Everef files.",
     )
-    add_raw_file_args(raw_sync_parser)
+    add_raw_file_args(raw_files_parser)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -189,14 +189,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.command == "everef-market-history":
+    if args.command == "everef" and args.everef_command == "run-pipeline":
         load_info = run_everef_market_history_pipeline(
             build_everef_market_history_config(args)
         )
         print(load_info)
         return 0
 
-    if args.command == "raw-files" and args.raw_command == "sync-everef-market-history":
+    if args.command == "everef" and args.everef_command == "sync-raw-files":
         records = sync_everef_market_history_files(build_raw_files_sync_config(args))
         print(f"Synced {len(records)} Everef market history raw files")
         return 0
