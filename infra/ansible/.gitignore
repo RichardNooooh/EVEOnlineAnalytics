@@ -10,10 +10,19 @@
 # -----------------------------------------------------------------------------
 # k3s cluster token — sensitive, auto-generated per cluster
 inventory/k3s-token.txt
+inventory/k3s_cluster.key
 
 # kubeconfig files — contain cluster credentials
 inventory/kubeconfig
 inventory/*.kubeconfig
+
+# Generated inventory and host vars
+inventory/hosts.ini
+inventory/host_vars/*.yml
+!inventory/host_vars/.gitkeep
+
+# Vaulted secrets are local-only
+inventory/vault/*.yml
 
 # Etcd snapshots — large binary data, should be backed up elsewhere
 inventory/etcd-snapshots/
