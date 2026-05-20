@@ -1,0 +1,18 @@
+name: eve_market_transform
+version: 1.0.0
+config-version: 2
+
+profile: eve_market_transform
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages", "logs"]
+
+models:
+  eve_market_transform:
+    staging:
+      +materialized: view
