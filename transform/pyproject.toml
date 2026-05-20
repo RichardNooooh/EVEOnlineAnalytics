@@ -1,0 +1,13 @@
+[project]
+name = "transform"
+version = "0.1.0"
+description = "dbt project for curated market transforms"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dbt-core>=1.11.9",
+    "dbt-duckdb>=1.10.1",
+]
+
+[tool.uv]
+exclude-newer = "1 week"
