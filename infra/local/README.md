@@ -37,6 +37,13 @@ layout, but no DAGs are tracked yet.
 | `.local/data` | `/opt/eve-market/data` | Local published data stand-in for NFS |
 | `.local/logs` | `/opt/airflow/logs` | Airflow logs |
 
+This `.local/data` mount is for published DuckLake data only. Containerized `dlt`
+runtime state should use explicit ephemeral scratch separate from shared or durable
+storage. Current ingestion image defaults that scratch to `/scratch/dlt` for pipeline
+state and `/scratch/local` for local runtime artifacts. The repo-local
+`ingestion/.dlt/.var/<profile>/` and `ingestion/.local/` convention applies to the
+packaged host CLI, not to DockerOperator or later Kubernetes-style runs.
+
 ## Start
 
 ```bash
@@ -52,6 +59,10 @@ Build the ingestion task image used by local `DockerOperator` DAGs:
 ```bash
 make ingestion-image
 ```
+
+Local DAGs default to `eve-market-ingestion:local`. Set
+`EVE_MARKET_INGESTION_IMAGE` in `infra/local/.env` if you need to test a different
+tag.
 
 Set `EVE_MARKET_LOCAL_DATA_HOST_PATH` in `infra/local/.env` to the host path for
 this repo's `.local/data` directory. `DockerOperator` bind mounts are evaluated by
@@ -106,6 +117,8 @@ make local-airflow-docker-smoke
 
 - Keep real secrets out of git. Commit only `.env.example`.
 - Published datasets for this stack live under `.local/data`, not shared NFS.
+- Durable state still means DuckLake data files plus PostgreSQL-backed services;
+  container `dlt` runtime state should remain ephemeral.
 - The `raw_files` ledger DB/user is created by Postgres init scripts only when the
   `postgres-data` volume is first initialized. If you already started the stack before
   adding it, run `make local-airflow-reset CONFIRM=yes` or create the DB/user manually.
@@ -115,3 +128,5 @@ make local-airflow-docker-smoke
 - Production Airflow remains managed by `infra/helm/airflow.yml` on k3s.
 - Production DAGs should use `KubernetesPodOperator` with immutable GHCR image tags from
   the `Ingestion Image` workflow, not local Docker socket access.
+- Future hardening may move containers to read-only root filesystems with explicit
+  scratch mounts.

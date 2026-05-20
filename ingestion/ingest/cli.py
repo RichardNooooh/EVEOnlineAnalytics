@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 
+from ingest import configure_runtime_environment
 from ingest.cli_config import (
     DateRangeCliConfig,
     EverefMarketHistoryCliConfig,
@@ -13,10 +14,6 @@ from ingest.cli_config import (
     StorageCliConfig,
 )
 from ingest.input_sources import INPUT_SOURCES
-from ingest.pipelines.everef import (
-    run_everef_market_history_pipeline,
-)
-from ingest.raw_files.everef import sync_everef_market_history_files
 from ingest.storage_config import DEFAULT_MOUNTED_DATA_ROOT, STORAGE_TARGETS
 
 
@@ -158,10 +155,13 @@ def build_raw_files_parser(raw_files_parser: argparse.ArgumentParser) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    configure_runtime_environment()
     parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.command == "everef" and args.everef_command == "run-pipeline":
+        from ingest.pipelines.everef import run_everef_market_history_pipeline
+
         load_info = run_everef_market_history_pipeline(
             build_everef_market_history_config(args)
         )
@@ -169,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "everef" and args.everef_command == "sync-raw-files":
+        from ingest.raw_files.everef import sync_everef_market_history_files
+
         records = sync_everef_market_history_files(build_raw_files_sync_config(args))
         print(f"Synced {len(records)} Everef market history raw files")
         return 0

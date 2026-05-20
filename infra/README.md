@@ -99,7 +99,9 @@ Shared NFS storage backs:
 It does not back a cluster-shared writable DuckDB warehouse file.
 
 Any DuckDB database used by dbt or batch jobs is local or transient scratch and should
-live on `emptyDir` or node-local `ReadWriteOnce` storage, not RWX NFS.
+live on `emptyDir` or node-local `ReadWriteOnce` storage, not RWX NFS. Containerized
+`dlt` runtime state follows same rule and should live on explicit scratch such as the
+ingestion image's `/scratch` path or a pod-local `emptyDir` mount.
 
 Configure the NFS export with `mapall` permissions so non-root pods can write:
 

@@ -6,6 +6,10 @@ from airflow.sdk import Param, dag
 from docker.types import Mount
 
 DATA_ROOT = "/opt/eve-market/data"
+DLT_SCRATCH_ROOT = "/scratch"
+INGESTION_IMAGE = os.environ.get(
+    "EVE_MARKET_INGESTION_IMAGE", "eve-market-ingestion:local"
+)
 LOCAL_DATA_HOST_PATH = os.environ.get(
     "EVE_MARKET_LOCAL_DATA_HOST_PATH", "/home/rnoh/dev/eve-market/.local/data"
 )
@@ -28,7 +32,7 @@ def backfill_market_history():
     """
     DockerOperator(
         task_id="sync_raw_market_history",
-        image="ghcr.io/richardnooooh/eve-market-ingestion:master",
+        image=INGESTION_IMAGE,
         command=[
             "everef",
             "run-pipeline",
@@ -48,6 +52,13 @@ def backfill_market_history():
         ],
         docker_url="unix://var/run/docker.sock",
         network_mode="eve-market-airflow-local",
+        environment={
+            "HOME": f"{DLT_SCRATCH_ROOT}/home",
+            "TMPDIR": f"{DLT_SCRATCH_ROOT}/tmp",
+            "EVE_DLT_STATE_DIR": f"{DLT_SCRATCH_ROOT}/dlt",
+            "DLT_DATA_DIR": f"{DLT_SCRATCH_ROOT}/dlt",
+            "DLT_LOCAL_DIR": f"{DLT_SCRATCH_ROOT}/local",
+        },
         mount_tmp_dir=False,
         mounts=[Mount(source=LOCAL_DATA_HOST_PATH, target=DATA_ROOT, type="bind")],
         force_pull=True,

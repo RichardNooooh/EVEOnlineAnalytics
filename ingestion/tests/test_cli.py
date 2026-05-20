@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
+from ingest import (
+    DLT_STATE_DIR_ENV,
+    activate_dlt_workspace,
+    configure_runtime_environment,
+    should_activate_dlt_workspace,
+)
 from ingest.cli import (
     build_everef_market_history_config,
     build_raw_files_sync_config,
@@ -132,6 +141,81 @@ def test_build_raw_files_sync_config_maps_args() -> None:
     assert config.raw_files.raw_ledger_url == "postgresql://ledger.test/raw"
     assert config.raw_files.raw_max_copies_per_date == "0"
     assert config.check_headers is True
+
+
+def test_configure_runtime_environment_defaults_dlt_project_dir(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("DLT_PROJECT_DIR", raising=False)
+    monkeypatch.delenv(DLT_STATE_DIR_ENV, raising=False)
+    monkeypatch.delenv("DLT_DATA_DIR", raising=False)
+    monkeypatch.delenv("DLT_LOCAL_DIR", raising=False)
+
+    project_dir = configure_runtime_environment()
+
+    assert os.environ["DLT_PROJECT_DIR"] == str(project_dir)
+    assert "DLT_DATA_DIR" not in os.environ
+    assert "DLT_LOCAL_DIR" not in os.environ
+
+
+def test_configure_runtime_environment_preserves_override(monkeypatch) -> None:
+    monkeypatch.setenv("DLT_PROJECT_DIR", "/tmp/custom-dlt-project")
+    monkeypatch.delenv(DLT_STATE_DIR_ENV, raising=False)
+
+    project_dir = configure_runtime_environment()
+
+    assert project_dir == Path("/tmp/custom-dlt-project")
+    assert os.environ["DLT_PROJECT_DIR"] == "/tmp/custom-dlt-project"
+
+
+def test_configure_runtime_environment_sets_explicit_dlt_scratch(
+    monkeypatch, tmp_path
+) -> None:
+    state_dir = tmp_path / "dlt-state"
+    monkeypatch.setenv(DLT_STATE_DIR_ENV, str(state_dir))
+    monkeypatch.delenv("DLT_DATA_DIR", raising=False)
+    monkeypatch.delenv("DLT_LOCAL_DIR", raising=False)
+
+    project_dir = configure_runtime_environment()
+
+    assert os.environ["DLT_PROJECT_DIR"] == str(project_dir)
+    assert os.environ["DLT_DATA_DIR"] == str(state_dir)
+    assert os.environ["DLT_LOCAL_DIR"] == str(state_dir / "local")
+
+
+def test_should_activate_dlt_workspace_skips_explicit_scratch(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv(DLT_STATE_DIR_ENV, str(tmp_path / "dlt-state"))
+
+    assert should_activate_dlt_workspace() is False
+
+
+def test_should_activate_dlt_workspace_skips_direct_dlt_env_override(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.delenv(DLT_STATE_DIR_ENV, raising=False)
+    monkeypatch.setenv("DLT_DATA_DIR", str(tmp_path / "dlt-data"))
+
+    assert should_activate_dlt_workspace() is False
+
+
+def test_activate_dlt_workspace_uses_repo_local_state(monkeypatch) -> None:
+    monkeypatch.delenv(DLT_STATE_DIR_ENV, raising=False)
+    monkeypatch.delenv("DLT_DATA_DIR", raising=False)
+    monkeypatch.delenv("DLT_LOCAL_DIR", raising=False)
+
+    project_dir = activate_dlt_workspace()
+
+    from dlt.common.runtime import run_context
+
+    ctx = run_context.active()
+
+    assert type(ctx).__name__ == "WorkspaceRunContext"
+    assert Path(ctx.run_dir) == project_dir
+    assert Path(ctx.settings_dir) == project_dir / ".dlt"
+    assert Path(ctx.data_dir).is_relative_to(project_dir / ".dlt" / ".var")
+    assert Path(ctx.local_dir) == project_dir / ".local"
 
 
 def cli_parser():

@@ -40,6 +40,9 @@ uv --project ingestion run eve-ingest everef run-pipeline \
 
 Default local output uses DuckLake storage under
 `ingestion/.local/ducklake/everef_market_history` with local SQLite catalog.
+When using the packaged host CLI, `dlt` runtime state stays repo-local under
+`ingestion/.dlt/.var/<profile>/`, and local runtime artifacts stay under
+`ingestion/.local/`.
 
 ## Airflow + Kubernetes
 
@@ -57,6 +60,12 @@ uv --project ingestion run eve-ingest everef run-pipeline \
 
 Mounted storage resolves under `/opt/eve-market/data` by default. Workload must
 mount shared storage there, or set `--data-root`.
+
+Containerized Docker, Airflow, and Kubernetes runs should keep `dlt` runtime state on
+explicit ephemeral scratch, separate from DuckLake durable storage and any shared
+mounts. Current image defaults that scratch to `/scratch/dlt` for pipeline state and
+`/scratch/local` for local runtime artifacts. Durable state remains DuckLake data plus
+PostgreSQL-backed services.
 
 Raw-file sync can also run as separate step before load:
 
@@ -87,3 +96,6 @@ uv --project ingestion run eve-ingest everef sync-raw-files \
 - Mounted/shared DuckLake storage needs PostgreSQL catalog.
 - Local SQLite catalog is only for local development and smoke tests.
 - Do not put shared writable `.duckdb` files on RWX/NFS storage.
+- Host packaged CLI keeps repo-local `dlt` state under `ingestion/.dlt/.var/<profile>/`
+  and `ingestion/.local/`; containerized runtimes should use `/scratch`-backed
+  ephemeral scratch instead.

@@ -12,7 +12,8 @@ The platform uses **DuckLake tables as the canonical analytical table contract**
   local SQLite catalogs are for local smoke tests only.
 - **Shared durable state:** DuckLake data files, catalog metadata, schema contracts,
   MLflow artifacts, and Airflow logs.
-- **Compute state:** local or transient execution state such as DuckDB work databases.
+- **Compute state:** local or transient execution state such as DuckDB work databases
+  and `dlt` runtime scratch.
 - **Service boundary:** Kubernetes runs the application workloads, while PostgreSQL runs
   as an external infrastructure dependency on its own Proxmox VM.
 - **Forbidden pattern:** no cluster-shared writable `.duckdb` file.
@@ -84,10 +85,20 @@ DuckLake storage, including `--storage-target mounted` or an explicit mounted
 `--ducklake-storage`, must use a non-local catalog such as PostgreSQL through
 `--ducklake-catalog`.
 
+The packaged host ingestion CLI keeps `dlt` runtime state repo-local under
+`ingestion/.dlt/.var/<profile>/` and `ingestion/.local/`. Docker, Airflow, and
+Kubernetes-style runs should instead mount explicit ephemeral scratch for `dlt`
+runtime state so that container working state stays separate from DuckLake durable
+storage and shared mounts.
+
 Raw source-file acquisition uses a separate ledger from the DuckLake publication
 catalog. Direct local ingestion defaults to a local SQLite raw ledger. Docker Compose and
 production-style k3s/Airflow deployments use PostgreSQL through `--raw-ledger-url`,
 while preserving single-writer acquisition semantics for the relevant publication scope.
+
+Future hardening may move containerized runtimes to read-only root filesystems with
+explicit scratch mounts, but the storage contract remains the same: durable state lives
+in DuckLake data files and PostgreSQL-backed services, not container-local runtime state.
 
 Local commands:
 
@@ -137,6 +148,7 @@ Allowed examples:
 - `emptyDir`
 - node-local `ReadWriteOnce` PVC
 - local developer filesystem
+- explicit container scratch for `dlt` runtime state
 
 Disallowed example:
 
