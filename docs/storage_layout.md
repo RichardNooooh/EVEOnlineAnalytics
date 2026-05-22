@@ -2,13 +2,17 @@
 
 ## Purpose
 
-This document defines the planned shared-storage layout for DuckLake tables backed by
-Parquet data files.
+This document defines the storage contract required by
+`eve-market-analytics`. It describes durable shared-data layout,
+publication-visible paths, and scratch-storage separation that any runtime must
+preserve. Reusable NFS exports, Kubernetes storage classes, mount wiring,
+backup automation, and other platform implementation details belong to the
+companion `homelab-data-platform` repository.
 
-## Shared NFS Root
+## Example Shared Runtime Root
 
 ```text
-/mnt/tank/eve-market/
+<shared-data-root>/
 ├── datasets/
 │   ├── ducklake/
 │   │   ├── raw/
@@ -29,6 +33,11 @@ DuckLake storage with a SQLite catalog is rejected.
 Ingestion resolves DuckLake storage from explicit `--ducklake-storage`, then the
 selected storage target. The mounted target uses the shared data root and requires a
 PostgreSQL-style catalog from `--ducklake-catalog`.
+
+The exact mechanism used to provision or mount this storage is intentionally
+out of scope here. This repo defines workload-visible layout and invariants;
+`homelab-data-platform` should implement the reusable runtime that satisfies
+them.
 
 `raw/` stores cached source files before dlt publication. Its acquisition ledger is not
 a shared SQLite file on NFS. Direct local ingestion defaults to a local SQLite ledger,
@@ -70,6 +79,11 @@ datasets/
     └── <dataset-name>.md
 ```
 
+This path structure is a workload contract, not a requirement that every
+environment expose the same underlying host paths verbatim. Local and shared
+runtimes may differ in implementation as long as they preserve equivalent
+durable roots, publication boundaries, and scratch versus durable separation.
+
 ## Partitioning Guidance
 
 Table partitioning and replacement scope should be driven by reader and writer behavior.
@@ -99,6 +113,9 @@ The manifest is supporting metadata, not a replacement for DuckLake catalog stat
 ## Scratch Storage Is Separate
 
 Scratch compute state is not part of the shared layout above.
+
+This separation is a hard workload requirement so platform reuse does not blur
+durable analytical state with container-local or job-local execution state.
 
 - local DuckDB work DBs belong on pod-local scratch
 - `dlt` runtime state for containerized runs belongs on explicit ephemeral scratch

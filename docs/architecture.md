@@ -1,8 +1,17 @@
 # Architecture
 
+## Document Scope
+
+This document defines the analytics workload architecture for
+`eve-market-analytics`. It captures durable data, publication, storage, and
+compute boundaries that workload code must honor. Reusable cluster, storage,
+ingress, observability, and runtime implementation belongs to the companion
+platform repository `homelab-data-platform`.
+
 ## Canonical Contract
 
-The platform uses **DuckLake tables as the canonical analytical table contract**.
+The analytics workload uses **DuckLake tables as the canonical analytical table
+contract**.
 
 - **System of record:** DuckLake table state backed by Parquet data files.
 - **Physical storage:** Parquet files stored on shared storage under the DuckLake table
@@ -18,6 +27,9 @@ The platform uses **DuckLake tables as the canonical analytical table contract**
   as an external infrastructure dependency on its own Proxmox VM.
 - **Forbidden pattern:** no cluster-shared writable `.duckdb` file.
 - **Guardrail:** mounted/shared DuckLake storage with a SQLite catalog is rejected.
+
+These rules are workload-facing invariants. Any local harness or production
+runtime is acceptable only if it preserves this contract.
 
 ## Storage vs Compute
 
@@ -62,13 +74,14 @@ or contract definitions.
 
 ## Local Development/Demo Runtime
 
-The repository includes a local Docker Compose Airflow + dlt runtime for fast
-iteration and portfolio demos without Proxmox, k3s, TrueNAS, or Helm.
+The repository includes a local Docker Compose Airflow + dlt runtime as a
+workload-focused development harness for fast iteration and portfolio demos.
 
-This runtime is a development harness only. It is not production and does not replace
-the canonical k3s + Helm architecture. Production workloads still target k3s, Helm,
-TrueNAS-backed RWX storage for DuckLake data files, and the external Airflow metadata
-PostgreSQL service described by ADR-018.
+This runtime is for development only. Reusable production-style deployment and
+runtime implementation should live in `homelab-data-platform`, while this
+repository remains responsible for workload contracts such as DuckLake-backed
+datasets, publication semantics, orchestration expectations, and storage and
+scratch requirements.
 
 Local-to-production mapping:
 
@@ -109,7 +122,9 @@ make local-airflow-reset
 make local-pipeline-smoke
 ```
 
-See `infra/local/README.md` for service and mount details.
+See `infra/local/README.md` for current local harness details. Production-style
+runtime implementation and platform operations belong in
+`homelab-data-platform`.
 
 ## Single-Writer Rule
 
@@ -153,6 +168,15 @@ Allowed examples:
 Disallowed example:
 
 - RWX shared NFS volume containing a writable `.duckdb` file used by multiple pods
+
+## Platform Boundary
+
+`eve-market-analytics` owns workload semantics: dataset contracts, ingestion and
+transform behavior, publication rules, and the storage and compute constraints
+required for correct analytics execution. `homelab-data-platform` should own
+reusable runtime implementation such as cluster bootstrap, storage
+provisioning, ingress, secrets delivery, observability stacks, and other
+cross-workload homelab concerns.
 
 ## Planned Repository Orientation
 
