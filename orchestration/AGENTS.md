@@ -8,7 +8,8 @@ task dependencies.
 - `../AGENTS.md`
 - `../ingestion/AGENTS.md` for ingestion DAGs
 - `../transform/AGENTS.md` for dbt DAGs
-- `../infra/AGENTS.md` for deployment/runtime assumptions
+- `../docs/architecture.md` for deployment/runtime assumptions
+- `../infra/local/README.md` for the local analytics harness
 
 ## Airflow Role
 
@@ -28,5 +29,5 @@ task dependencies.
 ## Deployment Notes
 
 - Airflow metadata uses an external PostgreSQL server on its own Proxmox VM.
-- Helm values should live at `../infra/helm/airflow.yml` when checked in.
+- Production deployment configuration belongs in `/home/rnoh/dev/homelab-data-platform`.
 - Airflow logs may live on shared NFS.

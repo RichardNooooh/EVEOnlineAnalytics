@@ -19,7 +19,7 @@ contracts, pipeline behavior, and local analytics development.
 - `orchestration/`: Airflow DAGs and scheduling logic
 - `experiments/`: validation work, model experiments, and evidence
 - `docs/`: architecture, storage, lifecycle, and ADRs
-- `infra/`: transitional platform assets plus the local analytics demo harness
+- `infra/`: local analytics demo harness
 
 > Note
 > Some infrastructure and operational hardening is intentionally deferred until the
@@ -67,6 +67,6 @@ Expected development loop:
 3. validate through local Airflow
 4. commit
 5. validate in CI and publish GHCR image tags from trusted `master` builds
-6. deploy to k3s
+6. deploy through `homelab-data-platform`
 
 See `infra/local/README.md` for local runtime details.

@@ -39,7 +39,7 @@ Primary architecture references: `docs/architecture.md`, `docs/data_lifecycle.md
 - Ingestion sources, clients, pipelines, publishers: `ingestion/AGENTS.md`
 - dbt transforms and SQL models: `transform/AGENTS.md`
 - Airflow DAGs and orchestration: `orchestration/AGENTS.md`
-- Infrastructure, Kubernetes, Helm, OpenTofu, Ansible: `infra/AGENTS.md`
+- Local analytics demo harness notes: `infra/local/README.md`
 - Experiments and validation evidence: `experiments/AGENTS.md`
 
 ## Tool Boundaries
@@ -93,7 +93,13 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, and PowerBI.
   exists.
 - Update storage architecture: start with `docs/architecture.md`,
   `docs/storage_layout.md`, and ADRs before implementation.
-- Add monitoring dashboard: update Grafana provisioning and Kubernetes dashboard
-  manifests if the dashboard is checked in.
+- Add monitoring dashboard: update analytics-side requirements here and make
+  platform runtime/dashboard changes in `/home/rnoh/dev/homelab-data-platform`.
 - Diagnose errors: identify likely fixes, then validate with local evidence or online
   references when useful.
+
+## Repo Split Note
+
+- Reusable platform infrastructure lives in `/home/rnoh/dev/homelab-data-platform`.
+- In this repo, `infra/local/` remains the supported local analytics reviewer/demo
+  harness.

@@ -125,7 +125,7 @@ make local-airflow-docker-smoke
 - DuckDB files created by local experiments must stay local or scratch-only.
 - The Docker socket mount gives Airflow local control over the host Docker daemon. Keep
   this local-only; do not use this pattern in k3s.
-- Production Airflow remains managed by `infra/helm/airflow.yml` on k3s.
+- Production Airflow runtime now lives in `/home/rnoh/dev/homelab-data-platform`.
 - Production DAGs should use `KubernetesPodOperator` with immutable GHCR image tags from
   the `Ingestion Image` workflow, not local Docker socket access.
 - Future hardening may move containers to read-only root filesystems with explicit
