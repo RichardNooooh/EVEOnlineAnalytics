@@ -100,7 +100,7 @@ def list_cached_market_history_files(
 
 
 @dlt.transformer(
-    name="market_history",
+    name="raw_market_history",
     parallelized=True,
     write_disposition={"disposition": "merge", "strategy": "delete-insert"},
     primary_key=MARKET_HISTORY_PRIMARY_KEY,

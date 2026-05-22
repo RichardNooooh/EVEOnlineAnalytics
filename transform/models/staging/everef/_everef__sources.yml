@@ -3,7 +3,8 @@ version: 2
 sources:
   - name: everef
     description: Raw Everef market-history publication contract staged for dbt cleanup.
-    schema: main
+    database: "{{ env_var('DBT_DUCKLAKE_ALIAS', 'raw_lake') }}"
+    schema: raw
     tables:
       - name: raw_market_history
         description: Daily market-history rows published from Everef archives.
