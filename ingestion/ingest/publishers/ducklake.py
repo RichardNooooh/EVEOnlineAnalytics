@@ -20,11 +20,12 @@ from ingest.storage_config import (
 )
 
 DEFAULT_DUCKLAKE_NAME = "eve_market"
+RAW_MARKET_HISTORY_RELATIVE_PATH = Path("datasets/ducklake/raw/raw_market_history")
 
 
 def local_ducklake_root() -> Path:
     """Return the repo-local DuckLake root independent of cwd."""
-    return ingestion_root() / ".local/ducklake/everef_market_history"
+    return ingestion_root() / ".local" / RAW_MARKET_HISTORY_RELATIVE_PATH
 
 
 def local_ducklake_catalog() -> str:
@@ -49,7 +50,7 @@ def ensure_local_ducklake_paths(catalog: str, storage: str) -> None:
 def mounted_ducklake_storage(data_root: str) -> str:
     """Return the mounted DuckLake file storage URL under a configured data root."""
     return (
-        mounted_data_root_path(data_root) / "ducklake/everef/market_history"
+        mounted_data_root_path(data_root) / RAW_MARKET_HISTORY_RELATIVE_PATH
     ).as_uri()
 
 
@@ -84,7 +85,7 @@ def resolve_ducklake_storage(
 
 
 def is_mounted_ducklake_storage(storage: str, *, data_root: str | None) -> bool:
-    """Return whether storage is the DuckLake path under the mounted data root."""
+    """Return whether storage is the mounted canonical root or one of its descendants."""
     if storage == local_ducklake_storage():
         return False
 
@@ -95,9 +96,12 @@ def is_mounted_ducklake_storage(storage: str, *, data_root: str | None) -> bool:
     storage_path = Path(unquote(parsed_storage.path)).expanduser().resolve()
     mounted_storage_path = (
         mounted_data_root_path(resolve_mounted_data_root(data_root))
-        / "ducklake/everef/market_history"
+        / RAW_MARKET_HISTORY_RELATIVE_PATH
     )
-    return storage_path == mounted_storage_path
+    return (
+        storage_path == mounted_storage_path
+        or mounted_storage_path in storage_path.parents
+    )
 
 
 def validate_mounted_ducklake_catalog(
