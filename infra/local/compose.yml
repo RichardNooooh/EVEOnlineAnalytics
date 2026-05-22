@@ -1,13 +1,7 @@
 name: eve-market-local
 
 x-airflow-common: &airflow-common
-  build:
-    context: ../..
-    dockerfile: infra/local/Dockerfile.airflow
-    args:
-      AIRFLOW_VERSION: ${AIRFLOW_VERSION:?Set AIRFLOW_VERSION in infra/local/versions.txt}
-      PYTHON_VERSION: ${PYTHON_VERSION:?Set PYTHON_VERSION in infra/local/versions.txt}
-  image: eve-market-airflow-local:${AIRFLOW_VERSION:?Set AIRFLOW_VERSION in infra/local/versions.txt}
+  image: apache/airflow:${AIRFLOW_VERSION:?Set AIRFLOW_VERSION in infra/local/versions.txt}-python${PYTHON_VERSION:?Set PYTHON_VERSION in infra/local/versions.txt}
   environment: &airflow-common-env
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_SECRET_KEY:?Set AIRFLOW_API_SECRET_KEY in infra/local/.env}
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
