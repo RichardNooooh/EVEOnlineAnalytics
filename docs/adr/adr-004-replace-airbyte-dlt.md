@@ -9,7 +9,7 @@ amended:
   - 2026-05-10
 ---
 
-# ADR 014 - Replace Airbyte with Python Dataset-Publishing Ingestion
+# ADR-004 - Replace Airbyte with Python Dataset-Publishing Ingestion
 
 ## Context
 
@@ -83,11 +83,11 @@ and documentation.
 
 - 2026-04-13 - Updated for the Parquet publication contract
   - This ADR originally described Python/dlt jobs that loaded into DuckDB before dbt
-    transforms. Following ADR-016, the ingestion flow is now documented as publishing
+    transforms. Following ADR-006, the ingestion flow is now documented as publishing
     file-backed datasets, with DuckDB only as local or transient compute when needed.
-    ADR-020 later refined this into DuckLake table publication over Parquet data files.
+    ADR-007 later refined this into DuckLake table publication over Parquet data files.
 
 - 2026-05-10 - Updated for DuckLake publication contract
-  - ADR-020 adopts DuckLake as the canonical table format. dlt ingestion publishes
+  - ADR-007 adopts DuckLake as the canonical table format. dlt ingestion publishes
     table changes with merge/delete-insert semantics where needed, while Parquet remains
     the physical data file format.

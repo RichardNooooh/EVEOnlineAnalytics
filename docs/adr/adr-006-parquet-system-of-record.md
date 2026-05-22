@@ -9,9 +9,9 @@ amended:
   - 2026-05-10
 ---
 
-# ADR 016 - Parquet Datasets as the System of Record
+# ADR-006 - Parquet Datasets as the System of Record
 
-> Current status: refined by ADR-020. Parquet remains the physical data file format,
+> Current status: refined by ADR-007. Parquet remains the physical data file format,
 > but DuckLake tables are now the canonical analytical table contract.
 
 ## Context
@@ -23,7 +23,7 @@ what is mutable, and what a writer is allowed to change.
 
 ## Decision
 
-This ADR originally established a Parquet dataset contract on shared storage. ADR-020
+This ADR originally established a Parquet dataset contract on shared storage. ADR-007
 refines that contract: **DuckLake tables backed by Parquet data files are now the
 system of record**.
 
@@ -104,7 +104,7 @@ boundary between unpublished scratch output and published table state.
 
 ## Amendments
 
-- 2026-05-10 - Refined by ADR-020
-  - ADR-020 adopts DuckLake as the canonical lakehouse table format. Parquet remains
+- 2026-05-10 - Refined by ADR-007
+  - ADR-007 adopts DuckLake as the canonical lakehouse table format. Parquet remains
     the physical data file format, but plain filesystem Parquet alone is no longer the
     long-term canonical table storage contract.

@@ -9,11 +9,11 @@ tags:
 amended: []
 ---
 
-# ADR 020 - DuckLake as the Canonical Lakehouse Table Format
+# ADR-007 - DuckLake as the Canonical Lakehouse Table Format
 
 ## Context
 
-ADR-016 established a Parquet dataset contract on shared storage and rejected a
+ADR-006 established a Parquet dataset contract on shared storage and rejected a
 cluster-shared writable DuckDB database file. That decision made the durable analytical
 state file-oriented and kept DuckDB in its proper role as local or transient compute.
 
@@ -55,7 +55,7 @@ The refined storage contract is:
 - Delta Lake is not used unless the project later intentionally shifts toward a
   Databricks/Spark-oriented architecture.
 
-This ADR refines ADR-016. It does not reintroduce a cluster-shared writable `.duckdb`
+This ADR refines ADR-006. It does not reintroduce a cluster-shared writable `.duckdb`
 file. DuckDB remains local or transient compute, while DuckLake provides table metadata
 and transaction semantics over data files.
 
