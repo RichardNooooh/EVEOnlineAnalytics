@@ -93,7 +93,8 @@ dbt will eventually:
 ## Local Development Lifecycle
 
 Local Compose Airflow + dlt supports the same publication-oriented development loop on
-a single workstation. It is for fast iteration and demos, not production deployment.
+a single workstation. It is for fast iteration and demos, not production deployment;
+production-style runtime is managed by the platform repo.
 
 Expected loop:
 
@@ -103,7 +104,7 @@ Expected loop:
 4. validate DAG behavior and outputs through local Airflow DockerOperator tasks
 5. commit code and contracts
 6. let CI validate changes and publish GHCR image tags from trusted `master` builds
-7. deploy to k3s with Helm and KubernetesPodOperator task pods
+7. deploy through `homelab-data-platform` into the production Airflow runtime
 
 Local storage remains an approximation of production storage. `.local/data` stands in
 for TrueNAS NFS DuckLake data-file storage, local Postgres stands in for the Airflow

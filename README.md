@@ -11,6 +11,9 @@ wiring, and production-style platform operations should use the companion
 repository `homelab-data-platform`. This repo stays focused on workload
 contracts, pipeline behavior, and local analytics development.
 
+The canonical cross-repo workload-to-platform runtime contract lives in
+`docs/runtime_contract.md`.
+
 ## Repo Map
 
 - `ingestion/`: source clients, dlt pipelines, and dataset publication logic
@@ -69,4 +72,5 @@ Expected development loop:
 5. validate in CI and publish GHCR image tags from trusted `master` builds
 6. deploy through `homelab-data-platform`
 
-See `infra/local/README.md` for local runtime details.
+See `infra/local/README.md` for local runtime details and
+`docs/runtime_contract.md` for the workload-to-platform deployment contract.
