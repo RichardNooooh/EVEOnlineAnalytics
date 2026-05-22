@@ -1,16 +1,30 @@
 # infra/
 
-Infrastructure-as-code for the homelab deployment of the eve-market-analytics
-platform. The checked-in repo currently covers Proxmox VM provisioning, Ansible-based
-k3s bootstrap, the external PostgreSQL VM for Airflow and MLflow metadata, shared NFS
-storage wiring, and the monitoring stack. PostgreSQL runs on its own Proxmox VM
-outside the cluster, not as another checked-in Kubernetes service.
+> Transition Note
+> This directory is pending migration to the companion platform repository
+> `homelab-data-platform`. The primary purpose of this repository is now the
+> analytics workload in `eve-market-analytics`, while reusable Proxmox, k3s,
+> shared-storage, monitoring, and production-style runtime ownership belongs in
+> `homelab-data-platform`. `infra/local/` remains here for now as the local
+> analytics review and demo harness.
+
+This transitional directory still contains checked-in platform assets from the
+pre-split monorepo, including Proxmox provisioning, Ansible-based k3s
+bootstrap, external PostgreSQL runtime wiring, shared NFS storage wiring, and
+monitoring stack assets. PostgreSQL runs on its own Proxmox VM outside the
+cluster, not as another checked-in Kubernetes service.
+
+Treat this file as transitional migration reference for checked-in assets, not as
+the long-term home for reusable platform operations. As extraction progresses,
+prefer `homelab-data-platform` for the durable platform story and ongoing infra
+evolution.
 
 ## Directory Structure
 
 ```text
 infra/
 ├── Makefile                    # Single entrypoint for infrastructure workflows
+├── local/                       # Local analytics review and demo harness retained here
 ├── terraform/
 │   └── proxmox/                # Layer 1: VM provisioning + inventory + secret generation
 ├── ansible/                    # Layer 2: OS config + k3s bootstrap + PostgreSQL + NFS client setup
@@ -22,6 +36,12 @@ infra/
 │   └── monitoring/             # Grafana dashboard JSON, kustomization, and rendered JSON
 └── third_party/                # Scoped licenses and provenance for vendored assets
 ```
+
+During migration, `infra/local/` remains intentionally owned by
+`eve-market-analytics` as the low-friction local review path. Other
+subdirectories in `infra/` are temporary copies pending extraction into
+`homelab-data-platform` and should be treated as transitional documentation and
+assets rather than the long-term source of truth.
 
 ## Bootstrap Order
 
