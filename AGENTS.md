@@ -54,13 +54,13 @@ Every tool has a distinct purpose. Do not add new tools without justification.
 | Transform | dbt | SQL transformations, tests, and documentation |
 | Orchestration | Airflow | DAG-based scheduling for ingestion, transforms, training, predictions, and monitoring |
 | Cloud-readiness | Snowflake + OpenTofu | Managed warehouse proof path; not steady-state runtime |
-| BI | Tableau | Market analytics visualization |
+| BI | Evidence OSS | Static market analytics and case-study reporting built from markdown and version-controlled data outputs |
 | Experiment Tracking | MLflow | Training runs, parameters, metrics, model registry |
 | Model Serving | BentoML | REST API serving trained models |
 | Model Monitoring | Evidently | Data drift, prediction drift, retraining triggers |
 | Infra Monitoring | VictoriaMetrics + Grafana | Pipeline health, durations, API errors, resource usage |
 
-Explicit non-goals: Airbyte, Great Expectations, DVC, and PowerBI.
+Explicit non-goals: Airbyte, Great Expectations, DVC, PowerBI, and Tableau.
 
 ## Global Conventions
 
@@ -100,6 +100,6 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, and PowerBI.
 
 ## Repo Split Note
 
-- Reusable platform infrastructure lives in `homelab-data-platform`.
+- Reusable platform infrastructure lives in [`homelab-data-platform`](https://github.com/RichardNooooh/HomeLabDataPlatform).
 - In this repo, `infra/local/` remains the supported local analytics reviewer/demo
   harness.

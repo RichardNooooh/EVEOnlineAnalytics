@@ -9,6 +9,7 @@ amended:
   - 2026-04-14
   - 2026-05-10
   - 2026-05-12
+  - 2026-05-22
 ---
 
 # ADR-003 - Tools Used and Not Used
@@ -21,6 +22,11 @@ and the reasoning behind them are themselves part of the architecture record.
 
 This ADR is the canonical taxonomy for the stack.
 
+After the workload/platform repository split, this ADR records **workload-owned
+analytics tooling only**. Platform implementation choices such as infrastructure
+provisioning, cluster runtime, infra monitoring, and storage products belong in
+`homelab-data-platform`, not here.
+
 ## Decision
 
 The stack is defined by the two tables below.
@@ -31,18 +37,17 @@ The stack is defined by the two tables below.
 |---|---|---|
 | **Orchestration** | Airflow | Industry-standard DAG orchestrator for ingestion, dbt, and ML jobs. |
 | **Ingestion** | Python + dlt | Lightweight, code-first ingestion approach for everef.net archives and the ESI API. See ADR-004. |
-| **Storage** | DuckLake over Parquet files on TrueNAS (ZFS RAIDZ1) + NFS | Shared storage holds DuckLake data files, contracts, artifacts, and logs. DuckLake catalog metadata is durable state and should use PostgreSQL in production-style deployments. See ADR-006 and ADR-007. |
+| **Storage** | DuckLake over Parquet files | Shared analytical storage holds DuckLake data files, contracts, artifacts, and logs. DuckLake catalog metadata is durable state and should use PostgreSQL in production-style deployments. See ADR-006 and ADR-007. |
 | **Compute** | DuckDB (local or transient only) | Embedded analytical engine used for local development and single-writer batch jobs. DuckDB databases are scratch state, not cluster-shared persistent storage. See ADR-006. |
 | **Transformation** | dbt | SQL-first transformation with built-in lineage, testing, and documentation; planned to read DuckLake-backed table state through a validated DuckLake/DuckDB handoff. |
-| **BI** | Tableau | Portfolio-standard BI tool for dashboard presentation; Tableau Public enables sharing without licensing cost. |
+| **BI** | Evidence OSS | Static BI and case-study site built from markdown, SQL, and version-controlled data outputs; self-hosted builds fit the portfolio publishing model without adding another durable analytics store. |
 | **ML Experiment Tracking** | MLflow | Tracks experiments, parameters, metrics, and model artifacts; integrates cleanly with Python training scripts and serves as the model registry. |
 | **ML Serving** | BentoML | Packages trained models as REST APIs with health checks and rolling restarts. |
 | **Model Monitoring** | Evidently | Generates data drift and model performance reports as part of the analytics workload. |
-| **Infra Monitoring** | VictoriaMetrics + Grafana | Provides dashboards for pipeline health, durations, API errors, and resource usage. |
-| **Cloud Proof - Managed Warehouse** | Snowflake (via Terraform, trial only) | Cloud-readiness proof-of-concept; Terraform resource definitions are authored, `tofu plan` is screencasted during the trial window, then the trial is allowed to expire. |
+| **Cloud Proof - Managed Warehouse** | Snowflake (trial only) | Managed warehouse proof-of-concept kept as a scoped analytics-side compatibility path rather than a steady-state runtime. |
 | **Tool Version Management** | mise | Manages analytics-scoped CLI tools such as Python, `uv`, dbt, `ruff`, and local validation utilities via `mise.toml`. Platform-only tooling belongs in `homelab-data-platform`. |
 | **Local Validation** | pre-commit | Runs repo-scoped validation before commit. |
-| **CI/CD** | GitHub Actions + GHCR + self-hosted runners | Runs validation workflows and publishes trusted ingestion container images. |
+| **CI/CD** | GitHub Actions + GHCR | Runs validation workflows and publishes trusted ingestion container images. |
 
 ### Tools explicitly not used
 
@@ -51,8 +56,8 @@ The stack is defined by the two tables below.
 | **Airbyte** | Removed after evaluation. The project has two well-defined source types, does not need Airbyte's platform overhead, and is moving toward explicit single-writer dataset publication rather than syncs into a mutable destination warehouse. See ADR-004. |
 | **Great Expectations** | Overlaps with dbt tests. dbt tests cover schema, business logic, freshness, and custom assertions sufficiently for this project's scope. |
 | **DVC** | DuckLake tables, catalog metadata, contracts, manifests, and MLflow already cover persisted analytical data and model artifacts. DVC would add a parallel versioning system with no clear incremental benefit at this scale. |
-| **PowerBI** | Tableau is the sole BI tool. Adding a second BI tool provides no incremental portfolio value and splits effort. |
-| **Terratest** | The current analytics repo does not need a separate IaC test framework for its scoped cloud-readiness proof. |
+| **Tableau** | Evidence OSS is the sole BI and case-study publishing surface. Tableau would duplicate the reporting layer and split effort across two presentation stacks. |
+| **PowerBI** | Evidence OSS is the sole BI and case-study publishing surface. Adding PowerBI provides no incremental portfolio value and splits effort. |
 
 ## Amendments
 
@@ -80,3 +85,14 @@ The stack is defined by the two tables below.
 - 2026-05-12 - Split image publishing from self-hosted validation runners
   - The ingestion image workflow uses GitHub-hosted `ubuntu-latest` runners and publishes
     trusted `master` builds to GHCR.
+
+- 2026-05-22 - Replace Tableau with Evidence OSS for BI delivery
+  - The BI layer now uses Evidence OSS instead of Tableau.
+  - Static site generation from markdown, SQL, and exported analytical outputs better fits
+    the repo's code-first portfolio positioning and self-hosted publishing model.
+
+- 2026-05-22 - Remove split-out platform tooling from the workload tool taxonomy
+  - Following the workload/platform repository split, ADR-003 now records only
+    workload-owned analytics tooling.
+  - Platform tooling and implementation-specific products such as infra monitoring,
+    storage vendors, and infrastructure automation are left to `homelab-data-platform`.

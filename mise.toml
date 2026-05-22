@@ -6,6 +6,10 @@ minimum_release_age = "7d"
 python = "3.13"
 uv = "latest"
 
+# Static site and BI tooling
+node = "22.22.3"
+npm = "10.9.8"
+
 # Tools
 jq = "latest"
 ripgrep = "latest"
