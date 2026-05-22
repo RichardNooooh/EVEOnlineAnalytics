@@ -24,7 +24,7 @@ contract**.
 - **Compute state:** local or transient execution state such as DuckDB work databases
   and `dlt` runtime scratch.
 - **Service boundary:** Kubernetes runs the application workloads, while PostgreSQL runs
-  as an external infrastructure dependency on its own Proxmox VM.
+  as an external infrastructure dependency managed by the platform repo.
 - **Forbidden pattern:** no cluster-shared writable `.duckdb` file.
 - **Guardrail:** mounted/shared DuckLake storage with a SQLite catalog is rejected.
 
@@ -185,6 +185,7 @@ durable artifact is analytical table state, not a shared mutable DuckDB database
 
 See also:
 
+- `docs/runtime_contract.md`
 - `docs/data_lifecycle.md`
 - `docs/storage_layout.md`
 - `docs/data_dictionary.md`

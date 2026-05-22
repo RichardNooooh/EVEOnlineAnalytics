@@ -28,6 +28,6 @@ task dependencies.
 
 ## Deployment Notes
 
-- Airflow metadata uses an external PostgreSQL server on its own Proxmox VM.
-- Production deployment configuration belongs in `/home/rnoh/dev/homelab-data-platform`.
+- Airflow metadata uses an external PostgreSQL service managed by the platform repo.
+- Production deployment configuration belongs in `homelab-data-platform`.
 - Airflow logs may live on shared NFS.
