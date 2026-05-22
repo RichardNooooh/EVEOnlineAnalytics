@@ -15,16 +15,30 @@ uv --project transform run dbt compile --project-dir transform --profiles-dir tr
 Default local profile writes DuckDB work state to scratch path
 `/tmp/eve_market_transform.duckdb`.
 
-The same profile also attaches the ingestion DuckLake as a read-only source alias so
-dbt reads the canonical raw publication instead of a shared writable `.duckdb` file.
+The same profile also attaches the local published DuckLake under `.local/data` as a
+read-only source alias so dbt reads the canonical raw publication instead of a shared
+writable `.duckdb` file.
+
+These defaults are for standalone local DuckLake publications under `.local/data`, not
+for the local Airflow mounted/PostgreSQL runtime.
+
+Prepare matching local published data with explicit ingestion overrides:
+
+```bash
+uv --project ingestion run eve-ingest everef run-pipeline \
+  --start-date 2025-01-01 \
+  --end-date 2025-01-31 \
+  --ducklake-catalog "sqlite:///$PWD/.local/data/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite" \
+  --ducklake-storage "file://$PWD/.local/data/datasets/ducklake/raw/raw_market_history/files"
+```
 
 ## Environment
 
 - `DBT_DUCKDB_PATH`: local DuckDB work database path. Keep this on local or transient scratch.
 - `DBT_THREADS`: dbt thread count. Defaults to `4`.
 - `DBT_DUCKLAKE_ALIAS`: attached DuckLake alias used by sources. Defaults to `raw_lake`.
-- `DBT_DUCKLAKE_ATTACH_PATH`: DuckLake attach path. Local default is `ducklake:sqlite:ingestion/.local/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite` when commands run from repo root.
-- `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `ingestion/.local/datasets/ducklake/raw/raw_market_history/files` when commands run from repo root.
+- `DBT_DUCKLAKE_ATTACH_PATH`: DuckLake attach path. Local default is `ducklake:sqlite:.local/data/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite` when commands run from repo root.
+- `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `.local/data/datasets/ducklake/raw/raw_market_history/files` when commands run from repo root.
 
 Mounted/PostgreSQL-backed example:
 
@@ -33,6 +47,22 @@ export DBT_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=eve_market_ducklake ho
 export DBT_DUCKLAKE_DATA_PATH="/opt/eve-market/data/datasets/ducklake/raw/raw_market_history"
 uv --project transform run dbt debug --project-dir transform --profiles-dir transform
 ```
+
+For PostgreSQL-backed DuckLake catalogs, `DBT_DUCKLAKE_DATA_PATH` should point at the
+mounted dataset root rather than a local sqlite `files/` child.
+
+If you want to point dbt at direct ingestion-local smoke output instead, override the
+same variables explicitly:
+
+```bash
+export DBT_DUCKLAKE_ATTACH_PATH="ducklake:sqlite:ingestion/.local/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite"
+export DBT_DUCKLAKE_DATA_PATH="ingestion/.local/datasets/ducklake/raw/raw_market_history/files"
+uv --project transform run dbt debug --project-dir transform --profiles-dir transform
+```
+
+Local Airflow backfills use mounted storage plus a PostgreSQL DuckLake catalog inside
+the compose runtime, so host-side dbt CLI should keep using the standalone local sqlite
+publication above unless you intentionally override `DBT_DUCKLAKE_*` for another target.
 
 Local smoke example:
 
@@ -63,11 +93,11 @@ attach work, mount the DuckLake catalog and files at `/app/ducklake/raw_market_h
 Otherwise override `DBT_DUCKLAKE_ATTACH_PATH` and `DBT_DUCKLAKE_DATA_PATH` to a mounted
 DuckLake location, such as a PostgreSQL-backed shared deployment.
 
-Example container smoke run with a bind mount from host local ingestion output:
+Example container smoke run with a bind mount from host local published data:
 
 ```bash
 docker run --rm \
-  -v "$PWD/ingestion/.local/datasets/ducklake/raw/raw_market_history:/app/ducklake/raw_market_history:ro" \
+  -v "$PWD/.local/data/datasets/ducklake/raw/raw_market_history:/app/ducklake/raw_market_history:ro" \
   eve-market-transform:local debug
 ```
 
