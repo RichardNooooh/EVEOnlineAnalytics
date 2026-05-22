@@ -9,6 +9,8 @@ sources:
       - name: raw_market_history
         description: Daily market-history rows published from Everef archives.
         columns:
+          - name: source
+            description: Source identifier for the published raw row.
           - name: date
             description: Source market date for this observation.
           - name: region_id
@@ -17,3 +19,27 @@ sources:
             description: Item type identifier.
           - name: average
             description: ESI market-history volume-weighted average price.
+          - name: highest
+            description: Highest observed price for the market date.
+          - name: lowest
+            description: Lowest observed price for the market date.
+          - name: order_count
+            description: Count of market orders for the market date.
+          - name: volume
+            description: Traded volume for the market date.
+          - name: _source_market_date
+            description: Source file date recorded during ingestion for lineage checks.
+          - name: _source_url
+            description: Source URL used to read or identify the published file.
+          - name: _source_local_path
+            description: Local cache path used during ingestion when available.
+          - name: _source_sha256
+            description: SHA-256 of the cached source file when available.
+          - name: _source_content_length
+            description: Source content length in bytes when available.
+          - name: _source_last_modified
+            description: Source last-modified timestamp string when available.
+          - name: _source_downloaded_at
+            description: Download timestamp string for cached source files when available.
+          - name: _ingested_at
+            description: Ingestion timestamp string recorded when the file was loaded.
