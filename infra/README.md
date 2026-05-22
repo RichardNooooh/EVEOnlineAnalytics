@@ -6,4 +6,4 @@ Use the repo-root `make local-airflow-*` targets and `infra/local/` for local
 analytics development and demos.
 
 Reusable platform infrastructure, cluster bootstrap, and production-style
-deployment live in `/home/rnoh/dev/homelab-data-platform`.
+deployment live in `homelab-data-platform`.

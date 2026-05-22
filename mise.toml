@@ -2,16 +2,9 @@
 minimum_release_age = "7d"
 
 [tools]
-# Infrastructure
-opentofu = "latest"
-
 # Python ecosystem
 python = "3.13"
 uv = "latest"
-
-# Kubernetes
-kubectl = "latest"
-helm = "latest"
 
 # Tools
 jq = "latest"
@@ -19,12 +12,6 @@ ripgrep = "latest"
 
 # Data engineering — dbt-core via pipx (not a standalone binary)
 "pipx:dbt-core" = "latest"
-
-# Ansible
-"pipx:ansible" = "latest"
-"pipx:ansible-core" = "latest"
-"pipx:ansible/ansible-lint" = "latest"
-"pipx:yamllint" = "latest"
 
 # Python linting/formatting
 ruff = "latest"

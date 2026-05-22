@@ -40,7 +40,7 @@ The stack is defined by the two tables below.
 | **Model Monitoring** | Evidently | Generates data drift and model performance reports as part of the analytics workload. |
 | **Infra Monitoring** | VictoriaMetrics + Grafana | Provides dashboards for pipeline health, durations, API errors, and resource usage. |
 | **Cloud Proof - Managed Warehouse** | Snowflake (via Terraform, trial only) | Cloud-readiness proof-of-concept; Terraform resource definitions are authored, `tofu plan` is screencasted during the trial window, then the trial is allowed to expire. |
-| **Tool Version Management** | mise | Manages pinned versions of OpenTofu, Helm, Python, dbt, Ansible, and other CLI tools via `mise.toml`. |
+| **Tool Version Management** | mise | Manages analytics-scoped CLI tools such as Python, `uv`, dbt, `ruff`, and local validation utilities via `mise.toml`. Platform-only tooling belongs in `homelab-data-platform`. |
 | **Local Validation** | pre-commit | Runs repo-scoped validation before commit. |
 | **CI/CD** | GitHub Actions + GHCR + self-hosted runners | Runs validation workflows and publishes trusted ingestion container images. |
 

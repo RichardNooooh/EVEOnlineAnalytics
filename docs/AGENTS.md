@@ -9,6 +9,7 @@ positioning.
 - `architecture.md`
 - `data_lifecycle.md`
 - `storage_layout.md`
+- `runtime_contract.md` when changing workload-to-platform runtime boundaries
 - `data_dictionary.md` when changing dataset semantics
 - `adr/` when changing durable architecture decisions
 

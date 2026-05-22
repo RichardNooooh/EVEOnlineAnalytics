@@ -30,7 +30,7 @@ engineering.
   `emptyDir` or node-local `ReadWriteOnce` volumes, never shared NFS.
 
 Primary architecture references: `docs/architecture.md`, `docs/data_lifecycle.md`,
-`docs/storage_layout.md`, ADR-006, and ADR-007.
+`docs/storage_layout.md`, `docs/runtime_contract.md`, ADR-006, and ADR-007.
 
 ## Scoped Guides
 
@@ -94,12 +94,12 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, and PowerBI.
 - Update storage architecture: start with `docs/architecture.md`,
   `docs/storage_layout.md`, and ADRs before implementation.
 - Add monitoring dashboard: update analytics-side requirements here and make
-  platform runtime/dashboard changes in `/home/rnoh/dev/homelab-data-platform`.
+  platform runtime/dashboard changes in `homelab-data-platform`.
 - Diagnose errors: identify likely fixes, then validate with local evidence or online
   references when useful.
 
 ## Repo Split Note
 
-- Reusable platform infrastructure lives in `/home/rnoh/dev/homelab-data-platform`.
+- Reusable platform infrastructure lives in `homelab-data-platform`.
 - In this repo, `infra/local/` remains the supported local analytics reviewer/demo
   harness.

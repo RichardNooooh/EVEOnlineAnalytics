@@ -3,8 +3,12 @@
 Local-only Airflow + dlt development and demo stack. It supports fast ingestion
 iteration and portfolio demos without Proxmox, k3s, TrueNAS, or Helm.
 
-This stack is not production. It does not replace the canonical k3s + Helm deployment
-or the TrueNAS-backed DuckLake storage contract.
+This stack is not production. It does not replace the production-style runtime
+or the TrueNAS-backed DuckLake storage contract. Production-style deployment is
+managed in `homelab-data-platform`.
+
+The canonical cross-repo runtime boundary for this local harness and the
+production-style platform repo lives in `docs/runtime_contract.md`.
 
 ## Production Mapping
 
@@ -23,8 +27,8 @@ or the TrueNAS-backed DuckLake storage contract.
 - Mounted repo directories for DAGs, ingestion, dbt, contracts, local published data, and logs
 - Docker socket mount for local-only `DockerOperator` task containers
 
-`orchestration/dags` is mounted when present. The directory is part of the target repo
-layout, but no DAGs are tracked yet.
+`orchestration/dags` is mounted directly from this repo so local Airflow sees the same
+checked-in DAG code used for workload development.
 
 ## Mounts
 
@@ -111,7 +115,7 @@ make local-airflow-docker-smoke
 3. validate through local Airflow
 4. commit
 5. validate in CI and publish GHCR image tags from trusted `master` builds
-6. deploy to k3s
+6. deploy through `homelab-data-platform`
 
 ## Notes
 
@@ -125,7 +129,7 @@ make local-airflow-docker-smoke
 - DuckDB files created by local experiments must stay local or scratch-only.
 - The Docker socket mount gives Airflow local control over the host Docker daemon. Keep
   this local-only; do not use this pattern in k3s.
-- Production Airflow runtime now lives in `/home/rnoh/dev/homelab-data-platform`.
+- Production-style Airflow runtime is managed in `homelab-data-platform`.
 - Production DAGs should use `KubernetesPodOperator` with immutable GHCR image tags from
   the `Ingestion Image` workflow, not local Docker socket access.
 - Future hardening may move containers to read-only root filesystems with explicit
