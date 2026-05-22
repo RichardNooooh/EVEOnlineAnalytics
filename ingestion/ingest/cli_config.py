@@ -42,7 +42,7 @@ class EverefMarketHistoryCliConfig:
     storage: StorageCliConfig = field(default_factory=StorageCliConfig)
     raw_files: RawFilesCliConfig = field(default_factory=RawFilesCliConfig)
     pipeline_name: str = "everef_market_history"
-    dataset_name: str = "everef_market_history"
+    dataset_name: str = "raw"
     destination: str = "ducklake"
     ducklake_name: str | None = None
     ducklake_catalog: str | None = None

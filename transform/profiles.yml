@@ -6,3 +6,14 @@ eve_market_transform:
       path: "{{ env_var('DBT_DUCKDB_PATH', '/tmp/eve_market_transform.duckdb') }}"
       schema: main
       threads: "{{ env_var('DBT_THREADS', '4') | int }}"
+      extensions:
+        - ducklake
+        - sqlite
+        - postgres
+      attach:
+        - path: "{{ env_var('DBT_DUCKLAKE_ATTACH_PATH', 'ducklake:sqlite:ingestion/.local/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite') }}"
+          alias: "{{ env_var('DBT_DUCKLAKE_ALIAS', 'raw_lake') }}"
+          read_only: true
+          is_ducklake: true
+          options:
+            data_path: "{{ env_var('DBT_DUCKLAKE_DATA_PATH', 'ingestion/.local/datasets/ducklake/raw/raw_market_history/files') }}"

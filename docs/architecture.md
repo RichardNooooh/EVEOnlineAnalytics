@@ -45,7 +45,7 @@ Compute is local and disposable.
 Airflow
   -> dataset writer / publisher
   -> raw or bronze DuckLake tables backed by Parquet files
-  -> dbt reads canonical table state through a validated DuckLake/DuckDB handoff
+  -> dbt reads canonical table state through an attached DuckLake alias in scratch DuckDB
   -> curated DuckLake tables and/or transient local DuckDB work DB
   -> ML training, dashboards, and APIs consume published table state
 ```

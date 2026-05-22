@@ -36,11 +36,11 @@ def test_ducklake_destination_uses_local_defaults(
     assert credentials.storage == ducklake_pub.local_ducklake_storage()
     assert credentials.catalog.startswith("sqlite:///")
     assert credentials.catalog.endswith(
-        "/ingestion/.local/ducklake/everef_market_history/lake_catalog.sqlite"
+        "/ingestion/.local/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite"
     )
     assert credentials.storage.startswith("file://")
     assert credentials.storage.endswith(
-        "/ingestion/.local/ducklake/everef_market_history/files"
+        "/ingestion/.local/datasets/ducklake/raw/raw_market_history/files"
     )
 
 
@@ -107,7 +107,7 @@ def test_ducklake_destination_uses_mounted_storage_target_with_explicit_catalog(
     assert credentials.catalog == "postgresql://lake/catalog"
     assert (
         credentials.storage
-        == "file:///opt/eve-market/data/ducklake/everef/market_history"
+        == "file:///opt/eve-market/data/datasets/ducklake/raw/raw_market_history"
     )
 
 
@@ -145,6 +145,31 @@ def test_ducklake_destination_allows_mounted_storage_with_postgres_catalog(
     assert credentials.storage == mounted_storage
 
 
+def test_ducklake_destination_rejects_descendant_of_mounted_storage_with_default_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_ducklake(monkeypatch)
+
+    with pytest.raises(
+        ValueError,
+        match="mounted DuckLake storage requires a non-local catalog.*PostgreSQL",
+    ):
+        ducklake_pub.build_destination_config(
+            "ducklake",
+            ducklake_storage=(
+                "file:///mnt/data/datasets/ducklake/raw/raw_market_history/backfill/date=2025-01-01"
+            ),
+            data_root="/mnt/data",
+        )
+
+
+def test_is_mounted_ducklake_storage_rejects_sibling_path() -> None:
+    assert not ducklake_pub.is_mounted_ducklake_storage(
+        "file:///mnt/data/datasets/ducklake/raw/raw_market_orders",
+        data_root="/mnt/data",
+    )
+
+
 def test_ducklake_destination_uses_data_root_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -158,7 +183,10 @@ def test_ducklake_destination_uses_data_root_override(
     )
 
     credentials = destination_config["credentials"]
-    assert credentials.storage == "file:///mnt/arg-root/ducklake/everef/market_history"
+    assert (
+        credentials.storage
+        == "file:///mnt/arg-root/datasets/ducklake/raw/raw_market_history"
+    )
 
 
 def test_ducklake_storage_override_skips_mounted_data_root(

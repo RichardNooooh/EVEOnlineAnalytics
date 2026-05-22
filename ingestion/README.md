@@ -39,7 +39,8 @@ uv --project ingestion run eve-ingest everef run-pipeline \
 ```
 
 Default local output uses DuckLake storage under
-`ingestion/.local/ducklake/everef_market_history` with local SQLite catalog.
+`ingestion/.local/datasets/ducklake/raw/raw_market_history` with local SQLite
+catalog.
 When using the packaged host CLI, `dlt` runtime state stays repo-local under
 `ingestion/.dlt/.var/<profile>/`, and local runtime artifacts stay under
 `ingestion/.local/`.
@@ -58,8 +59,9 @@ uv --project ingestion run eve-ingest everef run-pipeline \
   --raw-ledger-url postgresql://user:password@postgres.example/eve_market_raw_files
 ```
 
-Mounted storage resolves under `/opt/eve-market/data` by default. Workload must
-mount shared storage there, or set `--data-root`.
+Mounted storage resolves under
+`/opt/eve-market/data/datasets/ducklake/raw/raw_market_history` by default.
+Workload must mount shared storage there, or set `--data-root`.
 
 Containerized Docker, Airflow, and Kubernetes runs should keep `dlt` runtime state on
 explicit ephemeral scratch, separate from DuckLake durable storage and any shared

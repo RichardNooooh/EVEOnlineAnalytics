@@ -10,6 +10,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DBT_PROFILES_DIR=/app \
     DBT_PROJECT_DIR=/app \
     DBT_DUCKDB_PATH=/tmp/eve_market_transform.duckdb \
+    DBT_DUCKLAKE_ALIAS=raw_lake \
+    DBT_DUCKLAKE_ATTACH_PATH=ducklake:sqlite:/app/ducklake/raw_market_history/lake_catalog.sqlite \
+    DBT_DUCKLAKE_DATA_PATH=/app/ducklake/raw_market_history/files \
     PATH="/app/.venv/bin:${PATH}"
 
 WORKDIR /app
@@ -43,7 +46,7 @@ COPY models ./models
 COPY seeds ./seeds
 COPY tests ./tests
 
-RUN mkdir -p /app/.dbt /tmp \
+RUN mkdir -p /app/.dbt /app/ducklake/raw_market_history /tmp \
     && chown -R app:app /app /tmp
 
 USER app
