@@ -88,8 +88,8 @@ Local-to-production mapping:
 - `.local/data` approximates TrueNAS NFS storage for DuckLake data files
 - local Postgres approximates the Airflow metadata database and raw-file acquisition
   ledger database
-- bind-mounted DAGs and source code approximate the deployed Airflow image or DAG/code
-  sync mechanism
+- stock `apache/airflow` containers plus bind-mounted DAGs and source code approximate
+  the deployed Airflow image or DAG/code sync mechanism
 - local DockerOperator task containers approximate KubernetesPodOperator pods that run
   GHCR-published ingestion images in k3s
 

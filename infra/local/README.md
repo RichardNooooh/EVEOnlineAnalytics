@@ -57,6 +57,7 @@ make local-airflow-up
 
 Open Airflow at <http://localhost:8080>. Default local login is `admin` / `admin` unless changed in `infra/local/.env`.
 Change local Airflow and Python image versions in `infra/local/versions.txt`.
+This harness uses the stock `apache/airflow` reference image.
 
 Build the ingestion task image used by local `DockerOperator` DAGs:
 
@@ -100,7 +101,9 @@ make local-airflow-reset CONFIRM=yes
 make local-pipeline-smoke
 ```
 
-Smoke check verifies Airflow metadata DB connectivity, importable Airflow/dlt/dbt/DuckDB dependencies, and expected mount roots.
+Smoke check verifies Airflow metadata DB connectivity, expected mount roots, and
+that Airflow can parse the checked-in `backfill_market_history` DAG with stock
+providers.
 
 Smoke check the local DockerOperator path:
 

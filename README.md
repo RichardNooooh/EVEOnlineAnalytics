@@ -36,8 +36,8 @@ This is the local development and reviewer demo harness for the analytics repo.
 
 Local Compose stack provides fast ingestion iteration and portfolio demo access without
 requiring Proxmox, k3s, TrueNAS, or Helm. It runs Airflow with a local Postgres
-metadata database, bind-mounted DAGs and project code, and local DuckLake data-file
-storage under `.local/data`.
+metadata database, stock `apache/airflow` containers, bind-mounted DAGs and project
+code, and local DuckLake data-file storage under `.local/data`.
 
 This runtime is a development harness, not production. It does not replace the
 analytics architecture documented in `docs/architecture.md`. Production-style
