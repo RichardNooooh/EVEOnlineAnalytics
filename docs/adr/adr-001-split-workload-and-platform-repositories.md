@@ -9,7 +9,7 @@ tags:
 amended: []
 ---
 
-# ADR 022 - Split Workload and Platform Repositories
+# ADR-001 - Split Workload and Platform Repositories
 
 ## Context
 

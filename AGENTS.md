@@ -30,7 +30,7 @@ engineering.
   `emptyDir` or node-local `ReadWriteOnce` volumes, never shared NFS.
 
 Primary architecture references: `docs/architecture.md`, `docs/data_lifecycle.md`,
-`docs/storage_layout.md`, ADR-016, and ADR-020.
+`docs/storage_layout.md`, ADR-006, and ADR-007.
 
 ## Scoped Guides
 

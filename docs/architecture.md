@@ -188,5 +188,5 @@ See also:
 - `docs/data_lifecycle.md`
 - `docs/storage_layout.md`
 - `docs/data_dictionary.md`
-- `docs/adr/adr-016-parquet-system-of-record.md`
-- `docs/adr/adr-020-ducklake-canonical-table-format.md`
+- `docs/adr/adr-006-parquet-system-of-record.md`
+- `docs/adr/adr-007-ducklake-canonical-table-format.md`
