@@ -29,7 +29,7 @@ logs/
 profiles.yml
 target/
 .user.yml
-!transform/profiles.yml
+!transformation/profiles.yml
 
 # Local DuckDB scratch files
 *.db

@@ -18,7 +18,7 @@ The canonical cross-repo workload-to-platform runtime contract lives in
 
 - `ingestion/`: source clients, dlt pipelines, and dataset publication logic
 - `datasets/`: contracts, schemas, reference data, and manifests
-- `transform/`: dbt models, tests, and feature-building SQL
+- `transformation/`: dbt models, tests, and feature-building SQL
 - `orchestration/`: Airflow DAGs and scheduling logic
 - `experiments/`: validation work, model experiments, and evidence
 - `docs/`: architecture, storage, lifecycle, and ADRs
