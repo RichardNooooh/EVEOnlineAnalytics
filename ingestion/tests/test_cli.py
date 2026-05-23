@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import types
 from pathlib import Path
 
 from ingest import (
@@ -12,6 +14,7 @@ from ingest import (
 from ingest.cli import (
     build_everef_market_history_config,
     build_raw_files_sync_config,
+    main,
 )
 from ingest.cli_config import (
     DateRangeCliConfig,
@@ -154,18 +157,22 @@ def test_configure_runtime_environment_defaults_dlt_project_dir(
     project_dir = configure_runtime_environment()
 
     assert os.environ["DLT_PROJECT_DIR"] == str(project_dir)
-    assert "DLT_DATA_DIR" not in os.environ
-    assert "DLT_LOCAL_DIR" not in os.environ
+    assert os.environ["DLT_DATA_DIR"] == str(project_dir / ".dlt" / ".var")
+    assert os.environ["DLT_LOCAL_DIR"] == str(project_dir / ".local")
 
 
 def test_configure_runtime_environment_preserves_override(monkeypatch) -> None:
     monkeypatch.setenv("DLT_PROJECT_DIR", "/tmp/custom-dlt-project")
     monkeypatch.delenv(DLT_STATE_DIR_ENV, raising=False)
+    monkeypatch.delenv("DLT_DATA_DIR", raising=False)
+    monkeypatch.delenv("DLT_LOCAL_DIR", raising=False)
 
     project_dir = configure_runtime_environment()
 
     assert project_dir == Path("/tmp/custom-dlt-project")
     assert os.environ["DLT_PROJECT_DIR"] == "/tmp/custom-dlt-project"
+    assert os.environ["DLT_DATA_DIR"] == "/tmp/custom-dlt-project/.dlt/.var"
+    assert os.environ["DLT_LOCAL_DIR"] == "/tmp/custom-dlt-project/.local"
 
 
 def test_configure_runtime_environment_sets_explicit_dlt_scratch(
@@ -200,6 +207,16 @@ def test_should_activate_dlt_workspace_skips_direct_dlt_env_override(
     assert should_activate_dlt_workspace() is False
 
 
+def test_should_activate_dlt_workspace_skips_explicit_default_path_override(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv(DLT_STATE_DIR_ENV, raising=False)
+    project_dir = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("DLT_DATA_DIR", str(project_dir / ".dlt" / ".var"))
+
+    assert should_activate_dlt_workspace() is False
+
+
 def test_activate_dlt_workspace_uses_repo_local_state(monkeypatch) -> None:
     monkeypatch.delenv(DLT_STATE_DIR_ENV, raising=False)
     monkeypatch.delenv("DLT_DATA_DIR", raising=False)
@@ -216,6 +233,48 @@ def test_activate_dlt_workspace_uses_repo_local_state(monkeypatch) -> None:
     assert Path(ctx.settings_dir) == project_dir / ".dlt"
     assert Path(ctx.data_dir).is_relative_to(project_dir / ".dlt" / ".var")
     assert Path(ctx.local_dir) == project_dir / ".local"
+
+
+def test_main_activates_workspace_before_importing_pipeline(monkeypatch) -> None:
+    call_order: list[str] = []
+
+    def fake_activate() -> Path:
+        call_order.append("activate")
+        return Path("/tmp/project")
+
+    def fake_run(_config) -> str:
+        call_order.append("run")
+        return "load-info"
+
+    pipeline_module = types.ModuleType("ingest.pipelines.everef")
+    pipeline_module.run_everef_market_history_pipeline = fake_run
+
+    real_import = __import__
+
+    def tracking_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "ingest.pipelines.everef":
+            call_order.append("import")
+            sys.modules[name] = pipeline_module
+            return pipeline_module
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("ingest.cli.activate_dlt_workspace", fake_activate)
+    monkeypatch.setattr("builtins.__import__", tracking_import)
+    monkeypatch.delitem(sys.modules, "ingest.pipelines.everef", raising=False)
+
+    exit_code = main(
+        [
+            "everef",
+            "run-pipeline",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2025-01-01",
+        ]
+    )
+
+    assert exit_code == 0
+    assert call_order == ["activate", "import", "run"]
 
 
 def cli_parser():

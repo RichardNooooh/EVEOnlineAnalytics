@@ -47,7 +47,9 @@ while Docker Compose and k3s/Airflow-style deployments use PostgreSQL via
 The packaged host ingestion CLI keeps `dlt` runtime state repo-local under
 `ingestion/.dlt/.var/<profile>/` and `ingestion/.local/`. Containerized Docker,
 Airflow, and Kubernetes runs should use explicit ephemeral scratch for `dlt` runtime
-state rather than shared NFS or DuckLake durable storage paths.
+state rather than shared NFS or DuckLake durable storage paths. Direct host CLI smoke
+output under `ingestion/.local/` is separate from the local reviewer-stack publication
+path under repo-root `.local/data`.
 
 ## Dataset Naming
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 
-from ingest import configure_runtime_environment
+from ingest import activate_dlt_workspace
 from ingest.cli_config import (
     DateRangeCliConfig,
     EverefMarketHistoryCliConfig,
@@ -155,7 +155,7 @@ def build_raw_files_parser(raw_files_parser: argparse.ArgumentParser) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    configure_runtime_environment()
+    activate_dlt_workspace()
     parser = build_parser()
     args = parser.parse_args(argv)
 

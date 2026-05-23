@@ -47,6 +47,10 @@ storage. Current ingestion image defaults that scratch to `/scratch/dlt` for pip
 state and `/scratch/local` for local runtime artifacts. The repo-local
 `ingestion/.dlt/.var/<profile>/` and `ingestion/.local/` convention applies to the
 packaged host CLI, not to DockerOperator or later Kubernetes-style runs.
+If you want reviewer-style local published data for transform work, publish it through
+this stack so dataset files land under repo-root `.local/data`. Host-side dbt may
+still need `DBT_DUCKLAKE_*` overrides when reading the matching PostgreSQL-backed
+DuckLake catalog.
 
 ## Start
 
@@ -114,8 +118,8 @@ make local-airflow-docker-smoke
 ## Development Loop
 
 1. edit ingestion and dlt code
-2. run locally
-3. validate through local Airflow
+2. run or backfill through local Airflow
+3. use repo-root `.local/data` as local reviewer-stack publication output
 4. commit
 5. validate in CI and publish GHCR image tags from trusted `master` builds
 6. deploy through `homelab-data-platform`
