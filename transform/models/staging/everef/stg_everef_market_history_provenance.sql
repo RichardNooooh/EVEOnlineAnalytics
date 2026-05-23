@@ -1,6 +1,5 @@
 with source as (
     select
-        cast(source as varchar) as source,
         cast(date as date) as date,
         cast(region_id as bigint) as region_id,
         cast(type_id as bigint) as type_id,
@@ -16,7 +15,6 @@ with source as (
 )
 
 select
-    source,
     date,
     region_id,
     type_id,

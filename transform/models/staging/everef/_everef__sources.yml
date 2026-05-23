@@ -9,8 +9,6 @@ sources:
       - name: raw_market_history
         description: Daily market-history rows published from Everef archives.
         columns:
-          - name: source
-            description: Source identifier for the published raw row.
           - name: date
             description: Source market date for this observation.
           - name: region_id
