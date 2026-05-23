@@ -91,8 +91,8 @@ Table partitioning and replacement scope should be driven by reader and writer b
 Current planned rules:
 
 - market history tables use `date` as the primary Everef replacement scope and include
-  `source`, `region_id`, and `type_id`
-- market order snapshot tables partition by `source`, `region_id`, and snapshot time
+  `region_id` and `type_id`
+- market order snapshot tables partition by `region_id` and snapshot time
   bucket such as `snapshot_date` or a timestamp partition
 - curated tables partition by the smallest stable unit that supports rebuild and
   efficient downstream reads, typically `date` and optionally `region_id`
