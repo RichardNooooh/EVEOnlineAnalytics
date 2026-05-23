@@ -17,3 +17,5 @@ eve_market_transform:
           is_ducklake: true
           options:
             data_path: "{{ env_var('DBT_DUCKLAKE_DATA_PATH', '../.local/data/datasets/ducklake/raw/raw_market_history/files') }}"
+            metadata_schema: "{{ env_var('DBT_DUCKLAKE_METADATA_SCHEMA', 'main') }}"
+            override_data_path: "{{ env_var('DBT_DUCKLAKE_OVERRIDE_DATA_PATH', '0') }}"
