@@ -62,6 +62,9 @@ make local-airflow-up
 Open Airflow at <http://localhost:8080>. Default local login is `admin` / `admin` unless changed in `infra/local/.env`.
 Change local Airflow and Python image versions in `infra/local/versions.txt`.
 This harness uses the stock `apache/airflow` reference image.
+The local Postgres service is also published to the host by default at
+`127.0.0.1:5432` so host-side dbt can attach to the reviewer-stack DuckLake catalog.
+If that port is already in use, set `POSTGRES_HOST_PORT` in `infra/local/.env`.
 
 Build the ingestion task image used by local `DockerOperator` DAGs:
 
