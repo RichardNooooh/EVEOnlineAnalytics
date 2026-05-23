@@ -65,6 +65,8 @@ These are host-driven runs such as local ingestion CLI usage without Docker Comp
 - local SQLite raw-file ledger is valid for direct local runs
 - local SQLite DuckLake catalog is valid only when using non-mounted local smoke
   storage
+- direct host CLI smoke output under `ingestion/.local/` is separate from the
+  default transform/dbt local source path under repo-root `.local/data`
 - any DuckDB database remains local-only scratch
 
 ### Local Docker Compose runs
@@ -80,6 +82,8 @@ These are the reviewer/development runtime flows under `infra/local/`.
 - task containers use explicit ephemeral scratch for `dlt` runtime state rather
   than repo-local host paths
 - local task image may use `eve-market-ingestion:local`
+- when you want reviewer-stack local data for transform work, publish it through this
+  Docker Compose path so data files land under `.local/data`
 
 ### Kubernetes / production-style runs
 

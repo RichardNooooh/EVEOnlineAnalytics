@@ -19,26 +19,34 @@ The same profile also attaches the local published DuckLake under `.local/data` 
 read-only source alias so dbt reads the canonical raw publication instead of a shared
 writable `.duckdb` file.
 
-These defaults are for standalone local DuckLake publications under `.local/data`, not
-for the local Airflow mounted/PostgreSQL runtime.
+The default host profile expects a standalone local SQLite publication under
+repo-root `.local/data`. Plain host `uv --project ingestion run eve-ingest ...`
+smoke runs write under `ingestion/.local/`, so they do not populate that default
+transform/dbt source path. Reviewer-style local publications should come from the
+Docker + Airflow stack under `infra/local/`, but host-side dbt then needs
+`DBT_DUCKLAKE_*` overrides for the PostgreSQL-backed DuckLake catalog.
 
-Prepare matching local published data with explicit ingestion overrides:
+Populate reviewer-style local data through the Docker + Airflow path:
 
 ```bash
-uv --project ingestion run eve-ingest everef run-pipeline \
-  --start-date 2025-01-01 \
-  --end-date 2025-01-31 \
-  --ducklake-catalog "sqlite:///$PWD/.local/data/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite" \
-  --ducklake-storage "file://$PWD/.local/data/datasets/ducklake/raw/raw_market_history/files"
+cp infra/local/.env.example infra/local/.env
+make local-airflow-up
+make ingestion-image
 ```
+
+Then trigger the `backfill_market_history` DAG in Airflow so published DuckLake data
+files land under repo-root `.local/data`.
+When reading that reviewer-stack publication from host dbt, set
+`DBT_DUCKLAKE_*` to the matching PostgreSQL-backed DuckLake target instead of
+using the default local SQLite attach path.
 
 ## Environment
 
 - `DBT_DUCKDB_PATH`: local DuckDB work database path. Keep this on local or transient scratch.
 - `DBT_THREADS`: dbt thread count. Defaults to `4`.
 - `DBT_DUCKLAKE_ALIAS`: attached DuckLake alias used by sources. Defaults to `raw_lake`.
-- `DBT_DUCKLAKE_ATTACH_PATH`: DuckLake attach path. Local default is `ducklake:sqlite:.local/data/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite` when commands run from repo root.
-- `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `.local/data/datasets/ducklake/raw/raw_market_history/files` when commands run from repo root.
+- `DBT_DUCKLAKE_ATTACH_PATH`: DuckLake attach path. Local default is `ducklake:sqlite:.local/data/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite` when commands run from repo root against a standalone local SQLite publication.
+- `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `.local/data/datasets/ducklake/raw/raw_market_history/files` when commands run from repo root against a standalone local SQLite publication.
 
 Mounted/PostgreSQL-backed example:
 
@@ -61,8 +69,11 @@ uv --project transform run dbt debug --project-dir transform --profiles-dir tran
 ```
 
 Local Airflow backfills use mounted storage plus a PostgreSQL DuckLake catalog inside
-the compose runtime, so host-side dbt CLI should keep using the standalone local sqlite
-publication above unless you intentionally override `DBT_DUCKLAKE_*` for another target.
+the compose runtime while publishing local files into repo-root `.local/data`. Use that
+Docker + Airflow path when you want reviewer-style local data available for transform
+work. The default host-side dbt CLI still expects a standalone local SQLite catalog, so
+point it at the appropriate target with `DBT_DUCKLAKE_*` overrides when you are reading
+either compose-published PostgreSQL-backed data or direct host ingestion smoke output.
 
 Local smoke example:
 

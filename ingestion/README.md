@@ -44,6 +44,12 @@ catalog.
 When using the packaged host CLI, `dlt` runtime state stays repo-local under
 `ingestion/.dlt/.var/<profile>/`, and local runtime artifacts stay under
 `ingestion/.local/`.
+This host-path output is for direct smoke testing only. The default transform/dbt
+profile does not read from `ingestion/.local/`. If you want local data for the
+reviewer-style transform flow, publish it through the local Docker + Airflow stack
+under `infra/local/` instead of relying on the host CLI smoke path. Host-side dbt
+may still need `DBT_DUCKLAKE_*` overrides when reading that PostgreSQL-backed
+reviewer-stack publication.
 
 ## Airflow + Kubernetes
 
@@ -62,6 +68,9 @@ uv --project ingestion run eve-ingest everef run-pipeline \
 Mounted storage resolves under
 `/opt/eve-market/data/datasets/ducklake/raw/raw_market_history` by default.
 Workload must mount shared storage there, or set `--data-root`.
+In the local reviewer stack, this mounted path is backed by repo-root
+`.local/data`, which is the local published-data file root used by the Docker +
+Airflow reviewer flow.
 
 Containerized Docker, Airflow, and Kubernetes runs should keep `dlt` runtime state on
 explicit ephemeral scratch, separate from DuckLake durable storage and any shared
@@ -101,3 +110,5 @@ uv --project ingestion run eve-ingest everef sync-raw-files \
 - Host packaged CLI keeps repo-local `dlt` state under `ingestion/.dlt/.var/<profile>/`
   and `ingestion/.local/`; containerized runtimes should use `/scratch`-backed
   ephemeral scratch instead.
+- If you want local reviewer-stack data for transform work, publish it through the
+  local Docker + Airflow path rather than the host CLI smoke path.
