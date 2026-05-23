@@ -34,7 +34,6 @@ Durable Parquet representation of source market history records.
 
 Expected contract elements:
 
-- source identifier
 - region identifier
 - type identifier
 - observation date
@@ -50,7 +49,6 @@ Durable DuckLake-backed representation of market order snapshots.
 
 Expected contract elements:
 
-- source identifier
 - region identifier
 - snapshot timestamp
 - buy or sell side flags
