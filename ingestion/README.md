@@ -102,6 +102,17 @@ uv --project ingestion run eve-ingest everef sync-raw-files \
   and `ETag` in addition to `totals.json`.
 - `--chunksize`: override pandas CSV chunk size when tuning memory or throughput.
 
+## Rerun Note
+
+Repeated `everef run-pipeline` executions for same date range are not currently a
+no-op. Even when raw files are unchanged, `--sync-raw` still checks source
+metadata and the load step still rereads cached CSVs and republishes affected
+`date` partitions into DuckLake.
+
+Possible future optimization: persist publication fingerprints for cached raw
+inputs and skip reruns whose requested date range is already published from the
+same raw-file content.
+
 ## Guardrails
 
 - Mounted/shared DuckLake storage needs PostgreSQL catalog.
