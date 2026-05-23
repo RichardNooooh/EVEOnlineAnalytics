@@ -37,9 +37,9 @@ make -C .. ingestion-image
 
 Then trigger the `backfill_market_history` DAG in Airflow so published DuckLake data
 files land under repo-root `.local/data`.
-When reading that reviewer-stack publication from host dbt, set
-`DBT_DUCKLAKE_*` to the matching PostgreSQL-backed DuckLake target instead of
-using the default local SQLite attach path.
+The local compose stack now also exposes its Postgres catalog on the host by default
+at `127.0.0.1:5432`, so host dbt can attach directly to that PostgreSQL-backed
+DuckLake catalog instead of using the default local SQLite attach path.
 
 ## Environment
 
@@ -48,6 +48,8 @@ using the default local SQLite attach path.
 - `DBT_DUCKLAKE_ALIAS`: attached DuckLake alias used by sources. Defaults to `raw_lake`.
 - `DBT_DUCKLAKE_ATTACH_PATH`: DuckLake attach path. Local default is `ducklake:sqlite:../.local/data/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite` when commands run from `transformation/` against a standalone local SQLite publication.
 - `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `../.local/data/datasets/ducklake/raw/raw_market_history/files` when commands run from `transformation/` against a standalone local SQLite publication.
+- `DBT_DUCKLAKE_METADATA_SCHEMA`: DuckLake metadata schema inside the catalog database. Defaults to `main`; Airflow-backed local publications use `eve_market`.
+- `DBT_DUCKLAKE_OVERRIDE_DATA_PATH`: Override the catalog's stored data path for the current connection. Use `0` or `1`. Defaults to `0`; host-side Airflow reads use `1` because the catalog stores the container path.
 
 Mounted/PostgreSQL-backed example:
 
@@ -75,6 +77,21 @@ Docker + Airflow path when you want reviewer-style local data available for tran
 work. The default host-side dbt CLI still expects a standalone local SQLite catalog, so
 point it at the appropriate target with `DBT_DUCKLAKE_*` overrides when you are reading
 either compose-published PostgreSQL-backed data or direct host ingestion smoke output.
+
+For a copy-pasteable host-side local Airflow example, see
+`dbt-airflow-local.env.example.sh`.
+From `transformation/` you can run:
+
+```bash
+source ./dbt-airflow-local.env.example.sh
+uv run dbt debug --profiles-dir .
+uv run dbt parse --profiles-dir .
+uv run dbt compile --profiles-dir .
+uv run dbt build --profiles-dir .
+```
+
+If `5432` is already in use on your host, set `POSTGRES_HOST_PORT` in
+`infra/local/.env` and update `DBT_DUCKLAKE_ATTACH_PATH` to match.
 
 Local smoke example:
 
