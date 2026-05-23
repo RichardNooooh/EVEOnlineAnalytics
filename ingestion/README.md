@@ -1,16 +1,15 @@
 # Ingestion
 
-Standalone Python project for source-specific ingestion. Commands below assume repo
-root with `uv --project ingestion`. If you are already in `ingestion/`, use
-`uv run` instead.
+Standalone Python project for source-specific ingestion. Commands below assume you
+are already in `ingestion/`.
 
 ## Images
 
 Ingestion image construction is automated by CLI and repo workflows. Manual builds
-are still one command from repo root:
+are still one command from `ingestion/`:
 
 ```bash
-docker build -f ingestion/Dockerfile -t eve-market-ingestion:local ingestion
+docker build -f Dockerfile -t eve-market-ingestion:local .
 ```
 
 The container entrypoint is `eve-ingest`, so pass normal CLI args after the
@@ -32,7 +31,7 @@ docker run --rm eve-market-ingestion:local everef run-pipeline \
 For direct host execution with same defaults:
 
 ```bash
-uv --project ingestion run eve-ingest everef run-pipeline \
+uv run eve-ingest everef run-pipeline \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --sync-raw
@@ -44,9 +43,10 @@ catalog.
 When using the packaged host CLI, `dlt` runtime state stays repo-local under
 `ingestion/.dlt/.var/<profile>/`, and local runtime artifacts stay under
 `ingestion/.local/`.
-This host-path output is for direct smoke testing only. The default transform/dbt
-profile does not read from `ingestion/.local/`. If you want local data for the
-reviewer-style transform flow, publish it through the local Docker + Airflow stack
+This host-path output is for direct smoke testing only. The default
+transformation/dbt profile does not read from `ingestion/.local/`. If you want
+local data for the reviewer-style transform flow, publish it through the local
+Docker + Airflow stack
 under `infra/local/` instead of relying on the host CLI smoke path. Host-side dbt
 may still need `DBT_DUCKLAKE_*` overrides when reading that PostgreSQL-backed
 reviewer-stack publication.
@@ -57,7 +57,7 @@ Mounted/shared DuckLake storage needs durable catalog such as PostgreSQL. Local
 SQLite catalog is only for local smoke tests.
 
 ```bash
-uv --project ingestion run eve-ingest everef run-pipeline \
+uv run eve-ingest everef run-pipeline \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --storage-target mounted \
@@ -81,7 +81,7 @@ PostgreSQL-backed services.
 Raw-file sync can also run as separate step before load:
 
 ```bash
-uv --project ingestion run eve-ingest everef sync-raw-files \
+uv run eve-ingest everef sync-raw-files \
   --start-date 2025-01-01 \
   --end-date 2025-01-31 \
   --storage-target mounted \

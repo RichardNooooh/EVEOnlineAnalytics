@@ -11,9 +11,9 @@ eve_market_transform:
         - sqlite
         - postgres
       attach:
-        - path: "{{ env_var('DBT_DUCKLAKE_ATTACH_PATH', 'ducklake:sqlite:.local/data/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite') }}"
+        - path: "{{ env_var('DBT_DUCKLAKE_ATTACH_PATH', 'ducklake:sqlite:../.local/data/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite') }}"
           alias: "{{ env_var('DBT_DUCKLAKE_ALIAS', 'raw_lake') }}"
           read_only: true
           is_ducklake: true
           options:
-            data_path: "{{ env_var('DBT_DUCKLAKE_DATA_PATH', '.local/data/datasets/ducklake/raw/raw_market_history/files') }}"
+            data_path: "{{ env_var('DBT_DUCKLAKE_DATA_PATH', '../.local/data/datasets/ducklake/raw/raw_market_history/files') }}"

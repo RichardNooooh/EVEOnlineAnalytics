@@ -27,7 +27,7 @@ x-airflow-common: &airflow-common
     - /var/run/docker.sock:/var/run/docker.sock
     - ../../orchestration/dags:/opt/airflow/dags
     - ../../ingestion:/opt/eve-market/ingestion
-    - ../../transform:/opt/eve-market/transform
+    - ../../transformation:/opt/eve-market/transform
     - ../../datasets:/opt/eve-market/datasets
     - ../../.local/data:/opt/eve-market/data
     - ../../.local/logs:/opt/airflow/logs
