@@ -16,7 +16,7 @@ observability, and deployment wiring that satisfies those requirements.
 
 - ingestion code, publishers, and source clients under `ingestion/`
 - dataset contracts, schemas, manifests, and reference data under `datasets/`
-- dbt models, tests, and docs under `transform/`
+- dbt models, tests, and docs under `transformation/`
 - Airflow DAG source under `orchestration/dags/`
 - local analytics harness under `infra/local/`
 - workload architecture and storage contracts under `docs/`
@@ -66,7 +66,7 @@ These are host-driven runs such as local ingestion CLI usage without Docker Comp
 - local SQLite DuckLake catalog is valid only when using non-mounted local smoke
   storage
 - direct host CLI smoke output under `ingestion/.local/` is separate from the
-  default transform/dbt local source path under repo-root `.local/data`
+  default transformation/dbt local source path under repo-root `.local/data`
 - any DuckDB database remains local-only scratch
 
 ### Local Docker Compose runs

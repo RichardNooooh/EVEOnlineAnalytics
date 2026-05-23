@@ -37,7 +37,7 @@ Primary architecture references: `docs/architecture.md`, `docs/data_lifecycle.md
 - Documentation and ADRs: `docs/AGENTS.md`
 - Dataset contracts, schemas, reference data, manifests: `datasets/AGENTS.md`
 - Ingestion sources, clients, pipelines, publishers: `ingestion/AGENTS.md`
-- dbt transforms and SQL models: `transform/AGENTS.md`
+- dbt transforms and SQL models: `transformation/AGENTS.md`
 - Airflow DAGs and orchestration: `orchestration/AGENTS.md`
 - Local analytics demo harness notes: `infra/local/README.md`
 - Experiments and validation evidence: `experiments/AGENTS.md`
@@ -87,9 +87,9 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, PowerBI, and Tableau.
 
 - Add a new data source: update ingestion, dataset contracts, data dictionary, and
   planned dbt staging sources.
-- Add a new ML feature: update `transform/models/ml_features/` contracts and related
+- Add a new ML feature: update `transformation/models/ml_features/` contracts and related
   dataset/documentation.
-- Write a dbt test: prefer schema YAML or `transform/tests/` when the dbt project
+- Write a dbt test: prefer schema YAML or `transformation/tests/` when the dbt project
   exists.
 - Update storage architecture: start with `docs/architecture.md`,
   `docs/storage_layout.md`, and ADRs before implementation.

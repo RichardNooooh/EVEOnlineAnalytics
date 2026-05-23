@@ -1,4 +1,4 @@
-# transform/AGENTS.md
+# transformation/AGENTS.md
 
 Read this when changing dbt configuration, SQL models, seeds, macros, analyses, tests,
 or ML feature transforms.

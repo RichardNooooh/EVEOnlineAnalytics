@@ -7,7 +7,7 @@ task dependencies.
 
 - `../AGENTS.md`
 - `../ingestion/AGENTS.md` for ingestion DAGs
-- `../transform/AGENTS.md` for dbt DAGs
+- `../transformation/AGENTS.md` for dbt DAGs
 - `../docs/architecture.md` for deployment/runtime assumptions
 - `../infra/local/README.md` for the local analytics harness
 

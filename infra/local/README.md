@@ -36,7 +36,7 @@ checked-in DAG code used for workload development.
 |---|---|---|
 | `orchestration/dags` | `/opt/airflow/dags` | Airflow DAGs |
 | `ingestion` | `/opt/eve-market/ingestion` | Project ingestion code |
-| `transform` | `/opt/eve-market/transform` | dbt project code |
+| `transformation` | `/opt/eve-market/transform` | dbt project code |
 | `datasets` | `/opt/eve-market/datasets` | Dataset contracts and manifests |
 | `.local/data` | `/opt/eve-market/data` | Local published data stand-in for NFS |
 | `.local/logs` | `/opt/airflow/logs` | Airflow logs |
