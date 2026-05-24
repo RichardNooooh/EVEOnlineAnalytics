@@ -16,7 +16,7 @@ or ML feature transforms.
 - Use lowercase SQL keywords.
 - Prefer CTEs over subqueries.
 - Keep one model per file.
-- Use descriptive prefixes: `stg_`, `int_`, `mart_`, and `feat_`.
+- Use descriptive prefixes: `stg_`, `int_`, `fact_`, `dim_`, `mart_`, and `feat_`.
 - Prefer schema YAML tests or `tests/` when adding dbt tests.
 - Any DuckDB work database used by dbt must live on local or transient scratch, never
   shared RWX NFS.
@@ -26,7 +26,7 @@ or ML feature transforms.
 - `models/staging/everef/`: source-shaped everef cleanup and typing.
 - `models/staging/esi/`: source-shaped ESI cleanup and typing.
 - `models/intermediate/`: reusable joins and derived entities.
-- `models/marts/`: BI-facing analytical models.
+- `models/marts/`: BI-facing analytical models, including `fact_`, `dim_`, and denormalized `mart_` outputs.
 - `models/ml_features/`: ML-facing feature contracts.
 
 ## ML Feature Targets
