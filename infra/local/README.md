@@ -1,7 +1,8 @@
 # Local Airflow Development
 
-Local-only Airflow + dlt development and demo stack. It supports fast ingestion
-iteration and portfolio demos without Proxmox, k3s, TrueNAS, or Helm.
+Local-only Airflow + dlt development and published-data demo stack. It supports
+fast ingestion iteration and portfolio demos without Proxmox, k3s, TrueNAS, or
+Helm.
 
 This stack is not production. It does not replace the production-style runtime
 or the TrueNAS-backed DuckLake storage contract. Production-style deployment is
@@ -9,6 +10,10 @@ managed in `homelab-data-platform`.
 
 The canonical cross-repo runtime boundary for this local harness and the
 production-style platform repo lives in `docs/runtime_contract.md`.
+
+Host-run BI app lives separately under repo-root `bi/`. This `infra/local/`
+harness publishes local DuckLake state that the Evidence app reads as read-only
+consumer.
 
 ## Production Mapping
 
@@ -121,11 +126,14 @@ make local-airflow-docker-smoke
 ## Development Loop
 
 1. edit ingestion and dlt code
-2. run or backfill through local Airflow
-3. use repo-root `.local/data` as local reviewer-stack publication output
-4. commit
-5. validate in CI and publish GHCR image tags from trusted `master` builds
-6. deploy through `homelab-data-platform`
+2. `make ingestion-image` and `make transform-image`
+3. run raw backfill through local Airflow
+4. run curated dbt build + publish DAG through local Airflow
+5. use repo-root `.local/data` as local reviewer-stack publication output
+6. run host-side Evidence app from `bi/`
+7. commit
+8. validate in CI and publish GHCR image tags from trusted `master` builds
+9. deploy through `homelab-data-platform`
 
 ## Notes
 

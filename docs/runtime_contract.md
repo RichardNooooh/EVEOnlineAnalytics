@@ -18,6 +18,7 @@ observability, and deployment wiring that satisfies those requirements.
 - dataset contracts, schemas, manifests, and reference data under `datasets/`
 - dbt models, tests, and docs under `transformation/`
 - Airflow DAG source under `orchestration/dags/`
+- host-run Evidence app under `bi/`
 - local analytics harness under `infra/local/`
 - workload architecture and storage contracts under `docs/`
 - container image build inputs for workload images such as `ingestion/Dockerfile`
