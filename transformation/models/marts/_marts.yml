@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: mart_curated_daily_prices
+    description: BI-facing daily price mart derived from canonical market-history facts.
+    columns:
+      - name: date
+        description: Market observation date.
+        tests:
+          - not_null
+      - name: region_id
+        description: Market region identifier.
+        tests:
+          - not_null
+      - name: type_id
+        description: Item type identifier.
+        tests:
+          - not_null
+      - name: vwap_price
+        description: Daily volume-weighted average price from ESI market history.
+        tests:
+          - not_null
+  - name: mart_curated_trade_volume
+    description: BI-facing daily trade volume mart derived from canonical market-history facts.
+    columns:
+      - name: date
+        description: Market observation date.
+        tests:
+          - not_null
+      - name: region_id
+        description: Market region identifier.
+        tests:
+          - not_null
+      - name: type_id
+        description: Item type identifier.
+        tests:
+          - not_null
+      - name: traded_units
+        description: Daily traded unit volume.
+        tests:
+          - not_null
