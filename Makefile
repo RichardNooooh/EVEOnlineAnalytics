@@ -7,7 +7,7 @@ INGESTION_IMAGE ?= eve-market-ingestion:local
 
 .DEFAULT_GOAL := help
 
-.PHONY: help python-format python-format-check ingestion-image ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke
+.PHONY: help python-format python-format-check sql-format sql-lint ingestion-image ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -17,6 +17,12 @@ python-format: ## Format Python files with Ruff
 
 python-format-check: ## Check Python formatting with Ruff
 	ruff format --check .
+
+sql-format: ## Format transformation SQL with SQLFluff
+	uv run --project transformation sqlfluff format transformation
+
+sql-lint: ## Lint transformation SQL with SQLFluff
+	uv run --project transformation sqlfluff lint transformation
 
 ingestion-image: ## Build ingestion job image
 	docker build -f ingestion/Dockerfile -t $(INGESTION_IMAGE) ingestion
