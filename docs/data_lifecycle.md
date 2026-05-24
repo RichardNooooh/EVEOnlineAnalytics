@@ -20,6 +20,8 @@ contract; Parquet files are the physical storage below that table format.
 - cleaned, standardized, and analytics-ready outputs
 - produced by dbt or later publisher jobs
 - consumed by BI, ML, and APIs
+- current implemented curated BI marts are `curated_daily_prices` and
+  `curated_trade_volume`
 
 ## Publication Lifecycle
 
@@ -56,10 +58,18 @@ For ingestion jobs, DuckLake destination configuration is part of the publisher
 boundary: the publisher resolves the catalog, storage path, and publication guardrails
 before committing data.
 
+For curated dbt outputs, the build step happens in scratch DuckDB first, then the
+validated result is published into a curated DuckLake table such as
+`curated.curated_daily_prices` or `curated.curated_trade_volume`.
+
 ### 5. Consume
 
 Downstream readers such as dbt, ML jobs, dashboards, and APIs consume only published
 table state.
+
+For the local BI path, host-run Evidence reads the published curated DuckLake table state
+from the local reviewer/demo data root. It does not read dbt scratch databases or
+unpublished intermediate tables.
 
 ## Backfills and Corrections
 
@@ -81,14 +91,17 @@ The architecture expects source corrections and replay.
 - durable state remains DuckLake data plus PostgreSQL-backed services, not container
   runtime scratch
 
-## Planned dbt Lifecycle
+## Curated dbt Lifecycle
 
-dbt will eventually:
+Current contract for curated BI publication:
 
-- read canonical DuckLake table state through a validated DuckLake/DuckDB handoff
-- materialize curated outputs as DuckLake tables and/or use a transient local DuckDB
-  work database during execution
-- never depend on a cluster-shared writable DuckDB warehouse file
+1. dbt reads canonical raw DuckLake table state through an attached DuckLake alias.
+2. dbt builds the mart in a transient local DuckDB work database.
+3. the curated publisher validates grain and schema expectations
+4. the validated replacement scope is committed to curated DuckLake table state
+5. Evidence and other readers consume only that published curated state
+
+dbt must never depend on a cluster-shared writable DuckDB warehouse file.
 
 ## Local Development Lifecycle
 
