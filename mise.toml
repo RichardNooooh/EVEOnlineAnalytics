@@ -16,6 +16,7 @@ ripgrep = "latest"
 
 # Data engineering — dbt-core via pipx (not a standalone binary)
 "pipx:dbt-core" = "latest"
+duckdb = "latest"
 
 # Python linting/formatting
 ruff = "latest"

@@ -16,6 +16,10 @@ uv run dbt compile --profiles-dir .
 Default local profile writes DuckDB work state to scratch path
 `/tmp/eve_market_transform.duckdb`.
 
+The Python `duckdb` package used by `dbt-duckdb` does not provide the standalone
+DuckDB CLI binary. Install the DuckDB CLI separately if you want an interactive
+shell for inspecting the dbt scratch database.
+
 The same profile also attaches the local published DuckLake under repo-root
 `.local/data` as a read-only source alias so dbt reads the canonical raw
 publication instead of a shared writable `.duckdb` file.
@@ -88,6 +92,42 @@ uv run dbt debug --profiles-dir .
 uv run dbt parse --profiles-dir .
 uv run dbt compile --profiles-dir .
 uv run dbt build --profiles-dir .
+```
+
+To inspect the dbt scratch database in DuckDB CLI against that same Airflow-backed
+local publication, source the same env file and start DuckDB with the repo-local
+init file:
+
+```bash
+source ./dbt-airflow-local.env.example.sh
+duckdb -readonly -init ./duckdb-airflow-init.sql "${DBT_DUCKDB_PATH}"
+```
+
+This init file loads the `ducklake` extension and re-attaches the raw publication
+as `raw_lake` using the same `DBT_DUCKLAKE_*` variables that dbt reads.
+
+If you prefer DuckDB CLI to auto-attach `raw_lake` every time, use the repo-local
+`./.duckdbrc` as your CLI init file:
+
+```bash
+source ./dbt-airflow-local.env.example.sh
+duckdb -readonly -init ./.duckdbrc "${DBT_DUCKDB_PATH}"
+```
+
+Or symlink it into your home directory so DuckDB loads it by default:
+
+```bash
+ln -sf "$PWD/.duckdbrc" ~/.duckdbrc
+duckdb -readonly "${DBT_DUCKDB_PATH}"
+```
+
+Useful first queries:
+
+```sql
+show databases;
+show tables;
+select * from raw_lake.raw.raw_market_history limit 5;
+select * from main.stg_everef_market_history limit 5;
 ```
 
 If `5432` is already in use on your host, set `POSTGRES_HOST_PORT` in

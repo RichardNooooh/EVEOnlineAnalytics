@@ -74,6 +74,7 @@ mlruns/
 .env.*.local
 data/
 docker-compose.override.yml
+transformation/.duckdbrc
 
 # Editor and OS files
 .DS_Store
