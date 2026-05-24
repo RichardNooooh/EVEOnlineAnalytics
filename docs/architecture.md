@@ -58,9 +58,17 @@ Airflow
   -> dataset writer / publisher
   -> raw or bronze DuckLake tables backed by Parquet files
   -> dbt reads canonical table state through an attached DuckLake alias in scratch DuckDB
-  -> curated DuckLake tables and/or transient local DuckDB work DB
-  -> ML training, dashboards, and APIs consume published table state
+  -> dbt build produces validated curated candidate output in scratch DuckDB
+  -> curated DuckLake publish commits the replacement scope
+  -> host-run Evidence, ML training, and APIs consume published curated table state
 ```
+
+Current curated BI publication target:
+
+- `curated.curated_daily_prices` published from `transformation/models/marts/mart_curated_daily_prices.sql`
+- `curated.curated_trade_volume` published from `transformation/models/marts/mart_curated_trade_volume.sql`
+- contracts documented in `../datasets/contracts/curated_daily_prices.md` and
+  `../datasets/contracts/curated_trade_volume.md`
 
 Ingestion source and pipeline code extracts and validates records; DuckLake destination
 configuration and publication-specific storage/catalog policy live at the ingestion
@@ -153,6 +161,10 @@ loose Parquet files as the contract. A publication must preserve these semantics
 
 For Everef market history, revised source dates are represented through DuckLake merge
 or delete-insert semantics rather than append-only duplicate rows.
+
+For the current BI path, dbt builds `fact_market_history` plus curated marts on local
+scratch compute and a curated publisher commits validated `date` replacement scope into
+DuckLake before Evidence readers see the result.
 
 ## Scratch Storage Contract
 

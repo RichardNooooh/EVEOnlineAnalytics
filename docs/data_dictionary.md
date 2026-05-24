@@ -54,16 +54,35 @@ Expected contract elements:
 - buy or sell side flags
 - price, volume, range, and location fields from the source snapshot
 
-## Planned Curated Dataset Contracts
+## Curated Dataset Contracts
 
-Curated datasets will standardize naming, grain, and derivations for analytics and ML.
+Curated datasets standardize naming, grain, and derivations for analytics and ML.
 
-Examples:
+### `curated_daily_prices`
 
-- `curated_daily_prices`
-- `curated_trade_volume`
-- `curated_regional_spreads`
-- `feat_item_daily`
+Current implemented curated price mart for BI publication.
+
+Contract highlights:
+
+- grain is one row per `(date, region_id, type_id)`
+- `vwap_price` carries forward ESI `average` semantics as VWAP
+- `intraday_price_spread` is derived as `highest - lowest`
+- `intraday_volatility_ratio` is derived as `(highest - lowest) / vwap_price` when
+  `vwap_price > 0`
+- published contract lives at `../datasets/contracts/curated_daily_prices.md`
+
+### `curated_trade_volume`
+
+Current implemented curated trade-volume mart for BI publication.
+
+Contract highlights:
+
+- grain is one row per `(date, region_id, type_id)`
+- `traded_units` carries forward staged daily volume
+- `total_isk_traded` is derived as `volume * average` in upstream `fact_market_history`
+- `average_isk_per_order` is derived as `total_isk_traded / order_count` when
+  `order_count > 0`, else `0`
+- published contract lives at `../datasets/contracts/curated_trade_volume.md`
 
 ## Publication Contract Notes
 

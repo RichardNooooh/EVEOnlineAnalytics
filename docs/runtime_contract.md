@@ -68,6 +68,8 @@ These are host-driven runs such as local ingestion CLI usage without Docker Comp
 - direct host CLI smoke output under `ingestion/.local/` is separate from the
   default transformation/dbt local source path under repo-root `.local/data`
 - any DuckDB database remains local-only scratch
+- host-run Evidence must consume published curated DuckLake state, not dbt scratch
+  DuckDB work databases
 
 ### Local Docker Compose runs
 
@@ -82,8 +84,11 @@ These are the reviewer/development runtime flows under `infra/local/`.
 - task containers use explicit ephemeral scratch for `dlt` runtime state rather
   than repo-local host paths
 - local task image may use `eve-market-ingestion:local`
+- local task image may use `eve-market-transform:local`
 - when you want reviewer-stack local data for transform work, publish it through this
   Docker Compose path so data files land under `.local/data`
+- local host-run Evidence may then read curated DuckLake publications from `.local/data`
+  as a read-only BI consumer
 
 ### Kubernetes / production-style runs
 
@@ -139,6 +144,8 @@ These are platform-managed runtime deployments implemented in
 
 - workload contract requires explicit scratch for DuckDB work DBs and
   containerized `dlt` state
+- local host-run Evidence is not a scratch-state producer; it reads published curated
+  DuckLake state through workload-defined dataset contracts
 - exact mount names and sizes are platform-implementation details
 
 ## Image And Tag Contract
