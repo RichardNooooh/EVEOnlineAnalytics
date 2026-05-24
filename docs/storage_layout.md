@@ -74,6 +74,7 @@ datasets/
 │   │   └── raw_market_orders/
 │   └── curated/
 │       ├── curated_daily_prices/
+│       ├── curated_trade_volume/
 │       └── feat_item_daily/
 ├── manifests/
 │   └── <dataset-name>/
@@ -98,6 +99,15 @@ Current planned rules:
   bucket such as `snapshot_date` or a timestamp partition
 - curated tables partition by the smallest stable unit that supports rebuild and
   efficient downstream reads, typically `date` and optionally `region_id`
+- current curated BI marts `curated_daily_prices` and `curated_trade_volume` use `date`
+  as the primary replacement scope and retain `region_id` and `type_id` at row grain
+
+## Local BI Read Path
+
+For the supported local reviewer/demo flow, host-run Evidence should read published
+curated DuckLake state from repo-root `.local/data/datasets/ducklake/curated/` or an
+equivalent mounted data root. Evidence is a read-only consumer of published curated
+table state, not a writer and not a reader of dbt scratch DuckDB files.
 
 ## Manifest Contract
 
