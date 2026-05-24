@@ -73,7 +73,7 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, PowerBI, and Tableau.
 - Do not directly modify `uv.lock` or `pyproject.toml` if a `uv` command can do it by itself.
   Example: Do not add a package directly to `pyproject.toml`; use `uv add {package}`.
 - SQL uses lowercase keywords, CTEs over subqueries, one model per file, and prefixes
-  such as `stg_`, `int_`, `mart_`, and `feat_`.
+  such as `stg_`, `int_`, `fact_`, `dim_`, `mart_`, and `feat_`.
 - OpenTofu uses standard HCL formatting with `tofu fmt`.
 - Git uses conventional commits. Feature branches are off `master`; PRs are required.
 - Commit titles and bodies use prefixes such as `docs:`, `cleanup:`, `feat:`,
