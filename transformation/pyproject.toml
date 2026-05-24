@@ -11,3 +11,8 @@ dependencies = [
 
 [tool.uv]
 exclude-newer = "1 week"
+
+[dependency-groups]
+dev = [
+    "sqlfluff>=4.2.1",
+]
