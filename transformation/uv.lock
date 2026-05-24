@@ -1045,10 +1045,11 @@ wheels = [
 [[package]]
 name = "transform"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "dbt-core" },
     { name = "dbt-duckdb" },
+    { name = "duckdb" },
 ]
 
 [package.dev-dependencies]
@@ -1060,6 +1061,7 @@ dev = [
 requires-dist = [
     { name = "dbt-core", specifier = ">=1.11.9" },
     { name = "dbt-duckdb", specifier = ">=1.10.1" },
+    { name = "duckdb", specifier = ">=1.5.2" },
 ]
 
 [package.metadata.requires-dev]

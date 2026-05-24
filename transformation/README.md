@@ -24,6 +24,10 @@ The same profile also attaches the local published DuckLake under repo-root
 `.local/data` as a read-only source alias so dbt reads the canonical raw
 publication instead of a shared writable `.duckdb` file.
 
+Curated publication is a separate explicit step. dbt still builds marts into the
+local scratch DuckDB database, and `eve-market-publish-curated` then copies those
+scratch tables into writable DuckLake curated tables.
+
 The default host profile expects a standalone local SQLite publication under
 repo-root `.local/data`. Plain host `eve-ingest ...` smoke runs from `ingestion/`
 write under `ingestion/.local/`, so they do not populate that default
@@ -54,12 +58,20 @@ DuckLake catalog instead of using the default local SQLite attach path.
 - `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `../.local/data/datasets/ducklake/raw/raw_market_history/files` when commands run from `transformation/` against a standalone local SQLite publication.
 - `DBT_DUCKLAKE_METADATA_SCHEMA`: DuckLake metadata schema inside the catalog database. Defaults to `main`; Airflow-backed local publications use `eve_market`.
 - `DBT_DUCKLAKE_OVERRIDE_DATA_PATH`: Override the catalog's stored data path for the current connection. Use `0` or `1`. Defaults to `0`; host-side Airflow reads use `1` because the catalog stores the container path.
+- `CURATED_DUCKLAKE_ATTACH_PATH`: Writable curated DuckLake attach path. Defaults to `ducklake:sqlite:../.local/data/datasets/ducklake/curated/lake_catalog.sqlite`.
+- `CURATED_DUCKLAKE_DATA_PATH`: Curated DuckLake data root. Defaults to `../.local/data/datasets/ducklake` so published tables land under `curated/`.
+- `CURATED_DUCKLAKE_ALIAS`: Writable curated DuckLake alias. Defaults to `curated_lake`.
+- `CURATED_DUCKLAKE_SCHEMA`: Curated DuckLake schema. Defaults to `curated`.
+- `CURATED_DUCKLAKE_METADATA_SCHEMA`: Curated DuckLake metadata schema. Defaults to `main`; Airflow-backed local publications use `eve_market`.
+- `CURATED_DUCKLAKE_OVERRIDE_DATA_PATH`: Override the curated catalog's stored data path for the current connection. Use `0` or `1`. Defaults to `0`; host-side Airflow writes use `1` because the catalog stores the container path.
 
 Mounted/PostgreSQL-backed example:
 
 ```bash
 export DBT_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=eve_market_ducklake host=postgres.example user=user password=password"
 export DBT_DUCKLAKE_DATA_PATH="/opt/eve-market/data/datasets/ducklake/raw/raw_market_history"
+export CURATED_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=eve_market_ducklake host=postgres.example user=user password=password"
+export CURATED_DUCKLAKE_DATA_PATH="/opt/eve-market/data/datasets/ducklake"
 uv run dbt debug --profiles-dir .
 ```
 
@@ -92,6 +104,7 @@ uv run dbt debug --profiles-dir .
 uv run dbt parse --profiles-dir .
 uv run dbt compile --profiles-dir .
 uv run dbt build --profiles-dir .
+uv run eve-market-publish-curated
 ```
 
 To inspect the dbt scratch database in DuckDB CLI against that same Airflow-backed
@@ -137,7 +150,20 @@ Local smoke example:
 
 ```bash
 uv run dbt debug --profiles-dir .
+uv run dbt build --profiles-dir .
+uv run eve-market-publish-curated
 ```
+
+Use `--dataset` to publish only one curated table:
+
+```bash
+uv run eve-market-publish-curated --dataset curated_daily_prices
+```
+
+Current first-pass curated outputs:
+
+- `curated.curated_daily_prices` from `main.mart_curated_daily_prices`
+- `curated.curated_trade_volume` from `main.mart_curated_trade_volume`
 
 ## Docker
 
@@ -156,6 +182,7 @@ Container defaults:
 - `DBT_DUCKLAKE_ALIAS=raw_lake`
 - `DBT_DUCKLAKE_ATTACH_PATH=ducklake:sqlite:/app/ducklake/raw_market_history/lake_catalog.sqlite`
 - `DBT_DUCKLAKE_DATA_PATH=/app/ducklake/raw_market_history/files`
+- `PYTHONPATH=/app/src`
 
 The transform image does not bundle ingestion output. To make the default container
 attach work, mount the DuckLake catalog and files at `/app/ducklake/raw_market_history`.
@@ -180,7 +207,20 @@ docker run --rm \
   eve-market-transform:local debug
 ```
 
+Example container-side curated publish after dbt build:
+
+```bash
+docker run --rm \
+  --entrypoint python \
+  -e CURATED_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=eve_market_ducklake host=postgres.example user=user password=password" \
+  -e CURATED_DUCKLAKE_DATA_PATH="/opt/eve-market/data/datasets/ducklake" \
+  -v /opt/eve-market/data:/opt/eve-market/data \
+  eve-market-transform:local \
+  python -m transform.publish_curated_ducklake
+```
+
 ## Current Boundary
 
 This profile now reads `raw.raw_market_history` through the attached DuckLake alias
-`raw_lake` while keeping dbt materializations on local scratch DuckDB.
+`raw_lake` while keeping dbt materializations on local scratch DuckDB. Curated
+publication is now an explicit follow-on step into writable DuckLake tables.

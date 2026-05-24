@@ -16,3 +16,5 @@ models:
   eve_market_transform:
     staging:
       +materialized: view
+    marts:
+      +materialized: table
