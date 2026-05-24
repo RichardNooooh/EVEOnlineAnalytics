@@ -4,7 +4,7 @@ models:
   - name: stg_everef_market_history
     description: Typed Everef market-history staging model with ESI average preserved as VWAP.
     columns:
-      - name: date
+      - name: market_date
         description: Source market date.
         tests:
           - not_null

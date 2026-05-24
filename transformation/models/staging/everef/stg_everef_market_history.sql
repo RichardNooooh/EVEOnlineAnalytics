@@ -1,6 +1,6 @@
 with source as (
     select
-        cast(date as date) as date,
+        cast(date as date) as market_date,
         cast(region_id as bigint) as region_id,
         cast(type_id as bigint) as type_id,
         cast(average as double) as average,
@@ -12,7 +12,7 @@ with source as (
 )
 
 select
-    date,
+    market_date,
     region_id,
     type_id,
     average,
