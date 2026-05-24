@@ -13,6 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DBT_DUCKLAKE_ALIAS=raw_lake \
     DBT_DUCKLAKE_ATTACH_PATH=ducklake:sqlite:/app/ducklake/raw_market_history/lake_catalog.sqlite \
     DBT_DUCKLAKE_DATA_PATH=/app/ducklake/raw_market_history/files \
+    PYTHONPATH=/app/src \
     PATH="/app/.venv/bin:${PATH}"
 
 WORKDIR /app
@@ -44,6 +45,7 @@ COPY analyses ./analyses
 COPY macros ./macros
 COPY models ./models
 COPY seeds ./seeds
+COPY src ./src
 COPY tests ./tests
 
 RUN mkdir -p /app/.dbt /app/ducklake/raw_market_history /tmp \
