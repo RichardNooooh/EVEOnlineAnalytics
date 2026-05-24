@@ -3,8 +3,8 @@
 Portfolio project for end-to-end economic analytics on virtual market datasets.
 
 This repository is the analytics-first workspace: ingestion pipelines, dataset
-contracts, transformations, orchestration, experiments, and architecture docs
-for publishing and analyzing market data.
+contracts, transformations, orchestration, BI, experiments, and architecture
+docs for publishing and analyzing market data.
 
 Readers looking for reusable homelab runtime, cluster bootstrap, shared storage
 wiring, and production-style platform operations should use the companion
@@ -20,9 +20,10 @@ The canonical cross-repo workload-to-platform runtime contract lives in
 - `datasets/`: contracts, schemas, reference data, and manifests
 - `transformation/`: dbt models, tests, and feature-building SQL
 - `orchestration/`: Airflow DAGs and scheduling logic
+- `bi/`: host-run Evidence BI app over curated DuckLake publications
 - `experiments/`: validation work, model experiments, and evidence
 - `docs/`: architecture, storage, lifecycle, and ADRs
-- `infra/`: local analytics demo harness
+- `infra/`: local Airflow and published-data demo harness
 
 > Note
 > Some infrastructure and operational hardening is intentionally deferred until the
@@ -32,12 +33,15 @@ The canonical cross-repo workload-to-platform runtime contract lives in
 
 ## Local Airflow + dlt Runtime
 
-This is the local development and reviewer demo harness for the analytics repo.
+This is local development and reviewer demo harness for published-data side of analytics repo.
 
 Local Compose stack provides fast ingestion iteration and portfolio demo access without
 requiring Proxmox, k3s, TrueNAS, or Helm. It runs Airflow with a local Postgres
 metadata database, stock `apache/airflow` containers, bind-mounted DAGs and project
 code, and local DuckLake data-file storage under `.local/data`.
+
+Host-run BI app lives under `bi/`. It reads published curated DuckLake state from
+`.local/data` as read-only consumer after local publish flow completes.
 
 This runtime is a development harness, not production. It does not replace the
 analytics architecture documented in `docs/architecture.md`. Production-style
@@ -72,5 +76,5 @@ Expected development loop:
 5. validate in CI and publish GHCR image tags from trusted `master` builds
 6. deploy through `homelab-data-platform`
 
-See `infra/local/README.md` for local runtime details and
-`docs/runtime_contract.md` for the workload-to-platform deployment contract.
+See `infra/local/README.md` for local runtime details, `bi/README.md` for local BI
+app usage, and `docs/runtime_contract.md` for workload-to-platform deployment contract.
