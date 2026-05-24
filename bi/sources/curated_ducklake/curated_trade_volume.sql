@@ -1,0 +1,14 @@
+install postgres;
+load postgres;
+install ducklake;
+load ducklake;
+
+attach '${CURATED_DUCKLAKE_ATTACH_PATH}' as curated_lake (
+  data_path '${CURATED_DUCKLAKE_DATA_PATH}',
+  metadata_schema '${CURATED_DUCKLAKE_METADATA_SCHEMA}',
+  override_data_path ${CURATED_DUCKLAKE_OVERRIDE_DATA_PATH},
+  read_only
+);
+
+select *
+from curated_lake.curated.curated_trade_volume

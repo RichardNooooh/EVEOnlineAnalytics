@@ -1,0 +1,4 @@
+name: curated_ducklake
+type: duckdb
+options:
+  filename: ":memory:"
