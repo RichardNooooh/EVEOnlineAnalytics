@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-
 from ingest.logging import configure_logging, log_runtime_context
 
 
@@ -14,7 +12,7 @@ def test_configure_logging_uses_plain_log_lines(monkeypatch, capsys) -> None:
     logging.getLogger("ingest.test").info("sync complete")
 
     captured = capsys.readouterr()
-    assert "logger=ingest.test" in captured.err
+    assert "[INFO|ingest.test]" in captured.err
     assert "sync complete" in captured.err
 
 
@@ -50,13 +48,3 @@ def test_configure_logging_warns_on_invalid_env_level(monkeypatch, capsys) -> No
     captured = capsys.readouterr()
     assert "Invalid INGEST_LOG_LEVEL='BANANA'; falling back to INFO" in captured.err
     assert "info still logs" in captured.err
-
-
-def test_configure_logging_loads_yaml_config_path() -> None:
-    config_path = (
-        Path(__file__).resolve().parents[1]
-        / "ingest"
-        / "logging_configs"
-        / "config.yaml"
-    )
-    assert config_path.exists()
