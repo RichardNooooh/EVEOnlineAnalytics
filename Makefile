@@ -7,7 +7,7 @@ INGESTION_IMAGE ?= eve-market-ingestion:local
 
 .DEFAULT_GOAL := help
 
-.PHONY: help python-format python-format-check sql-format sql-lint ingestion-image ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke local-bi-up local-bi-down local-bi-smoke
+.PHONY: help python-format python-format-check sql-format sql-lint ingestion-image ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke local-data-permissions-fix local-bi-up local-bi-down local-bi-smoke local-transform-bi-smoke
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -58,6 +58,10 @@ local-pipeline-smoke: local-airflow-env ## Smoke check Airflow DB, DAG parse, an
 local-airflow-docker-smoke: local-airflow-env ## Smoke check Airflow DockerOperator support
 	$(LOCAL_COMPOSE) run --rm airflow-cli python -c "from airflow.providers.docker.operators.docker import DockerOperator; import docker; assert docker.from_env().ping(); print('local Airflow DockerOperator smoke ok')"
 
+local-data-permissions-fix: local-airflow-env ## Make local DuckLake data host-writable for dbt publish
+	@mkdir -p .local/data .local/logs
+	$(LOCAL_COMPOSE) run --rm --user 0:0 --entrypoint /bin/sh airflow-cli -lc "mkdir -p /opt/eve-market/data/datasets/ducklake/curated && chmod -R a+rwX /opt/eve-market/data"
+
 local-bi-up: local-airflow-env ## Start local Evidence BI container service
 	@mkdir -p .local/data .local/logs
 	$(MAKE) local-bi-smoke
@@ -69,3 +73,7 @@ local-bi-down: local-airflow-env ## Stop local Evidence BI service
 local-bi-smoke: local-airflow-env ## Smoke check local Evidence query in container
 	@mkdir -p .local/data .local/logs
 	$(LOCAL_COMPOSE) --profile bi run --rm evidence /bin/sh -lc "if [ ! -x node_modules/.bin/evidence ]; then npm ci; fi && npm run sources"
+
+local-transform-bi-smoke: local-data-permissions-fix ## Run host dbt build, then Evidence smoke
+	cd transformation && . ./dbt-airflow-local.env.example.sh && uv run dbt build --profiles-dir .
+	$(MAKE) local-bi-smoke

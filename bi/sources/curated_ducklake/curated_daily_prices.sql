@@ -3,7 +3,7 @@ load postgres;
 install ducklake;
 load ducklake;
 
-attach '${CURATED_DUCKLAKE_ATTACH_PATH}' as curated_lake (
+attach '${CURATED_DUCKLAKE_ATTACH_PATH}' as ${CURATED_DUCKLAKE_ALIAS} (
   data_path '${CURATED_DUCKLAKE_DATA_PATH}',
   metadata_schema '${CURATED_DUCKLAKE_METADATA_SCHEMA}',
   override_data_path ${CURATED_DUCKLAKE_OVERRIDE_DATA_PATH},
@@ -11,4 +11,4 @@ attach '${CURATED_DUCKLAKE_ATTACH_PATH}' as curated_lake (
 );
 
 select *
-from curated_lake.curated.curated_daily_prices
+from ${CURATED_DUCKLAKE_ALIAS}.${CURATED_DUCKLAKE_SCHEMA}.curated_daily_prices
