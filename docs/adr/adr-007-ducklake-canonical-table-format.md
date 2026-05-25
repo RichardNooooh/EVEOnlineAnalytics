@@ -70,8 +70,9 @@ and transaction semantics over data files.
 - Data files remain Parquet files stored under the lakehouse table format.
 - Production-style data files may live on TrueNAS/NFS initially, with MinIO or another
   S3-compatible store remaining a possible later backing store.
-- dbt integration should be validated separately from dlt's DuckLake destination because
-  dlt's DuckLake documentation does not currently provide a native dbt handoff contract.
+- dbt integration should be validated separately from dlt's DuckLake destination;
+  dbt-duckdb may read raw DuckLake tables from local/transient DuckDB compute and
+  materialize final curated DuckLake tables directly.
 
 ## Consequences
 
@@ -91,8 +92,8 @@ and transaction semantics over data files.
 
 - The storage contract now includes a catalog dependency, not only files and manifests.
 - Operators must back up and manage the DuckLake catalog in addition to the data files.
-- dbt handoff needs separate validation rather than being assumed from dlt ingestion
-  support.
+- curated dbt publication becomes visible when model materialization completes; dbt data
+  tests still run afterward unless a separate promotion boundary is added.
 - Existing documents and code that describe plain Parquet as the canonical storage
   contract must be updated during the implementation migration.
 

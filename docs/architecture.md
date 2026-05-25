@@ -58,8 +58,9 @@ Airflow
   -> dataset writer / publisher
   -> raw or bronze DuckLake tables backed by Parquet files
   -> dbt reads canonical table state through an attached DuckLake alias in scratch DuckDB
-  -> dbt build produces validated curated candidate output in scratch DuckDB
-  -> curated DuckLake publish commits the replacement scope
+  -> dbt build keeps staging, intermediate, and fact compute in scratch DuckDB
+  -> dbt materializes final curated marts directly into attached curated DuckLake tables
+  -> dbt data tests validate published curated tables after materialization
   -> Compose-run Evidence, ML training, and APIs consume published curated table state
 ```
 
@@ -152,20 +153,27 @@ scope.
 ## Publication Semantics
 
 Ingestion and transform jobs publish by changing DuckLake table state, not by exposing
-loose Parquet files as the contract. A publication must preserve these semantics:
+loose Parquet files as the contract. The publication boundary must stay explicit for the
+relevant tool and publication scope.
+
+For ingestion publishers, the expected sequence remains:
 
 1. stage candidate data in unpublished job state
 2. validate data and schema contract compliance
 3. commit the DuckLake table change for the intended replacement scope
 4. record supporting contract or manifest metadata where needed
-5. only then allow downstream readers to treat the table state as visible
+
+For the current curated dbt BI path, dbt materializes final mart tables directly into
+curated DuckLake. That means curated table visibility starts when model materialization
+finishes, while dbt data tests still run afterward.
 
 For Everef market history, revised source dates are represented through DuckLake merge
 or delete-insert semantics rather than append-only duplicate rows.
 
-For the current BI path, dbt builds `fact_market_history` plus curated marts on local
-scratch compute and a curated publisher commits validated `date` replacement scope into
-DuckLake before Evidence readers see the result. Supported local exception: dbt runs on
+For the current BI path, dbt builds `fact_market_history` on local scratch compute and
+materializes curated marts directly into writable DuckLake tables attached as
+`curated_lake`. dbt data tests still run after those writes, so `dbt build` is not a
+validated-handoff barrier for curated visibility. Supported local exception: dbt runs on
 host against local Compose PostgreSQL-backed DuckLake catalogs.
 
 ## Scratch Storage Contract

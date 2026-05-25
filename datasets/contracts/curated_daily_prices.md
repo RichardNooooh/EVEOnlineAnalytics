@@ -14,11 +14,12 @@ Evidence and other read-only analytical consumers.
 - dataset name: `curated_daily_prices`
 - canonical table contract: DuckLake table backed by Parquet files
 - expected shared path: `<data-root>/datasets/ducklake/curated/curated_daily_prices`
-- writer: single dbt-driven curated publisher for target publication scope
+- writer: single dbt invocation materializing final curated table state for target publication scope
 - reader examples: Evidence BI, analytical ad hoc queries, downstream feature jobs
 
-dbt builds candidate output in scratch DuckDB first. Readers consume this dataset only
-after the curated publisher commits the validated table state into DuckLake.
+dbt builds upstream candidate output in scratch DuckDB first, then materializes this
+final mart directly into curated DuckLake. Readers may observe the updated table before
+dbt data tests finish because dbt tests run after model materialization.
 
 ## Grain And Keys
 
@@ -51,9 +52,10 @@ after the curated publisher commits the validated table state into DuckLake.
 ## Publication Steps
 
 1. dbt reads published raw DuckLake state through attached `raw_lake` alias.
-2. dbt builds `fact_market_history` and `mart_curated_daily_prices` in scratch DuckDB.
-3. `eve-market-publish-curated` copies the validated mart into DuckLake curated state.
-4. Evidence and other BI readers consume only published curated table state.
+2. dbt builds `fact_market_history` in scratch DuckDB.
+3. dbt materializes `mart_curated_daily_prices` as `curated.curated_daily_prices` in attached curated DuckLake.
+4. dbt data tests validate the published relation after materialization.
+5. Evidence and other BI readers consume published curated table state.
 
 ## Local BI Consumption
 
