@@ -60,12 +60,12 @@ local-airflow-docker-smoke: local-airflow-env ## Smoke check Airflow DockerOpera
 
 local-bi-up: local-airflow-env ## Start local Evidence BI container service
 	@mkdir -p .local/data .local/logs
-	$(LOCAL_COMPOSE) --profile bi up -d evidence
 	$(MAKE) local-bi-smoke
+	$(LOCAL_COMPOSE) --profile bi up -d evidence
 
 local-bi-down: local-airflow-env ## Stop local Evidence BI service
 	$(LOCAL_COMPOSE) --profile bi stop evidence
 
 local-bi-smoke: local-airflow-env ## Smoke check local Evidence query in container
 	@mkdir -p .local/data .local/logs
-	$(LOCAL_COMPOSE) --profile bi run --rm evidence /bin/sh -lc "if [ ! -d node_modules/@evidence-dev ]; then npm ci; fi && npm run sources"
+	$(LOCAL_COMPOSE) --profile bi run --rm evidence /bin/sh -lc "if [ ! -x node_modules/.bin/evidence ]; then npm ci; fi && npm run sources"

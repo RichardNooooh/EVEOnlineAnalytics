@@ -72,7 +72,7 @@ services:
       - /bin/sh
       - -lc
       - |
-        if [ ! -d node_modules/@evidence-dev ]; then
+        if [ ! -x node_modules/.bin/evidence ]; then
           npm ci
         fi
         npm run sources
