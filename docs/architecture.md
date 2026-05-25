@@ -60,7 +60,7 @@ Airflow
   -> dbt reads canonical table state through an attached DuckLake alias in scratch DuckDB
   -> dbt build produces validated curated candidate output in scratch DuckDB
   -> curated DuckLake publish commits the replacement scope
-  -> host-run Evidence, ML training, and APIs consume published curated table state
+  -> Compose-run Evidence, ML training, and APIs consume published curated table state
 ```
 
 Current curated BI publication target:
@@ -100,6 +100,7 @@ Local-to-production mapping:
   the deployed Airflow image or DAG/code sync mechanism
 - local DockerOperator task containers approximate KubernetesPodOperator pods that run
   GHCR-published ingestion images in k3s
+- local Evidence container approximates read-only BI runtime over curated DuckLake state
 
 Local smoke runs may use the default SQLite DuckLake catalog. Any run using mounted
 DuckLake storage, including `--storage-target mounted` or an explicit mounted
@@ -164,7 +165,8 @@ or delete-insert semantics rather than append-only duplicate rows.
 
 For the current BI path, dbt builds `fact_market_history` plus curated marts on local
 scratch compute and a curated publisher commits validated `date` replacement scope into
-DuckLake before Evidence readers see the result.
+DuckLake before Evidence readers see the result. Supported local exception: dbt runs on
+host against local Compose PostgreSQL-backed DuckLake catalogs.
 
 ## Scratch Storage Contract
 
