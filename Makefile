@@ -7,7 +7,7 @@ INGESTION_IMAGE ?= eve-market-ingestion:local
 
 .DEFAULT_GOAL := help
 
-.PHONY: help python-format python-format-check sql-format sql-lint ingestion-image ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke
+.PHONY: help python-format python-format-check sql-format sql-lint ingestion-image ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke local-bi-up local-bi-down local-bi-smoke
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -57,3 +57,15 @@ local-pipeline-smoke: local-airflow-env ## Smoke check Airflow DB, DAG parse, an
 
 local-airflow-docker-smoke: local-airflow-env ## Smoke check Airflow DockerOperator support
 	$(LOCAL_COMPOSE) run --rm airflow-cli python -c "from airflow.providers.docker.operators.docker import DockerOperator; import docker; assert docker.from_env().ping(); print('local Airflow DockerOperator smoke ok')"
+
+local-bi-up: local-airflow-env ## Start local Evidence BI container service
+	@mkdir -p .local/data .local/logs
+	$(LOCAL_COMPOSE) --profile bi up -d evidence
+	$(MAKE) local-bi-smoke
+
+local-bi-down: local-airflow-env ## Stop local Evidence BI service
+	$(LOCAL_COMPOSE) --profile bi stop evidence
+
+local-bi-smoke: local-airflow-env ## Smoke check local Evidence query in container
+	@mkdir -p .local/data .local/logs
+	$(LOCAL_COMPOSE) --profile bi run --rm evidence /bin/sh -lc "if [ ! -d node_modules/@evidence-dev ]; then npm ci; fi && npm run sources"
