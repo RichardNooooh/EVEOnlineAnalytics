@@ -1,10 +1,11 @@
 #!/usr/bin/env sh
 
 # Source this file from transformation/ when testing dbt against the local
-# Airflow-backed DuckLake publication.
+# Compose-backed DuckLake publication.
 #
 # This uses the repo's local demo credentials and repo-root published dataset path
-# for host-side dbt against the local Airflow-backed publication.
+# for supported host-dbt exception against local Compose PostgreSQL-backed
+# publication.
 
 export DBT_DUCKDB_PATH="/tmp/eve_market_transform.duckdb"
 export DBT_THREADS="4"
