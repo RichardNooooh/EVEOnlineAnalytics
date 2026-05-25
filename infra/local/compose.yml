@@ -65,6 +65,8 @@ services:
     environment:
       EVIDENCE_VAR__CURATED_DUCKLAKE_ATTACH_PATH: ducklake:postgres:dbname=${POSTGRES_DB:-airflow} host=postgres port=5432 user=${POSTGRES_USER:-airflow} password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/local/.env}
       EVIDENCE_VAR__CURATED_DUCKLAKE_DATA_PATH: /data/datasets/ducklake
+      EVIDENCE_VAR__CURATED_DUCKLAKE_ALIAS: curated_lake
+      EVIDENCE_VAR__CURATED_DUCKLAKE_SCHEMA: curated
       EVIDENCE_VAR__CURATED_DUCKLAKE_METADATA_SCHEMA: eve_market
       EVIDENCE_VAR__CURATED_DUCKLAKE_OVERRIDE_DATA_PATH: "true"
       npm_config_cache: /tmp/npm-cache
@@ -102,6 +104,7 @@ services:
         mkdir -p /opt/airflow/logs /opt/eve-market/data
         chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/logs
         chown -R "${INGESTION_APP_UID:-10001}:${INGESTION_APP_GID:-10001}" /opt/eve-market/data
+        chmod -R a+rwX /opt/eve-market/data
         exec /entrypoint bash -c 'set -e; airflow db migrate; airflow users create --username "${AIRFLOW_ADMIN_USERNAME:-admin}" --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" --firstname Local --lastname Admin --role Admin --email "${AIRFLOW_ADMIN_EMAIL:-admin@example.com}" || true'
 
   airflow-api-server:
