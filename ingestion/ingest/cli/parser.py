@@ -1,8 +1,12 @@
 import argparse
 
 from ingest.cli.builders import (
-    build_everef_market_history_config,
-    build_everef_market_orders_config,
+    build_everef_config,
+)
+from ingest.runtime_defaults import (
+    DEFAULT_DATA_ROOT,
+    DEFAULT_DUCKLAKE_CATALOG,
+    DEFAULT_DUCKLAKE_METADATA_SCHEMA,
 )
 
 
@@ -47,13 +51,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ingest daily market history CSV archives.",
         parents=[
             shared_parents["date_range"],
-            shared_parents["raw_cache"],
+            shared_parents["runtime"],
             shared_parents["ducklake"],
         ],
     )
     everef_market_history_parser.set_defaults(
         handler=_command_not_implemented,
-        config_builder=build_everef_market_history_config,
+        config_builder=build_everef_config,
         not_implemented_message="Everef market-history command is not implemented yet.",
     )
 
@@ -62,13 +66,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ingest market order archives.",
         parents=[
             shared_parents["date_range"],
-            shared_parents["raw_cache"],
+            shared_parents["runtime"],
             shared_parents["ducklake"],
         ],
     )
     everef_market_orders_parser.set_defaults(
         handler=_command_not_implemented,
-        config_builder=build_everef_market_orders_config,
+        config_builder=build_everef_config,
         not_implemented_message="Everef market-orders command is not implemented yet.",
     )
 
@@ -96,18 +100,18 @@ def _build_shared_parents() -> dict[str, argparse.ArgumentParser]:
         help="Inclusive YYYY-MM-DD date.",
     )
 
-    raw_cache_parent = argparse.ArgumentParser(add_help=False)
-    raw_cache_parent.add_argument(
-        "--raw-root",
-        default=None,
-        help="Raw source-file cache root.",
+    runtime_parent = argparse.ArgumentParser(add_help=False)
+    runtime_parent.add_argument(
+        "--data-root",
+        default=DEFAULT_DATA_ROOT,
+        help="Mounted runtime data root.",
     )
-    raw_cache_parent.add_argument(
+    runtime_parent.add_argument(
         "--raw-ledger-url",
         default=None,
         help="Raw source-file ledger URL.",
     )
-    raw_cache_parent.add_argument(
+    runtime_parent.add_argument(
         "--raw-max-copies-per-date",
         type=int,
         default=None,
@@ -116,23 +120,18 @@ def _build_shared_parents() -> dict[str, argparse.ArgumentParser]:
 
     ducklake_parent = argparse.ArgumentParser(add_help=False)
     ducklake_parent.add_argument(
-        "--ducklake-name",
-        default=None,
-        help="DuckLake attach name.",
-    )
-    ducklake_parent.add_argument(
         "--ducklake-catalog",
-        default=None,
+        default=DEFAULT_DUCKLAKE_CATALOG,
         help="DuckLake catalog URL.",
     )
     ducklake_parent.add_argument(
-        "--ducklake-storage",
-        default=None,
-        help="DuckLake storage URL.",
+        "--ducklake-metadata-schema",
+        default=DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+        help="DuckLake metadata schema name.",
     )
 
     return {
         "date_range": date_range_parent,
-        "raw_cache": raw_cache_parent,
+        "runtime": runtime_parent,
         "ducklake": ducklake_parent,
     }
