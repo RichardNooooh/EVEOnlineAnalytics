@@ -8,5 +8,5 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging()
     log_runtime_context()
     parser = build_parser()
-    parser.parse_args(argv)
-    parser.error("CLI command dispatch is not implemented yet.")
+    args = parser.parse_args(argv)
+    return args.handler(args, parser)
