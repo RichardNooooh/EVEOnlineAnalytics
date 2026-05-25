@@ -58,8 +58,8 @@ For ingestion jobs, DuckLake destination configuration is part of the publisher
 boundary: the publisher resolves the catalog, storage path, and publication guardrails
 before committing data.
 
-For curated dbt outputs, the build step happens in scratch DuckDB first, then the
-validated result is published into a curated DuckLake table such as
+For curated dbt outputs, upstream build steps happen in scratch DuckDB first and the
+final BI mart models then materialize directly into curated DuckLake tables such as
 `curated.curated_daily_prices` or `curated.curated_trade_volume`.
 
 ### 5. Consume
@@ -96,10 +96,13 @@ The architecture expects source corrections and replay.
 Current contract for curated BI publication:
 
 1. dbt reads canonical raw DuckLake table state through an attached DuckLake alias.
-2. dbt builds the mart in a transient local DuckDB work database.
-3. the curated publisher validates grain and schema expectations
-4. the validated replacement scope is committed to curated DuckLake table state
-5. Evidence and other readers consume only that published curated state
+2. dbt builds staging, intermediate, and fact models in a transient local DuckDB work database.
+3. final curated mart models materialize directly into attached curated DuckLake tables.
+4. dbt data tests validate those published relations after materialization.
+5. Evidence and other readers consume that published curated state.
+
+This direct dbt publication path does not provide a pre-visibility validation barrier for
+curated tables.
 
 dbt must never depend on a cluster-shared writable DuckDB warehouse file.
 

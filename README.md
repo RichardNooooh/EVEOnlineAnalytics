@@ -41,7 +41,8 @@ metadata database, stock `apache/airflow` containers, bind-mounted DAGs and proj
 code, and local DuckLake data-file storage under `.local/data`.
 
 Compose-run BI app lives under `bi/`. It reads published curated DuckLake state from
-`.local/data` as read-only consumer after local publish flow completes.
+`.local/data` as read-only consumer after host `dbt build` materializes final curated
+tables.
 
 Host dbt remains supported from `transformation/` as local exception. It attaches to
 local Compose PostgreSQL-backed DuckLake catalogs while keeping its scratch DuckDB

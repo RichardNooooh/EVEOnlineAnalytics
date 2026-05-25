@@ -99,7 +99,10 @@ containers need that explicit host path to persist DuckLake data files.
 
 Local mounted data is owned by `INGESTION_APP_UID`/`INGESTION_APP_GID` so the
 ingestion image can create `/opt/eve-market/data/raw` and DuckLake files during a
-backfill. Keep those values aligned with the `ingestion/Dockerfile` runtime user.
+backfill. The local harness also opens write permissions on that tree so supported host
+dbt can publish curated DuckLake tables into the same mounted path. Keep
+`INGESTION_APP_UID`/`INGESTION_APP_GID` aligned with the `ingestion/Dockerfile` runtime
+user.
 
 If the Airflow container cannot reach Docker, set `DOCKER_GID` in `infra/local/.env` to
 the host Docker group ID from `getent group docker | cut -d: -f3`.
@@ -141,7 +144,7 @@ make local-airflow-docker-smoke
 2. `make ingestion-image`
 3. run raw backfill through local Airflow
 4. run host dbt from `transformation/` against local Compose PostgreSQL
-5. publish curated DuckLake outputs into repo-root `.local/data`
+5. run `make local-data-permissions-fix` if needed, then host `dbt build` so final curated marts materialize into repo-root `.local/data`
 6. run local Evidence through Compose profile `bi`
 7. commit
 8. validate in CI and publish GHCR image tags from trusted `master` builds

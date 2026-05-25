@@ -39,7 +39,7 @@ The stack is defined by the two tables below.
 | **Ingestion** | Python + dlt | Lightweight, code-first ingestion approach for everef.net archives and the ESI API. See ADR-004. |
 | **Storage** | DuckLake over Parquet files | Shared analytical storage holds DuckLake data files, contracts, artifacts, and logs. DuckLake catalog metadata is durable state and should use PostgreSQL in production-style deployments. See ADR-006 and ADR-007. |
 | **Compute** | DuckDB (local or transient only) | Embedded analytical engine used for local development and single-writer batch jobs. DuckDB databases are scratch state, not cluster-shared persistent storage. See ADR-006. |
-| **Transformation** | dbt | SQL-first transformation with built-in lineage, testing, and documentation; planned to read DuckLake-backed table state through a validated DuckLake/DuckDB handoff. |
+| **Transformation** | dbt | SQL-first transformation with built-in lineage, testing, and documentation; reads DuckLake-backed raw table state from local/transient DuckDB compute and can materialize final curated DuckLake tables directly. |
 | **BI** | Evidence OSS | Static BI and case-study site built from markdown, SQL, and version-controlled data outputs; self-hosted builds fit the portfolio publishing model without adding another durable analytics store. |
 | **ML Experiment Tracking** | MLflow | Tracks experiments, parameters, metrics, and model artifacts; integrates cleanly with Python training scripts and serves as the model registry. |
 | **ML Serving** | BentoML | Packages trained models as REST APIs with health checks and rolling restarts. |

@@ -16,7 +16,7 @@ Current curated pages read:
 ## Prerequisites
 
 - local reviewer stack running from `infra/local/`
-- curated publish completed into repo-root `.local/data`
+- host `dbt build` completed so curated DuckLake tables exist under repo-root `.local/data`
 - local Compose Postgres DuckLake catalog reachable as `postgres:5432` inside Compose
 
 ## Local Setup
