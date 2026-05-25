@@ -27,6 +27,17 @@ PUBLICATIONS = {
 }
 
 
+def default_local_postgres_attach_path() -> str:
+    return (
+        "ducklake:postgres:"
+        f"dbname={os.environ.get('POSTGRES_DB', 'airflow')} "
+        f"host={os.environ.get('DBT_POSTGRES_HOST', '127.0.0.1')} "
+        f"port={os.environ.get('POSTGRES_HOST_PORT', '5432')} "
+        f"user={os.environ.get('POSTGRES_USER', 'airflow')} "
+        f"password={os.environ.get('POSTGRES_PASSWORD', 'airflow-local-only')}"
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Publish dbt scratch marts into canonical curated DuckLake tables.",
@@ -40,7 +51,7 @@ def parse_args() -> argparse.Namespace:
         "--ducklake-attach-path",
         default=os.environ.get(
             "CURATED_DUCKLAKE_ATTACH_PATH",
-            "ducklake:sqlite:../.local/data/datasets/ducklake/curated/lake_catalog.sqlite",
+            default_local_postgres_attach_path(),
         ),
         help="Writable curated DuckLake catalog attach path.",
     )
@@ -64,12 +75,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--ducklake-metadata-schema",
-        default=os.environ.get("CURATED_DUCKLAKE_METADATA_SCHEMA", "main"),
+        default=os.environ.get("CURATED_DUCKLAKE_METADATA_SCHEMA", "eve_market"),
         help="DuckLake catalog metadata schema.",
     )
     parser.add_argument(
         "--ducklake-override-data-path",
-        default=os.environ.get("CURATED_DUCKLAKE_OVERRIDE_DATA_PATH", "0"),
+        default=os.environ.get("CURATED_DUCKLAKE_OVERRIDE_DATA_PATH", "1"),
         help="Whether to override the catalog data path for this connection (0 or 1).",
     )
     parser.add_argument(
