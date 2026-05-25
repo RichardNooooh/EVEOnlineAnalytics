@@ -407,6 +407,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "dlt", extra = ["ducklake", "http"] },
+    { name = "duckdb" },
     { name = "pandas" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
@@ -422,6 +423,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dlt", extras = ["ducklake", "http"], specifier = ">=1.26.0" },
+    { name = "duckdb", specifier = ">=1.5.2" },
     { name = "pandas", specifier = ">=3.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pyarrow", specifier = ">=24.0.0" },
