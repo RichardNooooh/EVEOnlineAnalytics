@@ -1,3 +1,6 @@
+# Temporary
+ingestion_old/
+
 # Python caches and test output
 __pycache__/
 *.py[cod]
