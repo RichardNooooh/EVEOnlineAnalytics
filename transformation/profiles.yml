@@ -19,3 +19,10 @@ eve_market_transform:
             data_path: "{{ env_var('DBT_DUCKLAKE_DATA_PATH', '../.local/data/datasets/ducklake/raw/raw_market_history') }}"
             metadata_schema: "{{ env_var('DBT_DUCKLAKE_METADATA_SCHEMA', 'eve_market') }}"
             override_data_path: "{{ env_var('DBT_DUCKLAKE_OVERRIDE_DATA_PATH', '1') }}"
+        - path: "{{ env_var('CURATED_DUCKLAKE_ATTACH_PATH', 'ducklake:postgres:dbname=' ~ env_var('POSTGRES_DB', 'airflow') ~ ' host=' ~ env_var('DBT_POSTGRES_HOST', '127.0.0.1') ~ ' port=' ~ env_var('POSTGRES_HOST_PORT', '5432') ~ ' user=' ~ env_var('POSTGRES_USER', 'airflow') ~ ' password=' ~ env_var('POSTGRES_PASSWORD', 'airflow-local-only')) }}"
+          alias: "{{ env_var('CURATED_DUCKLAKE_ALIAS', 'curated_lake') }}"
+          is_ducklake: true
+          options:
+            data_path: "{{ env_var('CURATED_DUCKLAKE_DATA_PATH', '../.local/data/datasets/ducklake') }}"
+            metadata_schema: "{{ env_var('CURATED_DUCKLAKE_METADATA_SCHEMA', 'eve_market') }}"
+            override_data_path: "{{ env_var('CURATED_DUCKLAKE_OVERRIDE_DATA_PATH', '1') }}"
