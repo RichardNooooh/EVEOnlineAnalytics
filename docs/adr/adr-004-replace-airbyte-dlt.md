@@ -25,7 +25,7 @@ source data and publish DuckLake tables backed by Parquet data files.
 
 The planned pipeline contract becomes:
 
-`Airflow -> dlt dataset writer/publisher -> DuckLake raw/bronze tables -> dbt reads canonical table state through a validated DuckLake/DuckDB handoff -> curated DuckLake tables and/or transient local DuckDB work DB`
+`Airflow -> dlt dataset writer/publisher -> DuckLake raw/bronze tables -> dbt reads canonical table state through an attached DuckLake alias in transient local DuckDB compute -> curated DuckLake tables and/or transient local DuckDB work DB`
 
 This ADR is about the ingestion approach, not a runtime implementation. It defines
 the contract the future ingestion code must follow.
@@ -52,9 +52,9 @@ Three problems compounded to make Airbyte a poor fit:
   for the intended replacement scope.
 - Raw tables are published to shared storage as DuckLake-backed Parquet data files, not
   merged into a shared mutable DuckDB database file.
-- dbt reads canonical table state through a validated DuckLake/DuckDB handoff and may
-  materialize curated DuckLake outputs or use a transient local DuckDB work database
-  during execution.
+- dbt reads canonical table state through an attached DuckLake alias in transient local
+  DuckDB compute and may materialize final curated DuckLake outputs directly while
+  keeping upstream work tables local.
 
 ## What This Does Not Change
 
