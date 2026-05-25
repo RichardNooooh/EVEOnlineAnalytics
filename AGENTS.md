@@ -79,7 +79,7 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, PowerBI, and Tableau.
 - Commit titles and bodies use prefixes such as `docs:`, `cleanup:`, `feat:`,
   `refactor:`, or `fix:` followed by a capitalized action verb.
 - Commit bodies should use one `{prefix}: {Verb}...` line per change and append
-  `Co-Authored-By: GPT-5.5 (high) via OpenCode`.
+  `Co-Authored-By: GPT-5.4 via OpenCode` (replacing model name with your model name).
 - When faced with **any** architectural/design/coding decision, ask before proceeding instead
   of coming up with some half-baked solution.
 
