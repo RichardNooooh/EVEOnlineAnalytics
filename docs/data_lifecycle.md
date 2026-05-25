@@ -67,8 +67,8 @@ validated result is published into a curated DuckLake table such as
 Downstream readers such as dbt, ML jobs, dashboards, and APIs consume only published
 table state.
 
-For the local BI path, host-run Evidence reads the published curated DuckLake table state
-from the local reviewer/demo data root. It does not read dbt scratch databases or
+For the local BI path, Compose-run Evidence reads the published curated DuckLake table
+state from the local reviewer/demo data root. It does not read dbt scratch databases or
 unpublished intermediate tables.
 
 ## Backfills and Corrections
@@ -115,9 +115,11 @@ Expected loop:
 2. build the local ingestion job image
 3. run locally against `.local/data`
 4. validate DAG behavior and outputs through local Airflow DockerOperator tasks
-5. commit code and contracts
-6. let CI validate changes and publish GHCR image tags from trusted `master` builds
-7. deploy through `homelab-data-platform` into the production Airflow runtime
+5. run host dbt against local Compose PostgreSQL-backed DuckLake catalogs
+6. validate local BI through Compose Evidence service
+7. commit code and contracts
+8. let CI validate changes and publish GHCR image tags from trusted `master` builds
+9. deploy through `homelab-data-platform` into the production Airflow runtime
 
 Local storage remains an approximation of production storage. `.local/data` stands in
 for TrueNAS NFS DuckLake data-file storage, local Postgres stands in for the Airflow

@@ -104,7 +104,7 @@ Current planned rules:
 
 ## Local BI Read Path
 
-For the supported local reviewer/demo flow, host-run Evidence should read published
+For the supported local reviewer/demo flow, Compose-run Evidence should read published
 curated DuckLake state from repo-root `.local/data/datasets/ducklake/curated/` or an
 equivalent mounted data root. Evidence is a read-only consumer of published curated
 table state, not a writer and not a reader of dbt scratch DuckDB files.

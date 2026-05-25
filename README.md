@@ -20,7 +20,7 @@ The canonical cross-repo workload-to-platform runtime contract lives in
 - `datasets/`: contracts, schemas, reference data, and manifests
 - `transformation/`: dbt models, tests, and feature-building SQL
 - `orchestration/`: Airflow DAGs and scheduling logic
-- `bi/`: host-run Evidence BI app over curated DuckLake publications
+- `bi/`: Compose-run Evidence BI app over curated DuckLake publications
 - `experiments/`: validation work, model experiments, and evidence
 - `docs/`: architecture, storage, lifecycle, and ADRs
 - `infra/`: local Airflow and published-data demo harness
@@ -31,7 +31,7 @@ The canonical cross-repo workload-to-platform runtime contract lives in
 > and similar finer details across other components, such as security,
 > backup/recovery, and related production-polish concerns.
 
-## Local Airflow + dlt Runtime
+## Local Compose Runtime
 
 This is local development and reviewer demo harness for published-data side of analytics repo.
 
@@ -40,8 +40,12 @@ requiring Proxmox, k3s, TrueNAS, or Helm. It runs Airflow with a local Postgres
 metadata database, stock `apache/airflow` containers, bind-mounted DAGs and project
 code, and local DuckLake data-file storage under `.local/data`.
 
-Host-run BI app lives under `bi/`. It reads published curated DuckLake state from
+Compose-run BI app lives under `bi/`. It reads published curated DuckLake state from
 `.local/data` as read-only consumer after local publish flow completes.
+
+Host dbt remains supported from `transformation/` as local exception. It attaches to
+local Compose PostgreSQL-backed DuckLake catalogs while keeping its scratch DuckDB
+work database on host-local storage.
 
 This runtime is a development harness, not production. It does not replace the
 analytics architecture documented in `docs/architecture.md`. Production-style
@@ -62,6 +66,7 @@ Basic commands:
 
 ```bash
 make local-airflow-up
+make local-bi-up
 make local-airflow-down
 make local-airflow-reset
 make local-pipeline-smoke
@@ -70,11 +75,13 @@ make local-pipeline-smoke
 Expected development loop:
 
 1. edit ingestion and dlt code
-2. run locally
-3. validate through local Airflow
-4. commit
-5. validate in CI and publish GHCR image tags from trusted `master` builds
-6. deploy through `homelab-data-platform`
+2. run raw publication through local Airflow
+3. run host dbt against local Compose PostgreSQL
+4. validate local BI through Compose Evidence
+5. commit
+6. validate in CI and publish GHCR image tags from trusted `master` builds
+7. deploy through `homelab-data-platform`
 
 See `infra/local/README.md` for local runtime details, `bi/README.md` for local BI
-app usage, and `docs/runtime_contract.md` for workload-to-platform deployment contract.
+app usage, `transformation/README.md` for host dbt against Compose PostgreSQL, and
+`docs/runtime_contract.md` for workload-to-platform deployment contract.

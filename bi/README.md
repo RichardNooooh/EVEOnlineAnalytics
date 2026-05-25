@@ -1,6 +1,6 @@
 # Evidence App
 
-Host-run Evidence app for read-only BI over published curated DuckLake state.
+Compose-run Evidence app for read-only BI over published curated DuckLake state.
 
 ## Purpose
 
@@ -17,30 +17,30 @@ Current curated pages read:
 
 - local reviewer stack running from `infra/local/`
 - curated publish completed into repo-root `.local/data`
-- local Postgres DuckLake catalog reachable on `127.0.0.1:5432`
-- Node and npm from repo `mise.toml`
+- local Compose Postgres DuckLake catalog reachable as `postgres:5432` inside Compose
 
 ## Local Setup
 
 ```bash
-cp .env.example .env
-npm install
-npm run sources
-npm run dev
+make local-airflow-up
+make local-bi-up
+make local-bi-smoke
 ```
 
-Open local app at `http://localhost:3000` unless Evidence chooses another port.
+Open local app at `http://localhost:3000` in host browser. Compose serves Evidence
+from container; browser entrypoint stays local.
 
-## Build
+Stop local BI service:
 
 ```bash
-npm run build
-npm run preview
+make local-bi-down
 ```
 
 ## Data Source Notes
 
 - source config lives in `sources/curated_ducklake/`
 - Evidence uses DuckDB in-process and attaches DuckLake with `read_only`
-- local source queries reuse `CURATED_DUCKLAKE_*` naming from `transformation/`
-- if curated publication is missing from local DuckLake catalog, `npm run sources` fails by design
+- local source queries reuse `CURATED_DUCKLAKE_*` naming from `transformation/` through
+  Evidence `EVIDENCE_VAR__*` environment mapping in Compose
+- Compose service mounts repo-root `.local/data` read-only at `/data`
+- if curated publication is missing from local DuckLake catalog, `make local-bi-smoke` and `make local-bi-up` fail by design
