@@ -4,9 +4,14 @@ import pytest
 
 from ingest.cli.builders import build_everef_market_history_config
 from ingest.cli.parser import build_parser
+from ingest.runtime_defaults import (
+    DEFAULT_DATA_ROOT,
+    DEFAULT_DUCKLAKE_CATALOG,
+    DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+)
 
 
-def test_market_history_maps_raw_and_ducklake_flags() -> None:
+def test_market_history_maps_runtime_and_ducklake_flags() -> None:
     parser = build_parser()
 
     args = parser.parse_args(
@@ -17,31 +22,51 @@ def test_market_history_maps_raw_and_ducklake_flags() -> None:
             "2025-01-01",
             "--end-date",
             "2025-01-31",
-            "--raw-root",
-            "/data/raw",
+            "--data-root",
+            "/data/runtime",
             "--raw-ledger-url",
             "postgresql://ledger",
             "--raw-max-copies-per-date",
             "5",
-            "--ducklake-name",
-            "eve_market",
             "--ducklake-catalog",
             "postgresql://catalog",
-            "--ducklake-storage",
-            "s3://ducklake/files",
+            "--ducklake-metadata-schema",
+            "custom_schema",
         ]
     )
 
     config = build_everef_market_history_config(args)
 
-    assert config.date_range.start_date == "2025-01-01"
-    assert config.date_range.end_date == "2025-01-31"
-    assert config.raw_files.raw_root == "/data/raw"
+    assert config.start_date == "2025-01-01"
+    assert config.end_date == "2025-01-31"
+    assert config.data_root == "/data/runtime"
+    assert config.raw_files.raw_root == "/data/runtime"
     assert config.raw_files.raw_ledger_url == "postgresql://ledger"
     assert config.raw_files.raw_max_copies_per_date == 5
-    assert config.ducklake.ducklake_name == "eve_market"
     assert config.ducklake.ducklake_catalog == "postgresql://catalog"
-    assert config.ducklake.ducklake_storage == "s3://ducklake/files"
+    assert config.ducklake.ducklake_metadata_schema == "custom_schema"
+
+
+def test_market_history_uses_runtime_defaults() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "everef",
+            "market-history",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2025-01-31",
+        ]
+    )
+
+    config = build_everef_market_history_config(args)
+
+    assert config.data_root == DEFAULT_DATA_ROOT
+    assert config.raw_files.raw_root == DEFAULT_DATA_ROOT
+    assert config.ducklake.ducklake_catalog == DEFAULT_DUCKLAKE_CATALOG
+    assert config.ducklake.ducklake_metadata_schema == DEFAULT_DUCKLAKE_METADATA_SCHEMA
 
 
 def test_market_history_rejects_invalid_start_date() -> None:
