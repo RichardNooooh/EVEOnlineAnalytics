@@ -14,9 +14,6 @@ dependencies = [
     "duckdb>=1.5.2",
 ]
 
-[project.scripts]
-eve-market-publish-curated = "transform.publish_curated_ducklake:main"
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/transform"]
 

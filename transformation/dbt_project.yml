@@ -18,3 +18,11 @@ models:
       +materialized: view
     marts:
       +materialized: table
+      mart_curated_daily_prices:
+        +database: "{{ env_var('CURATED_DUCKLAKE_ALIAS', 'curated_lake') }}"
+        +schema: "{{ env_var('CURATED_DUCKLAKE_SCHEMA', 'curated') }}"
+        +alias: curated_daily_prices
+      mart_curated_trade_volume:
+        +database: "{{ env_var('CURATED_DUCKLAKE_ALIAS', 'curated_lake') }}"
+        +schema: "{{ env_var('CURATED_DUCKLAKE_SCHEMA', 'curated') }}"
+        +alias: curated_trade_volume
