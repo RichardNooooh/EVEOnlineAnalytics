@@ -5,6 +5,9 @@ already in `transformation/`.
 
 ## Local CLI
 
+Supported local exception: run dbt on host while it attaches to local Compose
+PostgreSQL-backed DuckLake catalogs.
+
 Use `uv run` and point dbt at committed project profile:
 
 ```bash
@@ -20,22 +23,15 @@ The Python `duckdb` package used by `dbt-duckdb` does not provide the standalone
 DuckDB CLI binary. Install the DuckDB CLI separately if you want an interactive
 shell for inspecting the dbt scratch database.
 
-The same profile also attaches the local published DuckLake under repo-root
-`.local/data` as a read-only source alias so dbt reads the canonical raw
-publication instead of a shared writable `.duckdb` file.
+The same profile attaches the local Compose-published DuckLake under repo-root
+`.local/data` through PostgreSQL-backed DuckLake catalog metadata so dbt reads the
+canonical raw publication instead of a shared writable `.duckdb` file.
 
 Curated publication is a separate explicit step. dbt still builds marts into the
 local scratch DuckDB database, and `eve-market-publish-curated` then copies those
 scratch tables into writable DuckLake curated tables.
 
-The default host profile expects a standalone local SQLite publication under
-repo-root `.local/data`. Plain host `eve-ingest ...` smoke runs from `ingestion/`
-write under `ingestion/.local/`, so they do not populate that default
-transformation/dbt source path. Reviewer-style local publications should come from the
-Docker + Airflow stack under `infra/local/`, but host-side dbt then needs
-`DBT_DUCKLAKE_*` overrides for the PostgreSQL-backed DuckLake catalog.
-
-Populate reviewer-style local data through the Docker + Airflow path:
+Populate reviewer-style local data through Docker Compose + Airflow path:
 
 ```bash
 cp ../infra/local/.env.example ../infra/local/.env
@@ -45,25 +41,26 @@ make -C .. ingestion-image
 
 Then trigger the `backfill_market_history` DAG in Airflow so published DuckLake data
 files land under repo-root `.local/data`.
-The local compose stack now also exposes its Postgres catalog on the host by default
-at `127.0.0.1:5432`, so host dbt can attach directly to that PostgreSQL-backed
-DuckLake catalog instead of using the default local SQLite attach path.
+The local Compose stack also exposes its Postgres catalog on the host by default
+at `127.0.0.1:5432` as supported host-dbt exception, so host dbt can attach
+directly to that PostgreSQL-backed DuckLake catalog.
 
 ## Environment
 
 - `DBT_DUCKDB_PATH`: local DuckDB work database path. Keep this on local or transient scratch.
 - `DBT_THREADS`: dbt thread count. Defaults to `4`.
+- `DBT_POSTGRES_HOST`: Postgres host used by the default local attach string. Defaults to `127.0.0.1`.
 - `DBT_DUCKLAKE_ALIAS`: attached DuckLake alias used by sources. Defaults to `raw_lake`.
-- `DBT_DUCKLAKE_ATTACH_PATH`: DuckLake attach path. Local default is `ducklake:sqlite:../.local/data/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite` when commands run from `transformation/` against a standalone local SQLite publication.
-- `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `../.local/data/datasets/ducklake/raw/raw_market_history/files` when commands run from `transformation/` against a standalone local SQLite publication.
-- `DBT_DUCKLAKE_METADATA_SCHEMA`: DuckLake metadata schema inside the catalog database. Defaults to `main`; Airflow-backed local publications use `eve_market`.
-- `DBT_DUCKLAKE_OVERRIDE_DATA_PATH`: Override the catalog's stored data path for the current connection. Use `0` or `1`. Defaults to `0`; host-side Airflow reads use `1` because the catalog stores the container path.
-- `CURATED_DUCKLAKE_ATTACH_PATH`: Writable curated DuckLake attach path. Defaults to `ducklake:sqlite:../.local/data/datasets/ducklake/curated/lake_catalog.sqlite`.
+- `DBT_DUCKLAKE_ATTACH_PATH`: DuckLake attach path. Local default targets Compose PostgreSQL on `127.0.0.1:5432` for supported host-dbt workflow using `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_HOST_PORT` defaults.
+- `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `../.local/data/datasets/ducklake/raw/raw_market_history`.
+- `DBT_DUCKLAKE_METADATA_SCHEMA`: DuckLake metadata schema inside the catalog database. Defaults to `eve_market`.
+- `DBT_DUCKLAKE_OVERRIDE_DATA_PATH`: Override the catalog's stored data path for the current connection. Use `0` or `1`. Defaults to `1` because the local catalog stores the container path.
+- `CURATED_DUCKLAKE_ATTACH_PATH`: Writable curated DuckLake attach path. Defaults to local Compose PostgreSQL on `127.0.0.1:5432` for supported host-dbt workflow.
 - `CURATED_DUCKLAKE_DATA_PATH`: Curated DuckLake data root. Defaults to `../.local/data/datasets/ducklake` so published tables land under `curated/`.
 - `CURATED_DUCKLAKE_ALIAS`: Writable curated DuckLake alias. Defaults to `curated_lake`.
 - `CURATED_DUCKLAKE_SCHEMA`: Curated DuckLake schema. Defaults to `curated`.
-- `CURATED_DUCKLAKE_METADATA_SCHEMA`: Curated DuckLake metadata schema. Defaults to `main`; Airflow-backed local publications use `eve_market`.
-- `CURATED_DUCKLAKE_OVERRIDE_DATA_PATH`: Override the curated catalog's stored data path for the current connection. Use `0` or `1`. Defaults to `0`; host-side Airflow writes use `1` because the catalog stores the container path.
+- `CURATED_DUCKLAKE_METADATA_SCHEMA`: Curated DuckLake metadata schema. Defaults to `eve_market`.
+- `CURATED_DUCKLAKE_OVERRIDE_DATA_PATH`: Override the curated catalog's stored data path for the current connection. Use `0` or `1`. Defaults to `1` because the local catalog stores the container path.
 
 Mounted/PostgreSQL-backed example:
 
@@ -78,23 +75,12 @@ uv run dbt debug --profiles-dir .
 For PostgreSQL-backed DuckLake catalogs, `DBT_DUCKLAKE_DATA_PATH` should point at the
 mounted dataset root rather than a local sqlite `files/` child.
 
-If you want to point dbt at direct ingestion-local smoke output instead, override the
-same variables explicitly:
-
-```bash
-export DBT_DUCKLAKE_ATTACH_PATH="ducklake:sqlite:../ingestion/.local/datasets/ducklake/raw/raw_market_history/lake_catalog.sqlite"
-export DBT_DUCKLAKE_DATA_PATH="../ingestion/.local/datasets/ducklake/raw/raw_market_history/files"
-uv run dbt debug --profiles-dir .
-```
-
 Local Airflow backfills use mounted storage plus a PostgreSQL DuckLake catalog inside
-the compose runtime while publishing local files into repo-root `.local/data`. Use that
-Docker + Airflow path when you want reviewer-style local data available for transform
-work. The default host-side dbt CLI still expects a standalone local SQLite catalog, so
-point it at the appropriate target with `DBT_DUCKLAKE_*` overrides when you are reading
-either compose-published PostgreSQL-backed data or direct host ingestion smoke output.
+the Compose runtime while publishing local files into repo-root `.local/data`. Use that
+Compose + Airflow path when you want reviewer-style local data available for transform
+work.
 
-For a copy-pasteable host-side local Airflow example, see
+For copy-pasteable supported host-dbt local Compose example, see
 `dbt-airflow-local.env.example.sh`.
 From `transformation/` you can run:
 
@@ -107,30 +93,11 @@ uv run dbt build --profiles-dir .
 uv run eve-market-publish-curated
 ```
 
-To inspect the dbt scratch database in DuckDB CLI against that same Airflow-backed
-local publication, source the same env file and start DuckDB with the repo-local
-init file:
+To inspect the dbt scratch database in DuckDB CLI against that same Compose-backed
+local publication, source the same env file and open the scratch database directly:
 
 ```bash
 source ./dbt-airflow-local.env.example.sh
-duckdb -readonly -init ./duckdb-airflow-init.sql "${DBT_DUCKDB_PATH}"
-```
-
-This init file loads the `ducklake` extension and re-attaches the raw publication
-as `raw_lake` using the same `DBT_DUCKLAKE_*` variables that dbt reads.
-
-If you prefer DuckDB CLI to auto-attach `raw_lake` every time, use the repo-local
-`./.duckdbrc` as your CLI init file:
-
-```bash
-source ./dbt-airflow-local.env.example.sh
-duckdb -readonly -init ./.duckdbrc "${DBT_DUCKDB_PATH}"
-```
-
-Or symlink it into your home directory so DuckDB loads it by default:
-
-```bash
-ln -sf "$PWD/.duckdbrc" ~/.duckdbrc
 duckdb -readonly "${DBT_DUCKDB_PATH}"
 ```
 
@@ -139,14 +106,17 @@ Useful first queries:
 ```sql
 show databases;
 show tables;
-select * from raw_lake.raw.raw_market_history limit 5;
 select * from main.stg_everef_market_history limit 5;
 ```
 
-If `5432` is already in use on your host, set `POSTGRES_HOST_PORT` in
-`infra/local/.env` and update `DBT_DUCKLAKE_ATTACH_PATH` to match.
+If you want to query `raw_lake` from DuckDB CLI, attach it manually with the same
+`DBT_DUCKLAKE_*` values that dbt uses before running raw publication queries.
 
-Local smoke example:
+If `5432` is already in use on your host, set `POSTGRES_HOST_PORT` in
+`infra/local/.env` and export matching `POSTGRES_HOST_PORT` or `DBT_DUCKLAKE_ATTACH_PATH`
+before running dbt.
+
+Local Compose-backed smoke example after `make -C .. local-airflow-up`:
 
 ```bash
 uv run dbt debug --profiles-dir .
@@ -164,60 +134,6 @@ Current first-pass curated outputs:
 
 - `curated.curated_daily_prices` from `main.mart_curated_daily_prices`
 - `curated.curated_trade_volume` from `main.mart_curated_trade_volume`
-
-## Docker
-
-Build local CLI image:
-
-```bash
-docker build -f Dockerfile -t eve-market-transform:local .
-docker run --rm eve-market-transform:local --help
-```
-
-Container defaults:
-
-- `DBT_PROFILES_DIR=/app`
-- `DBT_PROJECT_DIR=/app`
-- `DBT_DUCKDB_PATH=/tmp/eve_market_transform.duckdb`
-- `DBT_DUCKLAKE_ALIAS=raw_lake`
-- `DBT_DUCKLAKE_ATTACH_PATH=ducklake:sqlite:/app/ducklake/raw_market_history/lake_catalog.sqlite`
-- `DBT_DUCKLAKE_DATA_PATH=/app/ducklake/raw_market_history/files`
-- `PYTHONPATH=/app/src`
-
-The transform image does not bundle ingestion output. To make the default container
-attach work, mount the DuckLake catalog and files at `/app/ducklake/raw_market_history`.
-Otherwise override `DBT_DUCKLAKE_ATTACH_PATH` and `DBT_DUCKLAKE_DATA_PATH` to a mounted
-DuckLake location, such as a PostgreSQL-backed shared deployment.
-
-Example container smoke run with a bind mount from host local published data:
-
-```bash
-docker run --rm \
-  -v "$PWD/../.local/data/datasets/ducklake/raw/raw_market_history:/app/ducklake/raw_market_history:ro" \
-  eve-market-transform:local debug
-```
-
-Example container run against mounted/PostgreSQL-backed DuckLake:
-
-```bash
-docker run --rm \
-  -e DBT_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=eve_market_ducklake host=postgres.example user=user password=password" \
-  -e DBT_DUCKLAKE_DATA_PATH="/opt/eve-market/data/datasets/ducklake/raw/raw_market_history" \
-  -v /opt/eve-market/data:/opt/eve-market/data:ro \
-  eve-market-transform:local debug
-```
-
-Example container-side curated publish after dbt build:
-
-```bash
-docker run --rm \
-  --entrypoint python \
-  -e CURATED_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=eve_market_ducklake host=postgres.example user=user password=password" \
-  -e CURATED_DUCKLAKE_DATA_PATH="/opt/eve-market/data/datasets/ducklake" \
-  -v /opt/eve-market/data:/opt/eve-market/data \
-  eve-market-transform:local \
-  python -m transform.publish_curated_ducklake
-```
 
 ## Current Boundary
 

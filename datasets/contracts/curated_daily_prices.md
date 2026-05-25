@@ -5,7 +5,7 @@
 BI-facing daily price mart published from
 `transformation/models/marts/mart_curated_daily_prices.sql`.
 
-This contract documents the first curated price publication used for local host-run
+This contract documents the first curated price publication used for local Compose-run
 Evidence and other read-only analytical consumers.
 
 ## Publication Contract
@@ -57,7 +57,7 @@ after the curated publisher commits the validated table state into DuckLake.
 
 ## Local BI Consumption
 
-For supported local reviewer/demo flow, host-run Evidence should read this curated
+For supported local reviewer/demo flow, Compose-run Evidence should read this curated
 DuckLake publication under repo-root `.local/data` or equivalent mounted shared root.
 It should not read unpublished dbt scratch tables or a shared writable `.duckdb` file.
 

@@ -11,7 +11,7 @@ managed in `homelab-data-platform`.
 The canonical cross-repo runtime boundary for this local harness and the
 production-style platform repo lives in `docs/runtime_contract.md`.
 
-Host-run BI app lives separately under repo-root `bi/`. This `infra/local/`
+Compose-run BI app lives separately under repo-root `bi/`. This `infra/local/`
 harness publishes local DuckLake state that the Evidence app reads as read-only
 consumer.
 
@@ -29,6 +29,7 @@ consumer.
 - Airflow version from `infra/local/versions.txt` with `LocalExecutor`
 - Postgres metadata database
 - Raw file ledger database named `raw_files` with `raw_files` user
+- Evidence BI service behind Compose `bi` profile
 - Mounted repo directories for DAGs, ingestion, dbt, contracts, local published data, and logs
 - Docker socket mount for local-only `DockerOperator` task containers
 
@@ -53,9 +54,9 @@ state and `/scratch/local` for local runtime artifacts. The repo-local
 `ingestion/.dlt/.var/<profile>/` and `ingestion/.local/` convention applies to the
 packaged host CLI, not to DockerOperator or later Kubernetes-style runs.
 If you want reviewer-style local published data for transform work, publish it through
-this stack so dataset files land under repo-root `.local/data`. Host-side dbt may
-still need `DBT_DUCKLAKE_*` overrides when reading the matching PostgreSQL-backed
-DuckLake catalog.
+this stack so dataset files land under repo-root `.local/data`. Host-side dbt is the
+supported local exception outside Compose; it attaches to the matching PostgreSQL-backed
+DuckLake catalog while keeping its scratch DuckDB on host-local storage.
 
 ## Start
 
@@ -68,8 +69,18 @@ Open Airflow at <http://localhost:8080>. Default local login is `admin` / `admin
 Change local Airflow and Python image versions in `infra/local/versions.txt`.
 This harness uses the stock `apache/airflow` reference image.
 The local Postgres service is also published to the host by default at
-`127.0.0.1:5432` so host-side dbt can attach to the reviewer-stack DuckLake catalog.
+`127.0.0.1:5432` as supported host-dbt exception so dbt can attach to the
+reviewer-stack DuckLake catalog.
 If that port is already in use, set `POSTGRES_HOST_PORT` in `infra/local/.env`.
+
+Start local Evidence BI through Compose profile `bi`:
+
+```bash
+make local-bi-up
+```
+
+Open local BI at <http://localhost:3000> in host browser. Compose serves Evidence
+from container; browser entrypoint stays local.
 
 Build the ingestion task image used by local `DockerOperator` DAGs:
 
@@ -101,7 +112,8 @@ make local-airflow-down
 
 ## Reset
 
-This deletes local Airflow metadata volume plus `.local/data` and `.local/logs`.
+This deletes local Airflow metadata volume, local Evidence named volumes, plus
+`.local/data` and `.local/logs`.
 
 ```bash
 make local-airflow-reset CONFIRM=yes
@@ -126,11 +138,11 @@ make local-airflow-docker-smoke
 ## Development Loop
 
 1. edit ingestion and dlt code
-2. `make ingestion-image` and `make transform-image`
+2. `make ingestion-image`
 3. run raw backfill through local Airflow
-4. run curated dbt build + publish DAG through local Airflow
-5. use repo-root `.local/data` as local reviewer-stack publication output
-6. run host-side Evidence app from `bi/`
+4. run host dbt from `transformation/` against local Compose PostgreSQL
+5. publish curated DuckLake outputs into repo-root `.local/data`
+6. run local Evidence through Compose profile `bi`
 7. commit
 8. validate in CI and publish GHCR image tags from trusted `master` builds
 9. deploy through `homelab-data-platform`
