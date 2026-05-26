@@ -15,6 +15,12 @@ repos:
         entry: ruff format
         language: system
         files: \.(py|pyi)$
+      - id: sqlfluff-fix
+        name: sqlfluff fix
+        entry: uv run --project transformation sqlfluff fix --force
+        language: system
+        files: ^transformation/.*\.sql$
+        exclude: ^transformation/(target|dbt_packages|macros|\.venv)/
       - id: sqlfluff-lint
         name: sqlfluff lint
         entry: uv run --project transformation sqlfluff lint
