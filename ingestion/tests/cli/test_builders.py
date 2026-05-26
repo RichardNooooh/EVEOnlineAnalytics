@@ -4,7 +4,7 @@ import pytest
 
 from ingest.cli.builders import build_everef_market_history_config
 from ingest.cli.parser import build_parser
-from ingest.runtime_defaults import (
+from ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
@@ -69,57 +69,49 @@ def test_market_history_uses_runtime_defaults() -> None:
     assert config.ducklake.ducklake_metadata_schema == DEFAULT_DUCKLAKE_METADATA_SCHEMA
 
 
-def test_market_history_rejects_invalid_start_date() -> None:
+@pytest.mark.parametrize(
+    ("argv", "error_message"),
+    [
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-13-01",
+                "--end-date",
+                "2025-01-31",
+            ],
+            "start_date must be a valid YYYY-MM-DD date",
+        ),
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-02-01",
+                "--end-date",
+                "2025-01-31",
+            ],
+            "start_date must be on or before end_date",
+        ),
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-01-01",
+                "--end-date",
+                "2025-01-31",
+                "--raw-max-copies-per-date",
+                "-1",
+            ],
+            "raw_max_copies_per_date must be greater than or equal to 0",
+        ),
+    ],
+)
+def test_market_history_validation_errors(argv: list[str], error_message: str) -> None:
     parser = build_parser()
-    args = parser.parse_args(
-        [
-            "everef",
-            "market-history",
-            "--start-date",
-            "2025-13-01",
-            "--end-date",
-            "2025-01-31",
-        ]
-    )
+    args = parser.parse_args(argv)
 
-    with pytest.raises(ValueError, match="start_date must be a valid YYYY-MM-DD date"):
-        build_everef_market_history_config(args)
-
-
-def test_market_history_rejects_descending_date_range() -> None:
-    parser = build_parser()
-    args = parser.parse_args(
-        [
-            "everef",
-            "market-history",
-            "--start-date",
-            "2025-02-01",
-            "--end-date",
-            "2025-01-31",
-        ]
-    )
-
-    with pytest.raises(ValueError, match="start_date must be on or before end_date"):
-        build_everef_market_history_config(args)
-
-
-def test_market_history_rejects_negative_raw_copy_limit() -> None:
-    parser = build_parser()
-    args = parser.parse_args(
-        [
-            "everef",
-            "market-history",
-            "--start-date",
-            "2025-01-01",
-            "--end-date",
-            "2025-01-31",
-            "--raw-max-copies-per-date",
-            "-1",
-        ]
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="raw_max_copies_per_date must be greater than or equal to 0",
-    ):
+    with pytest.raises(ValueError, match=error_message):
         build_everef_market_history_config(args)
