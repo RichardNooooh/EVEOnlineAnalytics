@@ -50,9 +50,7 @@ checked-in DAG code used for workload development.
 This `.local/data` mount is for published DuckLake data only. Containerized `dlt`
 runtime state should use explicit ephemeral scratch separate from shared or durable
 storage. Current ingestion image defaults that scratch to `/scratch/dlt` for pipeline
-state and `/scratch/local` for local runtime artifacts. The repo-local
-`ingestion/.dlt/.var/<profile>/` and `ingestion/.local/` convention applies to the
-packaged host CLI, not to DockerOperator or later Kubernetes-style runs.
+state and `/scratch/local` for local runtime artifacts.
 If you want reviewer-style local published data for transform work, publish it through
 this stack so dataset files land under repo-root `.local/data`. Host-side dbt is the
 supported local exception outside Compose; it attaches to the matching PostgreSQL-backed
