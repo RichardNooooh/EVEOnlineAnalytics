@@ -3,7 +3,7 @@ import argparse
 from ingest.cli.builders import (
     build_everef_config,
 )
-from ingest.runtime_defaults import (
+from ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
