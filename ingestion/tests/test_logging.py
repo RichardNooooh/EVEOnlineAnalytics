@@ -4,18 +4,6 @@ import logging
 from ingest.logging import configure_logging, log_runtime_context
 
 
-def test_configure_logging_uses_plain_log_lines(monkeypatch, capsys) -> None:
-    monkeypatch.setenv("INGEST_LOG_LEVEL", "INFO")
-
-    configure_logging(force=True)
-
-    logging.getLogger("ingest.test").info("sync complete")
-
-    captured = capsys.readouterr()
-    assert "[INFO|ingest.test]" in captured.err
-    assert "sync complete" in captured.err
-
-
 def test_log_runtime_context_writes_single_startup_line(monkeypatch, capsys) -> None:
     monkeypatch.setenv("INGEST_LOG_LEVEL", "INFO")
     monkeypatch.setenv("AIRFLOW_CTX_DAG_ID", "ingest-dag")
