@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from ingest.cli.config import (
     DuckLakeCliConfig,
@@ -34,12 +35,19 @@ def build_everef_market_orders_config(args: argparse.Namespace) -> EverefCliConf
 
 
 def build_raw_files_config(args: argparse.Namespace) -> RawFilesCliConfig:
-    if args.raw_max_copies_per_date is not None and args.raw_max_copies_per_date < 0:
+    raw_max_copies_per_date = args.raw_max_copies_per_date
+    if raw_max_copies_per_date is not None and raw_max_copies_per_date < 0:
         raise ValueError("raw_max_copies_per_date must be greater than or equal to 0")
+    if raw_max_copies_per_date == 0:
+        raw_max_copies_per_date = None
+    if not args.raw_ledger_url:
+        raise ValueError("raw_ledger_url must not be empty")
+    if not str(args.raw_ledger_url).startswith(("postgresql://", "postgres://")):
+        raise ValueError("raw_ledger_url must be a PostgreSQL URL")
     return RawFilesCliConfig(
-        raw_root=args.data_root,
+        raw_root=str(Path(args.data_root) / "raw"),
         raw_ledger_url=args.raw_ledger_url,
-        raw_max_copies_per_date=args.raw_max_copies_per_date,
+        raw_max_copies_per_date=raw_max_copies_per_date,
     )
 
 

@@ -7,6 +7,7 @@ from ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+    DEFAULT_RAW_LEDGER_URL,
 )
 
 
@@ -108,7 +109,7 @@ def _build_shared_parents() -> dict[str, argparse.ArgumentParser]:
     )
     runtime_parent.add_argument(
         "--raw-ledger-url",
-        default=None,
+        default=DEFAULT_RAW_LEDGER_URL,
         help="Raw source-file ledger URL.",
     )
     runtime_parent.add_argument(
