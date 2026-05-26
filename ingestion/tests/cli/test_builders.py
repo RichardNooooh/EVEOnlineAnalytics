@@ -8,6 +8,8 @@ from ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+    DEFAULT_RAW_LEDGER_URL,
+    DEFAULT_RAW_ROOT,
 )
 
 
@@ -40,7 +42,7 @@ def test_market_history_maps_runtime_and_ducklake_flags() -> None:
     assert config.start_date == "2025-01-01"
     assert config.end_date == "2025-01-31"
     assert config.data_root == "/data/runtime"
-    assert config.raw_files.raw_root == "/data/runtime"
+    assert config.raw_files.raw_root == "/data/runtime/raw"
     assert config.raw_files.raw_ledger_url == "postgresql://ledger"
     assert config.raw_files.raw_max_copies_per_date == 5
     assert config.ducklake.ducklake_catalog == "postgresql://catalog"
@@ -64,7 +66,8 @@ def test_market_history_uses_runtime_defaults() -> None:
     config = build_everef_market_history_config(args)
 
     assert config.data_root == DEFAULT_DATA_ROOT
-    assert config.raw_files.raw_root == DEFAULT_DATA_ROOT
+    assert config.raw_files.raw_root == DEFAULT_RAW_ROOT
+    assert config.raw_files.raw_ledger_url == DEFAULT_RAW_LEDGER_URL
     assert config.ducklake.ducklake_catalog == DEFAULT_DUCKLAKE_CATALOG
     assert config.ducklake.ducklake_metadata_schema == DEFAULT_DUCKLAKE_METADATA_SCHEMA
 
@@ -107,6 +110,19 @@ def test_market_history_uses_runtime_defaults() -> None:
             ],
             "raw_max_copies_per_date must be greater than or equal to 0",
         ),
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-01-01",
+                "--end-date",
+                "2025-01-31",
+                "--raw-ledger-url",
+                "sqlite:///:memory:",
+            ],
+            "raw_ledger_url must be a PostgreSQL URL",
+        ),
     ],
 )
 def test_market_history_validation_errors(argv: list[str], error_message: str) -> None:
@@ -115,3 +131,24 @@ def test_market_history_validation_errors(argv: list[str], error_message: str) -
 
     with pytest.raises(ValueError, match=error_message):
         build_everef_market_history_config(args)
+
+
+def test_market_history_zero_max_copies_normalizes_to_unlimited() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "everef",
+            "market-history",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2025-01-31",
+            "--raw-max-copies-per-date",
+            "0",
+        ]
+    )
+
+    config = build_everef_market_history_config(args)
+
+    assert config.raw_files.raw_max_copies_per_date is None
