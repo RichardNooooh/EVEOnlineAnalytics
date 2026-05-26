@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-import re
-from uuid import uuid4
+from enum import StrEnum
 from urllib.parse import parse_qsl, unquote, urlparse
+from uuid import uuid4
 
 import duckdb
 import pyarrow as pa
 
+from ingest.util import (
+    DEFAULT_DUCKLAKE_CATALOG,
+    DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+    DEFAULT_DUCKLAKE_RAW_DATA_PATH,
+)
+
 DEFAULT_DUCKLAKE_ALIAS = "ducklake"
+DEFAULT_RAW_SCHEMA = "raw"
 
 _IDENTIFIER_RE = re.compile(r"^[^\s-]+$")
 
@@ -33,10 +41,13 @@ class DuckLakeTableTarget:
     table: str
 
 
-def build_ducklake_attach_path(ducklake_catalog: str) -> str:
-    """Convert PostgreSQL catalog URL into DuckLake attach URI."""
+class RawDuckLakeTable(StrEnum):
+    MARKET_HISTORY = "raw_market_history"
+    MARKET_ORDERS = "raw_market_orders"
 
-    parsed = urlparse(ducklake_catalog)
+
+def _build_default_attach_config() -> DuckLakeAttachConfig:
+    parsed = urlparse(DEFAULT_DUCKLAKE_CATALOG)
     if parsed.scheme not in {"postgres", "postgresql"}:
         raise ValueError("ducklake_catalog must be a PostgreSQL URL")
     if not parsed.hostname:
@@ -55,7 +66,12 @@ def build_ducklake_attach_path(ducklake_catalog: str) -> str:
     for key, value in parse_qsl(parsed.query, keep_blank_values=True):
         parts.append(f"{key}={value}")
 
-    return "ducklake:postgres:" + " ".join(parts)
+    return DuckLakeAttachConfig(
+        attach_uri="ducklake:postgres:" + " ".join(parts),
+        data_path=DEFAULT_DUCKLAKE_RAW_DATA_PATH,
+        metadata_schema=DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+        alias=DEFAULT_DUCKLAKE_ALIAS,
+    )
 
 
 def _quote_identifier(identifier: str) -> str:
@@ -84,7 +100,11 @@ def _build_merge_keys_clause(merge_keys: Sequence[str]) -> str:
     return ", ".join(_quote_identifier(key) for key in merge_keys)
 
 
-def attach_ducklake(
+def _target_for(table: RawDuckLakeTable) -> DuckLakeTableTarget:
+    return DuckLakeTableTarget(schema=DEFAULT_RAW_SCHEMA, table=table.value)
+
+
+def _attach_ducklake(
     con: duckdb.DuckDBPyConnection,
     *,
     config: DuckLakeAttachConfig,
@@ -112,55 +132,81 @@ def attach_ducklake(
     )
 
 
-def write_arrow_table(
-    con: duckdb.DuckDBPyConnection,
-    *,
-    arrow_table: pa.Table,
-    attach: DuckLakeAttachConfig,
-    target: DuckLakeTableTarget,
-    merge_keys: Sequence[str] = (),
-) -> None:
-    """Write Arrow rows to DuckLake target, appending or insert-merging by keys."""
+class DuckLakeWriter:
+    def __init__(self) -> None:
+        self._attach = _build_default_attach_config()
+        self._con: duckdb.DuckDBPyConnection | None = None
 
-    for merge_key in merge_keys:
-        _quote_identifier(merge_key)
+    def __enter__(self) -> DuckLakeWriter:
+        self._con = duckdb.connect()
+        _attach_ducklake(self._con, config=self._attach)
+        return self
 
-    missing_merge_keys = [
-        key for key in merge_keys if key not in arrow_table.column_names
-    ]
-    if missing_merge_keys:
-        raise ValueError(
-            "merge_keys must exist in arrow_table columns: "
-            + ", ".join(missing_merge_keys)
-        )
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._con is None:
+            return
+        self._con.close()
+        self._con = None
 
-    attach_ducklake(con, config=attach)
+    def write(
+        self,
+        arrow_table: pa.Table,
+        *,
+        table: RawDuckLakeTable,
+        merge_keys: Sequence[str] = (),
+    ) -> None:
+        con = self._con
+        if con is None:
+            raise RuntimeError(
+                "Missing DB connection. DuckLakeWriter must be used inside a with block"
+            )
 
-    source_name = f"_arrow_source_{uuid4().hex}"
-    source_relation = con.from_arrow(arrow_table)
-    source_relation.create_view(source_name)
+        missing_merge_keys = [
+            key for key in merge_keys if key not in arrow_table.column_names
+        ]
+        if missing_merge_keys:
+            raise ValueError(
+                "merge_keys must exist in arrow_table columns: "
+                + ", ".join(missing_merge_keys)
+            )
 
-    quoted_target = _quote_table_target(attach.alias, target)
-    quoted_source = _quote_identifier(source_name)
+        source_name = f"_arrow_source_{uuid4().hex}"
+        source_relation = con.from_arrow(arrow_table)
+        source_relation.create_view(source_name)
 
-    try:
-        if merge_keys:
+        quoted_target = _quote_table_target(self._attach.alias, _target_for(table))
+        quoted_source = _quote_identifier(source_name)
+
+        try:
+            if merge_keys:
+                con.execute(
+                    f"""
+                    MERGE INTO {quoted_target} AS target
+                    USING {quoted_source} AS source
+                    USING ({_build_merge_keys_clause(merge_keys)})
+                    WHEN NOT MATCHED THEN INSERT BY NAME
+                    """
+                )
+                return
+
             con.execute(
                 f"""
-                MERGE INTO {quoted_target} AS target
-                USING {quoted_source} AS source
-                USING ({_build_merge_keys_clause(merge_keys)})
-                WHEN NOT MATCHED THEN INSERT BY NAME
+                INSERT INTO {quoted_target} BY NAME
+                SELECT *
+                FROM {quoted_source}
                 """
             )
-            return
+        finally:
+            con.execute(f"DROP VIEW IF EXISTS {_quote_identifier(source_name)}")
 
-        con.execute(
-            f"""
-            INSERT INTO {quoted_target} BY NAME
-            SELECT *
-            FROM {quoted_source}
-            """
-        )
-    finally:
-        con.execute(f"DROP VIEW IF EXISTS {_quote_identifier(source_name)}")
+
+def publish_arrow_table(
+    *,
+    arrow_table: pa.Table,
+    table: RawDuckLakeTable,
+    merge_keys: Sequence[str] = (),
+) -> None:
+    """Write Arrow rows to default DuckLake raw table, appending or merge-inserting by keys."""
+
+    with DuckLakeWriter() as writer:
+        writer.write(arrow_table, table=table, merge_keys=merge_keys)
