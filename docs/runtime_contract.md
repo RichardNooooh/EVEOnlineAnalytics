@@ -36,7 +36,6 @@ observability, and deployment wiring that satisfies those requirements.
 
 - DuckLake tables backed by Parquet files are the canonical analytical system of record.
 - Production-style or mounted/shared DuckLake catalogs must use PostgreSQL.
-- Local SQLite DuckLake catalogs are only for direct local smoke runs.
 - No runtime may depend on a cluster-shared writable `.duckdb` file.
 - Publication is single-writer for the relevant dataset or partition scope.
 
@@ -56,24 +55,6 @@ Scratch mounts must be ephemeral and separate from DuckLake durable storage.
 
 ## Environment Contract
 
-### Direct local runs
-
-These are host-driven runs such as local ingestion CLI usage without Docker Compose.
-
-- workload code, DAG source, contracts, and dbt project stay in this repo
-- repo-local `ingestion/.dlt/.var/<profile>/` and `ingestion/.local/` are valid
-  for host CLI runtime state
-- local SQLite raw-file ledger is valid for direct local runs
-- local SQLite DuckLake catalog is valid only when using non-mounted local smoke
-  storage
-- direct host CLI smoke output under `ingestion/.local/` is separate from the
-  default transformation/dbt local source path under repo-root `.local/data`
-- any DuckDB database remains local-only scratch
-- host dbt may attach to local Compose PostgreSQL-backed DuckLake catalogs while
-  keeping its scratch DuckDB work database local-only
-- local BI remains Compose-run and must consume published curated DuckLake state,
-  not dbt scratch DuckDB work databases
-
 ### Local Docker Compose runs
 
 These are the reviewer/development runtime flows under `infra/local/`.
@@ -86,7 +67,7 @@ These are the reviewer/development runtime flows under `infra/local/`.
 - local Evidence runs in Compose and reads curated DuckLake state over container-visible mounts
 - `orchestration/dags` is bind-mounted DAG source from this repo
 - task containers use explicit ephemeral scratch for `dlt` runtime state rather
-  than repo-local host paths
+  than repo-local host paths or host-driven ingestion execution
 - local task image may use `eve-market-ingestion:local`
 - when you want reviewer-stack local data for transform work, publish it through this
   Docker Compose path so data files land under `.local/data`
@@ -129,7 +110,6 @@ These are platform-managed runtime deployments implemented in
   production-style deployments
 - raw-file acquisition ledger PostgreSQL is platform-owned for Compose and
   Kubernetes-style multi-container runs
-- direct local host runs may use local SQLite only where explicitly allowed above
 
 ### Logs
 

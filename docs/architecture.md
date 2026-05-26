@@ -103,27 +103,20 @@ Local-to-production mapping:
   GHCR-published ingestion images in k3s
 - local Evidence container approximates read-only BI runtime over curated DuckLake state
 
-Local smoke runs may use the default SQLite DuckLake catalog. Any run using mounted
-DuckLake storage, including `--storage-target mounted` or an explicit mounted
-`--ducklake-storage`, must use a non-local catalog such as PostgreSQL through
-`--ducklake-catalog`.
-
-The packaged host ingestion CLI keeps `dlt` runtime state repo-local under
-`ingestion/.dlt/.var/<profile>/` and `ingestion/.local/`. Docker, Airflow, and
-Kubernetes-style runs should instead mount explicit ephemeral scratch for `dlt`
+Containerized ingestion runtime should mount explicit ephemeral scratch for `dlt`
 runtime state so that container working state stays separate from DuckLake durable
 storage and shared mounts.
 
 Raw source-file acquisition uses a separate ledger from the DuckLake publication
-catalog. Direct local ingestion defaults to a local SQLite raw ledger. Docker Compose and
-production-style k3s/Airflow deployments use PostgreSQL through `--raw-ledger-url`,
-while preserving single-writer acquisition semantics for the relevant publication scope.
+catalog. Docker Compose and production-style k3s/Airflow deployments use PostgreSQL
+through `--raw-ledger-url`, while preserving single-writer acquisition semantics for the
+relevant publication scope.
 
 Future hardening may move containerized runtimes to read-only root filesystems with
 explicit scratch mounts, but the storage contract remains the same: durable state lives
 in DuckLake data files and PostgreSQL-backed services, not container-local runtime state.
 
-Local commands:
+Local Compose commands:
 
 ```bash
 make local-airflow-up
