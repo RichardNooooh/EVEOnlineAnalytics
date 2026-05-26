@@ -54,7 +54,7 @@ def _queries(con: FakeConnection) -> list[str]:
 def test_build_default_attach_config_uses_shared_raw_ducklake_defaults() -> None:
     assert _build_default_attach_config() == DuckLakeAttachConfig(
         attach_uri=(
-            "ducklake:postgres:dbname=airflow host=127.0.0.1 port=5432 "
+            "ducklake:postgres:dbname=airflow host=postgres port=5432 "
             "user=airflow password=airflow-local-only"
         ),
         data_path=DEFAULT_DUCKLAKE_RAW_DATA_PATH,
@@ -109,7 +109,7 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     assert "LOAD ducklake" in queries
     assert 'ATTACH ? AS "ducklake"' in attach_call[0]
     assert attach_call[1] == [
-        "ducklake:postgres:dbname=airflow host=127.0.0.1 port=5432 user=airflow password=airflow-local-only",
+        "ducklake:postgres:dbname=airflow host=postgres port=5432 user=airflow password=airflow-local-only",
         DEFAULT_DUCKLAKE_RAW_DATA_PATH,
         DEFAULT_DUCKLAKE_METADATA_SCHEMA,
     ]
