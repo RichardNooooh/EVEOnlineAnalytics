@@ -34,10 +34,9 @@ An Airflow task or batch job fetches source records from everef.net or ESI.
 The writer produces candidate data in job-local or unpublished state before it becomes
 visible table state.
 
-For ingestion, this includes `dlt` runtime state. The packaged host CLI keeps that
-state repo-local under `ingestion/.dlt/.var/<profile>/` and `ingestion/.local/`, while
-Docker, Airflow, and Kubernetes-style runs should place it on explicit ephemeral
-scratch separate from DuckLake durable storage and shared mounts.
+For ingestion, this includes `dlt` runtime state. Docker, Airflow, and
+Kubernetes-style runs should place it on explicit ephemeral scratch separate from
+DuckLake durable storage and shared mounts.
 
 ### 3. Validate
 
@@ -116,23 +115,20 @@ Expected loop:
 
 1. edit ingestion and dlt code
 2. build the local ingestion job image
-3. run locally against `.local/data`
-4. validate DAG behavior and outputs through local Airflow DockerOperator tasks
-5. run host dbt against local Compose PostgreSQL-backed DuckLake catalogs
-6. validate local BI through Compose Evidence service
-7. commit code and contracts
-8. let CI validate changes and publish GHCR image tags from trusted `master` builds
-9. deploy through `homelab-data-platform` into the production Airflow runtime
+3. run raw backfills through local Airflow DockerOperator tasks against `.local/data`
+4. run host dbt against local Compose PostgreSQL-backed DuckLake catalogs
+5. validate local BI through Compose Evidence service
+6. commit code and contracts
+7. let CI validate changes and publish GHCR image tags from trusted `master` builds
+8. deploy through `homelab-data-platform` into the production Airflow runtime
 
 Local storage remains an approximation of production storage. `.local/data` stands in
 for TrueNAS NFS DuckLake data-file storage, local Postgres stands in for the Airflow
 metadata database and raw-file acquisition ledger, and bind-mounted DAGs/code stand in
 for the deployed Airflow image or sync mechanism.
 
-Within that split, the packaged host CLI uses repo-local `dlt` state under
-`ingestion/.dlt/.var/<profile>/` and `ingestion/.local/`, while containerized local
-Airflow and later k3s runs should use explicit ephemeral scratch for `dlt` runtime
-state.
+Within that split, containerized local Airflow and later k3s runs should use explicit
+ephemeral scratch for `dlt` runtime state.
 
 Local Airflow may use DockerOperator with `eve-market-ingestion:local` to match the
 container boundary used later by KubernetesPodOperator. The deployable ingestion image is

@@ -41,8 +41,7 @@ The current contract is:
 - DuckDB is allowed only as **local or transient compute** for development and
   single-writer batch jobs.
 - There is **no cluster-shared writable `.duckdb` file**.
-- Mounted/shared DuckLake storage with a SQLite catalog is rejected; SQLite DuckLake
-  catalogs are only for local smoke tests.
+- Mounted/shared DuckLake storage with a SQLite catalog is rejected.
 - Any DuckDB database used by dbt or a batch job must live on pod-local scratch such
   as `emptyDir` or node-local `ReadWriteOnce` storage.
 

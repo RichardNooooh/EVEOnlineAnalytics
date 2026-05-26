@@ -5,7 +5,6 @@ tags:
   - data
   - ingestion
   - postgresql
-  - sqlite
 amended: []
 ---
 
@@ -18,18 +17,16 @@ failed acquisitions, and pruning decisions before dlt publishes analytical table
 DuckLake. This ledger is source acquisition metadata, not the DuckLake table catalog and
 not a dataset publication manifest.
 
-Direct local ingestion benefits from a zero-service SQLite ledger. Docker Compose and
-future k3s/Airflow workloads need a database endpoint instead of a shared writable
-SQLite file, because the project already rejects cluster-shared mutable database files on
-NFS and treats PostgreSQL as durable metadata infrastructure for production-style
-deployments.
+Supported ingestion runtime is the Airflow Docker Compose harness in `infra/local/` and
+future platform-managed Airflow deployments. Those multi-container runtimes need a
+database endpoint instead of a writable SQLite file, and the project already treats
+PostgreSQL as durable metadata infrastructure for production-style services.
 
 ## Decision
 
-Use URL-selected raw source-file ledger backends.
+Use PostgreSQL for the raw source-file ledger.
 
-- Direct local ingestion defaults to SQLite at `sqlite:///<raw-root>/raw_files.sqlite`.
-- Docker Compose uses PostgreSQL through `--raw-ledger-url`.
+- Airflow Docker Compose uses PostgreSQL through `--raw-ledger-url`.
 - Future k3s/Airflow ingestion pods should pass `--raw-ledger-url` from their job
   configuration or secrets.
 - The raw-file ledger remains single-writer for the relevant acquisition scope.
@@ -40,16 +37,14 @@ Use URL-selected raw source-file ledger backends.
 
 ### Positive
 
-- Local ingestion stays simple and service-free by default.
-- Deployed runtimes avoid writable shared SQLite files on mounted storage.
 - PostgreSQL reuse keeps durable metadata technology consistent with Airflow and
   DuckLake production-style catalog choices.
-- Configuration is explicit: one canonical ledger URL selects the backend.
+- Configuration is explicit: one canonical ledger URL points at the PostgreSQL ledger.
 
 ### Negative
 
 - Operators must provision and back up another PostgreSQL database or schema for
-  deployed ingestion runs.
+  ingestion runs.
 - Docker Compose users with an existing Postgres volume must reset the volume or create
   the `raw_files` database and user manually, because Postgres init scripts run only on
   first initialization.
@@ -57,10 +52,10 @@ Use URL-selected raw source-file ledger backends.
 
 ## Alternatives Considered
 
-- *SQLite everywhere:* Rejected because mounted/shared deployments must not depend on a
-  cluster-shared writable SQLite file.
-- *PostgreSQL everywhere:* Rejected because direct local ingestion should remain runnable
-  without starting service dependencies.
+- *SQLite everywhere:* Rejected because supported ingestion runs are multi-container and
+  must not depend on mutable SQLite files.
+- *SQLite for local development only:* Rejected because supported ingestion development
+  happens through the Airflow Docker Compose runtime rather than direct host execution.
 - *DuckLake catalog as raw acquisition ledger:* Rejected because source acquisition
   metadata has different lifecycle and semantics than analytical table publication.
 - *SQLAlchemy and migrations now:* Deferred. Current ledger operations are small enough

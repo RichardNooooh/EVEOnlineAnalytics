@@ -61,8 +61,6 @@ and transaction semantics over data files.
 
 ## Operational Notes
 
-- A local SQLite DuckLake catalog is acceptable only for local smoke testing and early
-  local development.
 - A PostgreSQL DuckLake catalog is required for production-style or mounted/shared
   DuckLake storage runs.
 - Mounted/shared DuckLake storage with a SQLite catalog is rejected by ingestion

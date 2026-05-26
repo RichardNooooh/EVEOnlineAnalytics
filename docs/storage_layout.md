@@ -40,16 +40,11 @@ out of scope here. This repo defines workload-visible layout and invariants;
 them.
 
 `raw/` stores cached source files before dlt publication. Its acquisition ledger is not
-a shared SQLite file on NFS. Direct local ingestion defaults to a local SQLite ledger,
-while Docker Compose and k3s/Airflow-style deployments use PostgreSQL via
-`--raw-ledger-url`.
+a mutable SQLite file on NFS. Docker Compose and k3s/Airflow-style deployments use
+PostgreSQL via `--raw-ledger-url`.
 
-The packaged host ingestion CLI keeps `dlt` runtime state repo-local under
-`ingestion/.dlt/.var/<profile>/` and `ingestion/.local/`. Containerized Docker,
-Airflow, and Kubernetes runs should use explicit ephemeral scratch for `dlt` runtime
-state rather than shared NFS or DuckLake durable storage paths. Direct host CLI smoke
-output under `ingestion/.local/` is separate from the local reviewer-stack publication
-path under repo-root `.local/data`.
+Containerized Docker, Airflow, and Kubernetes runs should use explicit ephemeral scratch
+for `dlt` runtime state rather than shared NFS or DuckLake durable storage paths.
 
 ## Dataset Naming
 
@@ -133,8 +128,6 @@ durable analytical state with container-local or job-local execution state.
 - `dlt` runtime state for containerized runs belongs on explicit ephemeral scratch
 - temporary publication paths must be treated as unpublished
 - shared durable storage is only for published table data files and supporting metadata
-- SQLite DuckLake catalogs belong only to local smoke storage, not mounted/shared
-  DuckLake storage
 
 Future hardening may move containers to read-only root filesystems with explicit
 scratch mounts; that does not change the durable storage layout above.
