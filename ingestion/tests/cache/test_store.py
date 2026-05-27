@@ -69,7 +69,7 @@ class SequenceClient:
 
 
 def _store(*, tmp_path: Path, client: FakeClient | SequenceClient) -> Cache:
-    return Cache.open(
+    return Cache(
         raw_root=str(tmp_path / "raw"),
         client=client,
         ledger=InMemoryRawObjectLedger(),
@@ -552,7 +552,7 @@ def test_store_closes_client_on_exit(tmp_path: Path) -> None:
 
 
 def test_store_rejects_non_postgres_ledger_urls(tmp_path: Path) -> None:
-    store = Cache.open(
+    store = Cache(
         raw_root=str(tmp_path / "raw"),
         ledger_url=f"sqlite:///{tmp_path / 'raw_files.sqlite'}",
         client=FakeClient([]),

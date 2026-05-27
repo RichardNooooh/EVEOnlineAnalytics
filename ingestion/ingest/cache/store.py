@@ -40,7 +40,7 @@ class Cache:
         ```python
         from ingest.cache import Cache, UpdateMode
 
-        with Cache.open(raw_root="/data/raw", ledger_url=ledger_url) as cache:
+        with Cache(raw_root="/data/raw", ledger_url=ledger_url) as cache:
             result = cache.get(
                 dataset_name="market-history",
                 source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
@@ -54,9 +54,9 @@ class Cache:
     def __init__(
         self,
         *,
-        source_name: str,
-        raw_root: str | Path,
-        ledger_url: str,
+        source_name: str = "everef",
+        raw_root: str | Path = DEFAULT_RAW_ROOT,
+        ledger_url: str = DEFAULT_RAW_LEDGER_URL,
         client: HttpRawObjectClient | None = None,
         ledger: RawObjectLedger | None = None,
     ) -> None:
@@ -66,36 +66,6 @@ class Cache:
         self._raw_root = Path(raw_root)
         self._client = client or HttpRawObjectClient()
         self._ledger = ledger or RawObjectLedger(ledger_url=ledger_url)
-
-    @classmethod
-    def open(
-        cls,
-        *,
-        source_name: str = "everef",
-        raw_root: str = DEFAULT_RAW_ROOT,
-        ledger_url: str = DEFAULT_RAW_LEDGER_URL,
-        client: HttpRawObjectClient | None = None,
-        ledger: RawObjectLedger | None = None,
-    ) -> Cache:
-        """Create a cache using project defaults for source, raw root, and ledger.
-
-        Use this as the normal entry point. The returned cache opens its PostgreSQL
-        ledger only when used as a context manager.
-
-        Example:
-            ```python
-            with Cache.open(ledger_url="postgresql://raw:pw@postgres/raw") as cache:
-                ...
-            ```
-        """
-
-        return cls(
-            source_name=source_name,
-            raw_root=raw_root,
-            ledger_url=ledger_url,
-            client=client,
-            ledger=ledger,
-        )
 
     def __enter__(self) -> Cache:
         self._ledger.open()
