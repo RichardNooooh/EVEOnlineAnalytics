@@ -30,9 +30,7 @@ def raw_con(attach_config: DuckLakeAttachConfig) -> duckdb.DuckDBPyConnection:
     return con
 
 
-def _drop_table(
-    con: duckdb.DuckDBPyConnection, attach_config: DuckLakeAttachConfig, table: RawDuckLakeTable
-) -> None:
+def _drop_table(con: duckdb.DuckDBPyConnection, attach_config: DuckLakeAttachConfig, table: RawDuckLakeTable) -> None:
     alias = _quote_identifier(attach_config.alias)
     con.execute(f"DROP TABLE IF EXISTS {alias}.raw.{_quote_identifier(table.value)}")
 
@@ -100,9 +98,7 @@ def test_write_with_merge_keys_does_insert_if_not_exists(
 
 
 @pytest.mark.integration
-def test_publish_arrow_table_one_shot(
-    attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
-) -> None:
+def test_publish_arrow_table_one_shot(attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection) -> None:
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_HISTORY)
     raw_con.execute(
         f"""

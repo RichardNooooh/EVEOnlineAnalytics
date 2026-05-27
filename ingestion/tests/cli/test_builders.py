@@ -82,4 +82,3 @@ def test_market_history_validation_errors(argv: list[str], error_message: str) -
 
     with pytest.raises(ValueError, match=error_message):
         build_everef_market_history_config(args)
-
