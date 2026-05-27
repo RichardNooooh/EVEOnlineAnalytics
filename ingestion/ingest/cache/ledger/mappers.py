@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime
+from collections.abc import Mapping
 from typing import Any, cast
 from uuid import uuid4
 
 from sqlalchemy.engine import RowMapping
 
+from ingest.cache.ledger.column_maps import (
+    RAW_OBJECT_COLUMNS,
+    RAW_OBJECT_PUBLICATION_COLUMNS,
+    RAW_OBJECT_SEEN_COLUMNS,
+    RAW_OBJECT_VERSION_COLUMNS,
+)
 from ingest.cache.models import (
     PublicationContext,
     RawObjectRef,
@@ -34,44 +42,60 @@ def require_update_mode(raw_object: RawObjectEntry | None, update_mode: UpdateMo
     )
 
 
+def entity_to_row(
+    entity: Any,
+    column_map: Mapping[str, str | None],
+    *,
+    overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Serialize a dataclass to a flat DB row dict using a column-to-field-path map.
+
+    ``dataclasses.asdict(entity)`` renders the entity as nested dicts.
+    Each entry in *column_map* navigates into that structure via dot-separated
+    keys to extract the value for the corresponding SQL column.
+
+    Columns mapped to ``None`` are skipped — use *overrides* to supply them
+    from non-entity sources (e.g. synthetic UUIDs, foreign-key references).
+
+    Args:
+        entity: Any frozen dataclass (``RawObjectEntry``, ``RawObjectVersion``,
+            or ``PublicationContext``).
+        column_map: Mapping of ``{sql_column_name: dot_path}``. A ``None`` path
+            means the column is omitted from the result.
+        overrides: Optional dict of ``{sql_column_name: value}`` merged on top
+            of the extracted values. Takes precedence over column_map values.
+
+    Returns:
+        Flat dict keyed by SQL column name, ready for ``Table.insert().values()``.
+    """
+    raw = asdict(entity)
+    result: dict[str, Any] = {}
+    for col_name, field_path in column_map.items():
+        if field_path is None:
+            continue
+        parts = field_path.split(".")
+        value: Any = raw
+        for part in parts:
+            if isinstance(value, dict):
+                value = value.get(part)
+            else:
+                value = getattr(value, part)
+        result[col_name] = value
+    if overrides:
+        result.update(overrides)
+    return result
+
+
 def raw_object_values(raw_object: RawObjectEntry) -> dict[str, Any]:
-    return {
-        "id": raw_object.id,
-        "source_name": raw_object.ref.source_name,
-        "dataset_name": raw_object.ref.dataset_name,
-        "identity_key": dict(raw_object.identity_key),
-        "identity_hash": raw_object.ref.identity_hash,
-        "update_mode": raw_object.update_mode,
-        "created_at": raw_object.created_at,
-        "last_checked_at": raw_object.last_checked_at,
-        "etag": raw_object.revalidation.etag,
-        "last_modified": raw_object.revalidation.last_modified,
-        "content_length": raw_object.revalidation.content_length,
-    }
+    return entity_to_row(raw_object, RAW_OBJECT_COLUMNS)
 
 
 def raw_object_seen_values(raw_object: RawObjectEntry) -> dict[str, Any]:
-    return {
-        "last_checked_at": raw_object.last_checked_at,
-        "etag": raw_object.revalidation.etag,
-        "last_modified": raw_object.revalidation.last_modified,
-        "content_length": raw_object.revalidation.content_length,
-    }
+    return entity_to_row(raw_object, RAW_OBJECT_SEEN_COLUMNS)
 
 
 def raw_object_version_values(version: RawObjectVersion) -> dict[str, Any]:
-    return {
-        "id": version.id,
-        "raw_object_id": version.raw_object_id,
-        "source_url": version.source_url,
-        "fetched_at": version.fetched_at,
-        "etag": version.revalidation.etag,
-        "last_modified": version.revalidation.last_modified,
-        "content_length": version.revalidation.content_length,
-        "sha256": version.sha256,
-        "local_path": version.local_path,
-        "storage_encoding": version.storage_encoding,
-    }
+    return entity_to_row(version, RAW_OBJECT_VERSION_COLUMNS)
 
 
 def raw_object_publication_values(
@@ -81,17 +105,18 @@ def raw_object_publication_values(
     version_id: str,
     context: PublicationContext,
 ) -> dict[str, Any]:
-    return {
-        "id": uuid4().hex,
-        "source_name": ref.source_name,
-        "dataset_name": ref.dataset_name,
-        "identity_hash": ref.identity_hash,
-        "sha256": sha256,
-        "version_id": version_id,
-        "published_at": context.published_at,
-        "publication_scope": context.publication_scope,
-        "publisher_run_id": context.publisher_run_id,
-    }
+    return entity_to_row(
+        context,
+        RAW_OBJECT_PUBLICATION_COLUMNS,
+        overrides={
+            "id": uuid4().hex,
+            "source_name": ref.source_name,
+            "dataset_name": ref.dataset_name,
+            "identity_hash": ref.identity_hash,
+            "sha256": sha256,
+            "version_id": version_id,
+        },
+    )
 
 
 def row_to_raw_object(row: RowMapping) -> RawObjectEntry:
