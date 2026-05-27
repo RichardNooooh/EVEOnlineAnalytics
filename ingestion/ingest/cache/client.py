@@ -1,3 +1,10 @@
+"""HTTP client for streaming raw source files to temporary paths.
+
+``HttpRawObjectClient`` wraps ``requests`` with retry logic, SHA-256 digest
+computation, and conditional-request support so that the cache can download
+new content or detect unchanged mutable objects.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -11,7 +18,13 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from ingest.cache.models import FetchOutcome, FetchResult, RevalidationMetadata
+from ingest.cache.models import (
+    FetchOutcome,
+    FetchResult,
+    ModifiedResult,
+    NotModifiedResult,
+    RevalidationMetadata,
+)
 
 logger = logging.getLogger("ingest.cache")
 
@@ -38,6 +51,14 @@ class HttpRawObjectClient:
         backoff_factor: float = 0.5,
         backoff_jitter: float = 0.25,
     ) -> None:
+        """Create a new HTTP client.
+
+        Args:
+            timeout_seconds: Per-request socket timeout.
+            max_retries: Maximum retry attempts for connection and read errors.
+            backoff_factor: Exponential backoff multiplier between retries.
+            backoff_jitter: Random jitter added to backoff delays.
+        """
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
@@ -45,6 +66,7 @@ class HttpRawObjectClient:
         self._session = self._build_session()
 
     def __enter__(self) -> HttpRawObjectClient:
+        """Enter context manager.  Returns ``self``."""
         return self
 
     def __exit__(
@@ -53,6 +75,7 @@ class HttpRawObjectClient:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        """Exit context manager and close the HTTP session."""
         self.close()
 
     def read(
@@ -62,10 +85,27 @@ class HttpRawObjectClient:
         request_headers: Mapping[str, str],
         temp_path: str,
     ) -> FetchResult:
-        """Read one URL into `temp_path`, returning status and source metadata.
+        """Read one URL into ``temp_path``, returning status and source metadata.
 
-        Pass conditional headers such as `If-None-Match` for mutable objects. A 304
-        response returns `FetchOutcome.NOT_MODIFIED` and does not create `temp_path`.
+        Pass conditional headers such as ``If-None-Match`` for mutable objects. A 304
+        response returns ``FetchOutcome.NOT_MODIFIED`` and does not create ``temp_path``.
+
+        Args:
+            source_url: Remote URL to fetch.
+            request_headers: Extra headers sent with the request.  Typically
+                empty for initial fetches or contains ``If-None-Match`` for
+                revalidation.
+            temp_path: Filesystem path where the response body is streamed.
+                Parent directories are created automatically.
+
+        Returns:
+            ``NotModifiedResult`` on HTTP 304, otherwise ``ModifiedResult`` with
+            the downloaded file path and SHA-256 digest.
+
+        Raises:
+            requests.HTTPError: When the server returns a 4xx/5xx status other
+                than 304.
+            OSError: When writing to ``temp_path`` fails.
 
         Example:
             ```python
@@ -74,7 +114,7 @@ class HttpRawObjectClient:
                 request_headers={"If-None-Match": '"etag-1"'},
                 temp_path="/tmp/source.download",
             )
-            if result.outcome is FetchOutcome.DOWNLOADED:
+            if result.outcome is FetchOutcome.MODIFIED:
                 print(result.sha256)
             ```
         """
@@ -90,7 +130,7 @@ class HttpRawObjectClient:
                 fetched_at = datetime.now(UTC)
 
                 if response.status_code == 304:
-                    return FetchResult(
+                    return NotModifiedResult(
                         outcome=FetchOutcome.NOT_MODIFIED,
                         fetched_at=fetched_at,
                         revalidation=RevalidationMetadata(
@@ -110,16 +150,16 @@ class HttpRawObjectClient:
                     temp_file=temp_file,
                 )
 
-                return FetchResult(
-                    outcome=FetchOutcome.DOWNLOADED,
+                return ModifiedResult(
+                    outcome=FetchOutcome.MODIFIED,
                     fetched_at=fetched_at,
+                    temp_path=str(temp_file),
+                    sha256=sha256,
                     revalidation=RevalidationMetadata(
                         etag=response.headers.get("ETag"),
                         last_modified=response.headers.get("Last-Modified"),
                         content_length=content_length,
                     ),
-                    temp_path=str(temp_file),
-                    sha256=sha256,
                 )
         except Exception:
             logger.exception("raw object read failed source_url=%s", source_url)
@@ -129,6 +169,8 @@ class HttpRawObjectClient:
 
     def close(self) -> None:
         """Close the underlying HTTP session.
+
+        Safe to call multiple times; subsequent calls are no-ops.
 
         Example:
             ```python

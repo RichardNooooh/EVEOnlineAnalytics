@@ -1,3 +1,10 @@
+"""High-level cache for downloading and tracking raw source files.
+
+``Cache`` coordinates HTTP reads, filesystem storage, and ledger bookkeeping
+so that ingestion pipelines can fetch source objects, detect changes, and
+publish only unseen versions.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -22,6 +29,7 @@ from ingest.cache.models import (
     CacheResultStatus,
     FetchOutcome,
     FetchResult,
+    ModifiedResult,
     PublicationContext,
     RawObjectEntry,
     RevalidationMetadata,
@@ -67,6 +75,27 @@ class Cache:
         client: HttpRawObjectClient | None = None,
         ledger: RawObjectLedger | None = None,
     ) -> None:
+        """Create a new cache instance.
+
+        Args:
+            dataset_name: Logical dataset name used for path and ledger grouping.
+                Must be a safe path segment (no ``/`` or ``\\``).
+            update_mode: Cache policy. ``SNAPSHOT`` trusts local files forever;
+                ``MUTABLE`` revalidates with conditional requests.
+            source_name: Origin label (default ``everef``). Used for path
+                segmentation and ledger grouping.
+            raw_root: Root directory where downloaded files are stored.
+            ledger_url: PostgreSQL URL for the ledger database.
+            client: Optional HTTP client override.  A default
+                ``HttpRawObjectClient`` is created when omitted.
+            ledger: Optional ledger override.  A default ``RawObjectLedger`` is
+                created when omitted.
+
+        Raises:
+            TypeError: If ``update_mode`` is not an ``UpdateMode`` enum member.
+            ValueError: If ``dataset_name`` or ``source_name`` contain path
+                separators or are empty.
+        """
         self._dataset_name = _validate_path_segment(
             dataset_name, field_name="dataset_name"
         )
@@ -81,6 +110,7 @@ class Cache:
         self._ledger = ledger or RawObjectLedger(ledger_url=ledger_url)
 
     def __enter__(self) -> Cache:
+        """Enter context manager.  Returns ``self``."""
         return self
 
     def __exit__(
@@ -89,6 +119,7 @@ class Cache:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        """Exit context manager and close ledger and client connections."""
         self._ledger.close()
         self._client.close()
 
@@ -101,8 +132,20 @@ class Cache:
         """Fetch one raw object and return its current local version.
 
         Snapshot objects are reused from disk without remote reads once cached. Mutable
-        objects use `ETag` or `Last-Modified` headers to avoid downloading unchanged
+        objects use ``ETag`` or ``Last-Modified`` headers to avoid downloading unchanged
         files.
+
+        Args:
+            cache_object: Description of the source object to fetch.
+            plan: Optional pre-resolved fetch plan.  When omitted the plan is
+                resolved from the ledger automatically.
+
+        Returns:
+            ``CacheResult`` with status ``HIT`` or ``STORED``.
+
+        Raises:
+            RuntimeError: If the client returns ``NOT_MODIFIED`` but the local
+                file is missing and cannot be recovered.
 
         Example:
             ```python
@@ -149,9 +192,9 @@ class Cache:
             )
             read_result = self._read_source(plan, request_headers={})
 
-        _ensure_downloaded(read_result)
+        modified_result = _ensure_downloaded(read_result)
 
-        return self._record_store(plan, read_result)
+        return self._record_store(plan, modified_result)
 
     def _read_source(
         self,
@@ -196,6 +239,12 @@ class Cache:
     def get_all(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
         """Fetch every requested object and return hits plus downloads.
 
+        Args:
+            objects: Source objects to fetch.
+
+        Returns:
+            List of ``CacheResult`` including both hits and stored versions.
+
         Example:
             ```python
             results = cache.get_all([
@@ -208,6 +257,12 @@ class Cache:
 
     def get_changed(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
         """Fetch objects and return only newly downloaded versions.
+
+        Args:
+            objects: Source objects to fetch.
+
+        Returns:
+            Subset of ``CacheResult`` where ``status`` is ``STORED``.
 
         Example:
             ```python
@@ -222,6 +277,13 @@ class Cache:
         """Fetch objects and return versions not marked as published.
 
         Use this when retrying a publication job after files have already been cached.
+
+        Args:
+            objects: Source objects to fetch.
+
+        Returns:
+            ``CacheResult`` items that lack a publication marker for their
+            current checksum.
 
         Example:
             ```python
@@ -243,6 +305,11 @@ class Cache:
 
         Publication markers are idempotent for the same source, dataset, identity, and
         checksum.
+
+        Args:
+            result: The cached version that was published.
+            context: Optional publication scope and run id.  Defaults to an
+                empty context with the current timestamp.
 
         Example:
             ```python
@@ -273,6 +340,11 @@ class Cache:
     ) -> None:
         """Record that many cached versions have been published.
 
+        Args:
+            results: Cached versions that were published.
+            context: Optional publication scope and run id shared across all
+                results.
+
         Example:
             ```python
             cache.mark_published_many(
@@ -294,6 +366,13 @@ class Cache:
 
     def is_published(self, result: CacheResult) -> bool:
         """Return whether a cached version already has a publication marker.
+
+        Args:
+            result: The cached version to check.
+
+        Returns:
+            ``True`` when a marker exists for this source, dataset, identity,
+            and checksum.
 
         Example:
             ```python
@@ -332,7 +411,7 @@ class Cache:
         )
 
     def _record_store(
-        self, plan: ResolvedFetchPlan, read_result: FetchResult
+        self, plan: ResolvedFetchPlan, read_result: ModifiedResult
     ) -> CacheResult:
         final_path = _build_final_path(
             raw_root=self._raw_root,
@@ -456,11 +535,11 @@ def _revalidation_for_hit(
     return read_result.revalidation
 
 
-def _ensure_downloaded(read_result: FetchResult) -> None:
-    if read_result.outcome is not FetchOutcome.DOWNLOADED:
-        raise RuntimeError("client returned unexpected outcome without download")
-    if read_result.temp_path is None or read_result.sha256 is None:
-        raise RuntimeError("downloaded client result must include temp_path and sha256")
+def _ensure_downloaded(read_result: FetchResult) -> ModifiedResult:
+    if read_result.outcome is FetchOutcome.MODIFIED:
+        assert isinstance(read_result, ModifiedResult)
+        return read_result
+    raise RuntimeError("client returned unexpected outcome without download")
 
 
 def _build_temp_path(*, raw_root: Path, source_name: str) -> Path:
