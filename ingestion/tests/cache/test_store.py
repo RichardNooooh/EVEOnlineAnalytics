@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -346,6 +347,60 @@ def test_get_uses_conditional_headers_for_mutable_files(tmp_path: Path) -> None:
     assert second_client.calls[0][1] == {"If-None-Match": '"etag-1"'}
 
 
+def test_get_uses_stored_revalidation_metadata_not_version_fields(
+    tmp_path: Path,
+) -> None:
+    ledger = InMemoryRawObjectLedger()
+    first_client = FakeClient(
+        [
+            _response(
+                tmp_path=tmp_path,
+                outcome=FetchOutcome.DOWNLOADED,
+                name="mutable-seed",
+                etag='"etag-1"',
+            )
+        ]
+    )
+    second_client = FakeClient(
+        [
+            _response(
+                tmp_path=tmp_path,
+                outcome=FetchOutcome.NOT_MODIFIED,
+                name="mutable-revalidate",
+                etag='"etag-1"',
+            )
+        ]
+    )
+    identity_key = {"source_date": "2026-01-01"}
+
+    with _store(
+        tmp_path=tmp_path,
+        client=SequenceClient([first_client, second_client]),
+        dataset_name="market-history",
+        update_mode=UpdateMode.MUTABLE,
+        ledger=ledger,
+    ) as store:
+        first_result = store.get(
+            CacheObject(
+                source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
+                identity_key=identity_key,
+            )
+        )
+        ledger._versions_by_object_id[first_result.raw_object.id] = [
+            replace(first_result.version, etag='"wrong-version-etag"')
+        ]
+
+        result = store.get(
+            CacheObject(
+                source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
+                identity_key=identity_key,
+            )
+        )
+
+    assert result.status is CacheResultStatus.HIT
+    assert second_client.calls[0][1] == {"If-None-Match": '"etag-1"'}
+
+
 def test_get_rereads_when_not_modified_but_local_file_missing(tmp_path: Path) -> None:
     identity_key = {"source_date": "2026-01-01"}
     seeded_client = FakeClient(
@@ -504,9 +559,47 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
         "source_path": "market-orders/history/2026/2026-01-02/file.csv.bz2"
     }
     assert filtered_results == []
-    assert ledger.load_raw_objects_calls >= 2
-    assert ledger.load_latest_versions_calls >= 2
+    assert ledger.resolve_fetch_plans_calls >= 2
     assert ledger.filter_published_calls >= 2
+
+
+def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
+    client = FakeClient(
+        [
+            _response(
+                tmp_path=tmp_path,
+                outcome=FetchOutcome.DOWNLOADED,
+                name="missing-ledger-first",
+                fetched_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+            _response(
+                tmp_path=tmp_path,
+                outcome=FetchOutcome.DOWNLOADED,
+                name="missing-ledger-second",
+                fetched_at=datetime(2026, 1, 2, tzinfo=UTC),
+                sha256="def456",
+            ),
+        ]
+    )
+    first_store = _store(tmp_path=tmp_path, client=client)
+    second_store = _store(
+        tmp_path=tmp_path, client=client, ledger=InMemoryRawObjectLedger()
+    )
+    cache_object = CacheObject(
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2"
+    )
+
+    with first_store as store:
+        first_result = store.get(cache_object)
+
+    assert Path(first_result.path).exists()
+
+    with second_store as store:
+        second_result = store.get(cache_object)
+
+    assert len(client.calls) == 2
+    assert second_result.changed is True
+    assert second_result.version.sha256 == "def456"
 
 
 def test_mark_published_is_idempotent(tmp_path: Path) -> None:
