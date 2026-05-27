@@ -24,24 +24,21 @@ def normalize_ledger_url(ledger_url: str) -> str:
     raise ValueError("ledger_url must be a PostgreSQL URL")
 
 
-def require_update_mode(
-    raw_object: RawObjectEntry | None, update_mode: UpdateMode
-) -> None:
+def require_update_mode(raw_object: RawObjectEntry | None, update_mode: UpdateMode) -> None:
     if raw_object is None or raw_object.update_mode is update_mode:
         return
     raise ValueError(
-        "raw object update_mode mismatch: "
-        f"stored={raw_object.update_mode.value} requested={update_mode.value}"
+        f"raw object update_mode mismatch: stored={raw_object.update_mode.value} requested={update_mode.value}"
     )
 
 
 def raw_object_values(raw_object: RawObjectEntry) -> dict[str, Any]:
     return {
         "id": raw_object.id,
-        "source_name": raw_object.source_name,
-        "dataset_name": raw_object.dataset_name,
+        "source_name": raw_object.ref.source_name,
+        "dataset_name": raw_object.ref.dataset_name,
         "identity_key": dict(raw_object.identity_key),
-        "identity_hash": raw_object.identity_hash,
+        "identity_hash": raw_object.ref.identity_hash,
         "update_mode": raw_object.update_mode,
         "created_at": raw_object.created_at,
         "last_checked_at": raw_object.last_checked_at,
@@ -98,10 +95,12 @@ def raw_object_publication_values(
 def row_to_raw_object(row: RowMapping) -> RawObjectEntry:
     return RawObjectEntry(
         id=cast(str, row["id"]),
-        source_name=cast(str, row["source_name"]),
-        dataset_name=cast(str, row["dataset_name"]),
+        ref=RawObjectRef(
+            source_name=cast(str, row["source_name"]),
+            dataset_name=cast(str, row["dataset_name"]),
+            identity_hash=cast(str, row["identity_hash"]),
+        ),
         identity_key=cast(dict[str, Any], row["identity_key"]),
-        identity_hash=cast(str, row["identity_hash"]),
         update_mode=cast(UpdateMode, row["update_mode"]),
         created_at=cast(datetime, row["created_at"]),
         last_checked_at=cast(datetime | None, row["last_checked_at"]),

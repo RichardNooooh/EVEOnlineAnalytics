@@ -38,6 +38,7 @@ from ingest.cache.ledger.schema import (
 from ingest.cache.ledger.types import ReplaceCurrentVersionResult
 from ingest.cache.models import (
     BaseFetchPlan,
+    FetchPlan,
     PublicationContext,
     RawObjectDefinition,
     RawObjectEntry,
@@ -45,6 +46,7 @@ from ingest.cache.models import (
     RawObjectVersion,
     ResolvedFetchPlan,
     RevalidationMetadata,
+    UnresolvedFetchPlan,
 )
 
 
@@ -166,10 +168,7 @@ class RawObjectLedgerTx:
                 raw_objects.c.identity_hash.in_(identity_hashes),
             )
         )
-        return {
-            raw_object.identity_hash: raw_object
-            for raw_object in (row_to_raw_object(row) for row in rows)
-        }
+        return {raw_object.ref.identity_hash: raw_object for raw_object in (row_to_raw_object(row) for row in rows)}
 
     def load_latest_version(self, raw_object_id: str) -> RawObjectVersion | None:
         """Return the most recently stored version for a raw object.
@@ -180,18 +179,12 @@ class RawObjectLedgerTx:
         Returns:
             The latest version or ``None`` when no versions exist.
         """
-        row = self._fetchone(
-            select(raw_object_versions).where(
-                raw_object_versions.c.raw_object_id == raw_object_id
-            )
-        )
+        row = self._fetchone(select(raw_object_versions).where(raw_object_versions.c.raw_object_id == raw_object_id))
         if row is None:
             return None
         return row_to_raw_object_version(row)
 
-    def load_latest_versions(
-        self, raw_object_ids: list[str]
-    ) -> dict[str, RawObjectVersion]:
+    def load_latest_versions(self, raw_object_ids: list[str]) -> dict[str, RawObjectVersion]:
         """Batch-lookup the latest version for many raw objects.
 
         Args:
@@ -203,16 +196,11 @@ class RawObjectLedgerTx:
         if not raw_object_ids:
             return {}
         rows = self._fetchall(
-            select(raw_object_versions).where(
-                raw_object_versions.c.raw_object_id.in_(raw_object_ids)
-            )
+            select(raw_object_versions).where(raw_object_versions.c.raw_object_id.in_(raw_object_ids))
         )
-        return {
-            version.raw_object_id: version
-            for version in (row_to_raw_object_version(row) for row in rows)
-        }
+        return {version.raw_object_id: version for version in (row_to_raw_object_version(row) for row in rows)}
 
-    def resolve_fetch_plan(self, base_plan: BaseFetchPlan) -> ResolvedFetchPlan:
+    def resolve_fetch_plan(self, base_plan: BaseFetchPlan) -> FetchPlan:
         """Resolve a single fetch plan against the ledger.
 
         Args:
@@ -223,12 +211,11 @@ class RawObjectLedgerTx:
 
         Raises:
             ValueError: If the stored ``update_mode`` does not match the plan.
+            RuntimeError: If a raw object entry exists but has no versions.
         """
         return self.resolve_fetch_plans([base_plan])[0]
 
-    def resolve_fetch_plans(
-        self, base_plans: list[BaseFetchPlan]
-    ) -> list[ResolvedFetchPlan]:
+    def resolve_fetch_plans(self, base_plans: list[BaseFetchPlan]) -> list[FetchPlan]:
         """Batch-resolve fetch plans while preserving input order.
 
         Queries the ledger in grouped batches by ``(source_name, dataset_name)``
@@ -250,42 +237,43 @@ class RawObjectLedgerTx:
         for base_plan in base_plans:
             grouped_plans.setdefault(base_plan.ref.group_key, []).append(base_plan)
 
-        resolved_by_identity: dict[tuple[str, str, str], ResolvedFetchPlan] = {}
+        resolved_by_identity: dict[tuple[str, str, str], FetchPlan] = {}
         for (source_name, dataset_name), plans in grouped_plans.items():
             raw_objects = self.load_raw_objects(
                 group_key=(source_name, dataset_name),
-                identity_hashes=[plan.identity_hash for plan in plans],
+                identity_hashes=[plan.ref.identity_hash for plan in plans],
             )
-            current_versions = self.load_latest_versions(
-                [raw_object.id for raw_object in raw_objects.values()]
-            )
+            current_versions = self.load_latest_versions([raw_object.id for raw_object in raw_objects.values()])
             for plan in plans:
-                raw_object = raw_objects.get(plan.identity_hash)
+                raw_object = raw_objects.get(plan.ref.identity_hash)
                 require_update_mode(raw_object, plan.update_mode)
-                current_version = (
-                    current_versions.get(raw_object.id)
-                    if raw_object is not None
-                    else None
-                )
-                resolved_by_identity[
-                    (source_name, dataset_name, plan.identity_hash)
-                ] = ResolvedFetchPlan(
-                    source_name=plan.source_name,
-                    dataset_name=plan.dataset_name,
-                    source_url=plan.source_url,
-                    source_relative_path=plan.source_relative_path,
-                    update_mode=plan.update_mode,
-                    identity_key=plan.identity_key,
-                    identity_hash=plan.identity_hash,
-                    temp_path=plan.temp_path,
-                    raw_object=raw_object,
-                    current_version=current_version,
-                )
+                if raw_object is None:
+                    resolved: FetchPlan = UnresolvedFetchPlan(
+                        ref=plan.ref,
+                        source_url=plan.source_url,
+                        source_relative_path=plan.source_relative_path,
+                        update_mode=plan.update_mode,
+                        identity_key=plan.identity_key,
+                        temp_path=plan.temp_path,
+                    )
+                else:
+                    current_version = current_versions.get(raw_object.id)
+                    if current_version is None:
+                        raise RuntimeError(f"Ledger corruption: raw_object {raw_object.id} exists but has no versions")
+                    resolved = ResolvedFetchPlan(
+                        ref=plan.ref,
+                        source_url=plan.source_url,
+                        source_relative_path=plan.source_relative_path,
+                        update_mode=plan.update_mode,
+                        identity_key=plan.identity_key,
+                        temp_path=plan.temp_path,
+                        raw_object=raw_object,
+                        current_version=current_version,
+                    )
+                resolved_by_identity[(plan.ref.source_name, plan.ref.dataset_name, plan.ref.identity_hash)] = resolved
 
         return [
-            resolved_by_identity[
-                (plan.source_name, plan.dataset_name, plan.identity_hash)
-            ]
+            resolved_by_identity[(plan.ref.source_name, plan.ref.dataset_name, plan.ref.identity_hash)]
             for plan in base_plans
         ]
 
@@ -315,10 +303,8 @@ class RawObjectLedgerTx:
         if existing is None:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
-                source_name=definition.ref.source_name,
-                dataset_name=definition.ref.dataset_name,
+                ref=definition.ref,
                 identity_key=dict(definition.identity_key),
-                identity_hash=definition.ref.identity_hash,
                 update_mode=definition.update_mode,
                 created_at=checked_at,
                 last_checked_at=checked_at,
@@ -333,9 +319,7 @@ class RawObjectLedgerTx:
             revalidation=_merge_revalidation(existing.revalidation, revalidation),
         )
         self._execute(
-            update(raw_objects)
-            .where(raw_objects.c.id == existing.id)
-            .values(**raw_object_seen_values(updated))
+            update(raw_objects).where(raw_objects.c.id == existing.id).values(**raw_object_seen_values(updated))
         )
         return updated
 
@@ -381,14 +365,10 @@ class RawObjectLedgerTx:
             local_path=local_path,
             storage_encoding=storage_encoding,
         )
-        self._execute(
-            raw_object_versions.insert().values(**raw_object_version_values(version))
-        )
+        self._execute(raw_object_versions.insert().values(**raw_object_version_values(version)))
         if stale_versions:
             self._execute(
-                delete(raw_object_versions).where(
-                    raw_object_versions.c.id.in_([stale.id for stale in stale_versions])
-                )
+                delete(raw_object_versions).where(raw_object_versions.c.id.in_([stale.id for stale in stale_versions]))
             )
         return ReplaceCurrentVersionResult(
             raw_object=replace(
@@ -506,27 +486,13 @@ class RawObjectLedgerTx:
         return list(self._execute(statement).mappings().all())
 
     def _list_versions(self, raw_object_id: str) -> list[RawObjectVersion]:
-        rows = self._fetchall(
-            select(raw_object_versions).where(
-                raw_object_versions.c.raw_object_id == raw_object_id
-            )
-        )
+        rows = self._fetchall(select(raw_object_versions).where(raw_object_versions.c.raw_object_id == raw_object_id))
         return [row_to_raw_object_version(row) for row in rows]
 
 
-def _merge_revalidation(
-    existing: RevalidationMetadata, incoming: RevalidationMetadata
-) -> RevalidationMetadata:
+def _merge_revalidation(existing: RevalidationMetadata, incoming: RevalidationMetadata) -> RevalidationMetadata:
     return RevalidationMetadata(
         etag=incoming.etag if incoming.etag is not None else existing.etag,
-        last_modified=(
-            incoming.last_modified
-            if incoming.last_modified is not None
-            else existing.last_modified
-        ),
-        content_length=(
-            incoming.content_length
-            if incoming.content_length is not None
-            else existing.content_length
-        ),
+        last_modified=(incoming.last_modified if incoming.last_modified is not None else existing.last_modified),
+        content_length=(incoming.content_length if incoming.content_length is not None else existing.content_length),
     )

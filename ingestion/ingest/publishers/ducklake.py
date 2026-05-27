@@ -77,9 +77,7 @@ def _build_default_attach_config() -> DuckLakeAttachConfig:
 
 def _quote_identifier(identifier: str) -> str:
     if not identifier or _IDENTIFIER_RE.fullmatch(identifier) is None:
-        raise ValueError(
-            "SQL identifiers must be non-empty strings without spaces or dashes"
-        )
+        raise ValueError("SQL identifiers must be non-empty strings without spaces or dashes")
     return '"' + identifier.replace('"', '""') + '"'
 
 
@@ -95,9 +93,7 @@ def _quote_table_target(alias: str, target: DuckLakeTableTarget) -> str:
 
 def _build_merge_keys_clause(merge_keys: Sequence[str]) -> str:
     if not merge_keys:
-        raise ValueError(
-            "merge_keys must not be empty when merge behavior is requested"
-        )
+        raise ValueError("merge_keys must not be empty when merge behavior is requested")
     return ", ".join(_quote_identifier(key) for key in merge_keys)
 
 
@@ -106,9 +102,7 @@ def _target_for(table: RawDuckLakeTable) -> DuckLakeTableTarget:
 
 
 @contextmanager
-def _temporary_arrow_view(
-    con: duckdb.DuckDBPyConnection, arrow_table: pa.Table
-) -> Iterator[str]:
+def _temporary_arrow_view(con: duckdb.DuckDBPyConnection, arrow_table: pa.Table) -> Iterator[str]:
     source_name = f"_arrow_source_{uuid4().hex}"
     con.from_arrow(arrow_table).create_view(source_name)
     try:
@@ -219,18 +213,11 @@ class DuckLakeWriter:
 
         con = self._con
         if con is None:
-            raise RuntimeError(
-                "Missing DB connection. DuckLakeWriter must be used inside a with block"
-            )
+            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
 
-        missing_merge_keys = [
-            key for key in merge_keys if key not in arrow_table.column_names
-        ]
+        missing_merge_keys = [key for key in merge_keys if key not in arrow_table.column_names]
         if missing_merge_keys:
-            raise ValueError(
-                "merge_keys must exist in arrow_table columns: "
-                + ", ".join(missing_merge_keys)
-            )
+            raise ValueError("merge_keys must exist in arrow_table columns: " + ", ".join(missing_merge_keys))
 
         quoted_target = _quote_table_target(self._attach.alias, _target_for(table))
         with _temporary_arrow_view(con, arrow_table) as source_name:

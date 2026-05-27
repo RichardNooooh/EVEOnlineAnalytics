@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from ingest.cache import Cache, CacheObject, UpdateMode
 from ingest.cache.models import (
     CacheResultStatus,
@@ -194,21 +193,15 @@ def test_get_changed_returns_changed_objects(tmp_path: Path) -> None:
             ),
         ]
     )
-    first_object = CacheObject(
-        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2"
-    )
-    second_object = CacheObject(
-        source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2"
-    )
+    first_object = CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2")
+    second_object = CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2")
 
     with _store(tmp_path=tmp_path, client=client) as store:
         store.get_all([first_object])
         changed_results = store.get_changed([first_object, second_object])
 
     assert len(changed_results) == 1
-    assert changed_results[0].identity_key == {
-        "source_path": "market-orders/history/2026/2026-01-02/file.csv.bz2"
-    }
+    assert changed_results[0].identity_key == {"source_path": "market-orders/history/2026/2026-01-02/file.csv.bz2"}
     assert changed_results[0].changed is True
 
 
@@ -232,9 +225,7 @@ def test_get_uses_explicit_source_path_for_non_everef_url(tmp_path: Path) -> Non
         )
 
     assert result.identity_key == {"source_path": "vendor/market-orders/file.csv"}
-    assert result.path == str(
-        tmp_path / "raw" / "example" / "vendor" / "market-orders" / "file.csv"
-    )
+    assert result.path == str(tmp_path / "raw" / "example" / "vendor" / "market-orders" / "file.csv")
 
 
 def test_get_reuses_existing_snapshot_without_remote_read(tmp_path: Path) -> None:
@@ -519,9 +510,7 @@ def test_get_keeps_one_current_mutable_copy_per_logical_object(tmp_path: Path) -
 
     assert result is not None
     assert result.version.revalidation.etag == '"etag-3"'
-    object_files = list(
-        (tmp_path / "raw" / "everef" / "market-history" / "objects").rglob("*.bz2")
-    )
+    object_files = list((tmp_path / "raw" / "everef" / "market-history" / "objects").rglob("*.bz2"))
     assert len(object_files) == 1
     assert object_files[0] == Path(result.version.local_path)
 
@@ -546,12 +535,8 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
             ),
         ]
     )
-    first_object = CacheObject(
-        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2"
-    )
-    second_object = CacheObject(
-        source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2"
-    )
+    first_object = CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2")
+    second_object = CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2")
 
     with _store(tmp_path=tmp_path, client=client, ledger=ledger) as store:
         store.get_all([first_object])
@@ -567,12 +552,8 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
 
     assert len(unpublished_results) == 2
     assert unpublished_results[0].status is CacheResultStatus.HIT
-    assert unpublished_results[0].identity_key == {
-        "source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"
-    }
-    assert unpublished_results[1].identity_key == {
-        "source_path": "market-orders/history/2026/2026-01-02/file.csv.bz2"
-    }
+    assert unpublished_results[0].identity_key == {"source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"}
+    assert unpublished_results[1].identity_key == {"source_path": "market-orders/history/2026/2026-01-02/file.csv.bz2"}
     assert filtered_results == []
     assert ledger.resolve_fetch_plans_calls >= 2
     assert ledger.filter_published_calls >= 2
@@ -597,12 +578,8 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
         ]
     )
     first_store = _store(tmp_path=tmp_path, client=client)
-    second_store = _store(
-        tmp_path=tmp_path, client=client, ledger=InMemoryRawObjectLedger()
-    )
-    cache_object = CacheObject(
-        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2"
-    )
+    second_store = _store(tmp_path=tmp_path, client=client, ledger=InMemoryRawObjectLedger())
+    cache_object = CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2")
 
     with first_store as store:
         first_result = store.get(cache_object)
@@ -660,27 +637,19 @@ def test_store_rejects_query_string_urls(tmp_path: Path) -> None:
     store = _store(tmp_path=tmp_path, client=FakeClient([]))
 
     with store:
-        with pytest.raises(
-            ValueError, match="must not include query strings or fragments"
-        ):
-            store.get(
-                CacheObject(source_url="https://data.everef.net/file.csv.bz2?token=abc")
-            )
+        with pytest.raises(ValueError, match="must not include query strings or fragments"):
+            store.get(CacheObject(source_url="https://data.everef.net/file.csv.bz2?token=abc"))
 
 
 @pytest.mark.parametrize(
     "source_url",
     ["file:///tmp/file.csv.bz2", "https:///file.csv.bz2"],
 )
-def test_store_rejects_invalid_http_source_urls(
-    tmp_path: Path, source_url: str
-) -> None:
+def test_store_rejects_invalid_http_source_urls(tmp_path: Path, source_url: str) -> None:
     store = _store(tmp_path=tmp_path, client=FakeClient([]))
 
     with store:
-        with pytest.raises(
-            ValueError, match="must be an http or https URL with a host"
-        ):
+        with pytest.raises(ValueError, match="must be an https URL with a host"):
             store.get(CacheObject(source_url=source_url))
 
 
@@ -698,5 +667,5 @@ def test_store_accepts_non_everef_hosts_and_uncompressed_paths(tmp_path: Path) -
     with _store(tmp_path=tmp_path, client=client, source_name="other") as store:
         result = store.get(CacheObject(source_url="https://example.com/file.csv"))
 
-    assert result.raw_object.source_name == "other"
+    assert result.raw_object.ref.source_name == "other"
     assert result.identity_key == {"source_path": "file.csv"}
