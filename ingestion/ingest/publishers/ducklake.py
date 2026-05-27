@@ -223,6 +223,10 @@ class DuckLakeWriter:
         with _temporary_arrow_view(con, arrow_table) as source_name:
             quoted_source = _quote_identifier(source_name)
             if merge_keys:
+                # DuckDB MERGE USING (columns) is an equi-join shorthand replacing ON.
+                # Insert-only semantics are intentional: matched rows carry identical
+                # data (Everef sources), so WHEN MATCHED THEN UPDATE would be a no-op
+                # write.
                 con.execute(
                     f"""
                     MERGE INTO {quoted_target} AS target
