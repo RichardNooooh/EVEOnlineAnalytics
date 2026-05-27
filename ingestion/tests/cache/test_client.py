@@ -68,9 +68,7 @@ class FakeSession:
         del prefix, adapter
 
 
-def test_read_returns_not_modified_without_writing_file(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_read_returns_not_modified_without_writing_file(monkeypatch, tmp_path: Path) -> None:
     response = FakeResponse(
         status_code=304,
         headers={
@@ -126,16 +124,12 @@ def test_read_streams_file_and_computes_sha256(monkeypatch, tmp_path: Path) -> N
 
     assert result.outcome is FetchOutcome.MODIFIED
     assert result.revalidation.content_length == 11
-    assert result.sha256 == (
-        "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
-    )
+    assert result.sha256 == ("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
     assert temp_path.read_bytes() == b"hello world"
     assert response.closed is True
 
 
-def test_read_removes_partial_file_when_stream_fails(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_read_removes_partial_file_when_stream_fails(monkeypatch, tmp_path: Path) -> None:
     response = FakeResponse(chunks=[b"partial"], error=RuntimeError("boom"))
     session = FakeSession(response)
 

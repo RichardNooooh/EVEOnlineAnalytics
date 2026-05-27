@@ -22,8 +22,8 @@ def normalize_source_relative_path(source_url: str) -> str:
     """
 
     parsed = urlparse(source_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("source_url must be an http or https URL with a host")
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("source_url must be an https URL with a host")
     if parsed.query or parsed.fragment:
         raise ValueError("source_url must not include query strings or fragments")
     return normalize_source_path(parsed.path.lstrip("/"), field_name="source_url path")
@@ -74,13 +74,7 @@ def resolve_identity_key(
 
 
 def validate_identity_key(identity_key: Mapping[str, IdentityScalar]) -> None:
-    """Validate identity key shape for stable JSON hashing.
-
-    Example:
-        ```python
-        validate_identity_key({"source_date": "2026-01-01"})
-        ```
-    """
+    """Validate identity key shape for stable JSON hashing."""
 
     if not identity_key:
         raise ValueError("identity_key must not be empty")
@@ -101,9 +95,7 @@ def canonical_identity_json(identity_key: IdentityKey) -> str:
         ```
     """
 
-    return json.dumps(
-        identity_key, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    )
+    return json.dumps(identity_key, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def hash_identity_key(identity_key: IdentityKey) -> str:

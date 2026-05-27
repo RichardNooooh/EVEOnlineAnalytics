@@ -101,10 +101,7 @@ def test_writer_appends_by_name(monkeypatch) -> None:
 
     assert con.arrow_tables == [arrow_table]
     assert len(con.relation.view_names) == 1
-    assert any(
-        'INSERT INTO "ducklake"."raw"."raw_market_history" BY NAME' in query
-        for query in queries
-    )
+    assert any('INSERT INTO "ducklake"."raw"."raw_market_history" BY NAME' in query for query in queries)
     assert any("DROP VIEW IF EXISTS" in query for query in queries)
     assert con.closed is True
 
@@ -126,9 +123,7 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
     merge_queries = [query for query in queries if "MERGE INTO" in query]
 
     assert len(merge_queries) == 1
-    assert (
-        'MERGE INTO "ducklake"."raw"."raw_market_orders" AS target' in merge_queries[0]
-    )
+    assert 'MERGE INTO "ducklake"."raw"."raw_market_orders" AS target' in merge_queries[0]
     assert 'USING ("id")' in merge_queries[0]
     assert "WHEN NOT MATCHED THEN INSERT BY NAME" in merge_queries[0]
 

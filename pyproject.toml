@@ -1,6 +1,6 @@
 [tool.ruff]
 target-version = "py313"
-line-length = 88
+line-length = 120
 include = ["*.py", "*.pyi"]
 extend-exclude = [".local"]
 force-exclude = true

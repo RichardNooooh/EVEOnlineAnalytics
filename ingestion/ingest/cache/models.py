@@ -27,6 +27,93 @@ class UpdateMode(StrEnum):
 
 
 @dataclass(frozen=True)
+class CacheObject:
+    """Per-object description of one raw object to acquire.
+
+    Example:
+        ```python
+        object_ref = CacheObject(
+            source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
+            identity_key={"source_date": "2026-01-01"},
+        )
+        ```
+    """
+
+    source_url: str
+    identity_key: IdentityKey | None = None
+    source_path: str | None = None
+
+
+@dataclass(frozen=True)
+class CacheResult:
+    """Current cached version for one raw object.
+
+    Example:
+        ```python
+        result = cache.get(CacheObject(source_url=url))
+        if result.changed:
+            print("downloaded", result.path)
+        ```
+    """
+
+    status: CacheResultStatus
+    raw_object: RawObjectEntry
+    version: RawObjectVersion
+
+    @property
+    def path(self) -> str:
+        """Return local filesystem path for this cached version."""
+
+        return self.version.local_path
+
+    @property
+    def identity_key(self) -> IdentityKey:
+        """Return logical identity used for cache lookup.
+
+        Example:
+            ```python
+            assert result.identity_key["source_date"] == "2026-01-01"
+            ```
+        """
+
+        return self.raw_object.identity_key
+
+    @property
+    def update_mode(self) -> UpdateMode:
+        """Return update mode used by this raw object."""
+
+        return self.raw_object.update_mode
+
+    @property
+    def changed(self) -> bool:
+        """Return true when this call downloaded and stored new version."""
+
+        return self.status is CacheResultStatus.STORED
+
+
+class CacheResultStatus(StrEnum):
+    """Result of cache lookup for one object.
+
+    `HIT` means cache reused existing local version. `STORED` means cache fetched
+    and recorded new local version.
+    """
+
+    HIT = "hit"
+    STORED = "stored"
+
+
+class FetchOutcome(StrEnum):
+    """Low-level HTTP read outcome from cache client.
+
+    `NOT_MODIFIED` means origin confirmed existing cached version still current.
+    `MODIFIED` means client wrote fresh content to temporary storage.
+    """
+
+    NOT_MODIFIED = "not_modified"
+    MODIFIED = "modified"
+
+
+@dataclass(frozen=True)
 class RevalidationMetadata:
     """HTTP revalidation metadata used for conditional requests.
 
@@ -69,113 +156,6 @@ class PublicationContext:
 
 
 @dataclass(frozen=True)
-class CacheObject:
-    """Per-object description of one raw object to acquire.
-
-    Example:
-        ```python
-        object_ref = CacheObject(
-            source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
-            identity_key={"source_date": "2026-01-01"},
-        )
-        ```
-    """
-
-    source_url: str
-    identity_key: IdentityKey | None = None
-    source_path: str | None = None
-
-
-@dataclass(frozen=True)
-class CacheResult:
-    """Current cached version for one raw object.
-
-    Example:
-        ```python
-        result = cache.get(CacheObject(source_url=url))
-        if result.changed:
-            print("downloaded", result.path)
-        ```
-    """
-
-    status: CacheResultStatus
-    raw_object: RawObjectEntry
-    version: RawObjectVersion
-
-    @property
-    def path(self) -> str:
-        """Return local filesystem path for this cached version.
-
-        Example:
-            ```python
-            process_file(result.path)
-            ```
-        """
-
-        return self.version.local_path
-
-    @property
-    def identity_key(self) -> IdentityKey:
-        """Return logical identity used for cache lookup.
-
-        Example:
-            ```python
-            assert result.identity_key["source_date"] == "2026-01-01"
-            ```
-        """
-
-        return self.raw_object.identity_key
-
-    @property
-    def update_mode(self) -> UpdateMode:
-        """Return update mode used by this raw object.
-
-        Example:
-            ```python
-            if result.update_mode is UpdateMode.MUTABLE:
-                ...
-            ```
-        """
-
-        return self.raw_object.update_mode
-
-    @property
-    def changed(self) -> bool:
-        """Return true when this call downloaded and stored new version.
-
-        Example:
-            ```python
-            if not result.changed:
-                return
-            ```
-        """
-
-        return self.status is CacheResultStatus.STORED
-
-
-class CacheResultStatus(StrEnum):
-    """Result of cache lookup for one object.
-
-    `HIT` means cache reused existing local version. `STORED` means cache fetched
-    and recorded new local version.
-    """
-
-    HIT = "hit"
-    STORED = "stored"
-
-
-class FetchOutcome(StrEnum):
-    """Low-level HTTP read outcome from cache client.
-
-    `NOT_MODIFIED` means origin confirmed existing cached version still current.
-    `MODIFIED` means client wrote fresh content to temporary storage.
-    """
-
-    NOT_MODIFIED = "not_modified"
-    MODIFIED = "modified"
-
-
-@dataclass(frozen=True)
 class RawObjectRef:
     """Stable composite key for one logical raw object.
 
@@ -215,23 +195,12 @@ class RawObjectEntry:
     """
 
     id: str
-    source_name: str
-    dataset_name: str
+    ref: RawObjectRef
     identity_key: IdentityKey
-    identity_hash: str
     update_mode: UpdateMode
     created_at: datetime
     last_checked_at: datetime | None = None
     revalidation: RevalidationMetadata = RevalidationMetadata()
-
-    @property
-    def ref(self) -> RawObjectRef:
-        """Return composite key for this raw object."""
-        return RawObjectRef(
-            source_name=self.source_name,
-            dataset_name=self.dataset_name,
-            identity_hash=self.identity_hash,
-        )
 
     @property
     def definition(self) -> RawObjectDefinition:
@@ -292,23 +261,12 @@ class BaseFetchPlan:
     and the temporary path where the response body should be streamed.
     """
 
-    source_name: str
-    dataset_name: str
+    ref: RawObjectRef
     source_url: str
     source_relative_path: str
     update_mode: UpdateMode
     identity_key: IdentityKey
-    identity_hash: str
     temp_path: str
-
-    @property
-    def ref(self) -> RawObjectRef:
-        """Return composite key for this plan."""
-        return RawObjectRef(
-            source_name=self.source_name,
-            dataset_name=self.dataset_name,
-            identity_hash=self.identity_hash,
-        )
 
     @property
     def definition(self) -> RawObjectDefinition:
@@ -321,12 +279,25 @@ class BaseFetchPlan:
 
 
 @dataclass(frozen=True)
-class ResolvedFetchPlan(BaseFetchPlan):
-    """Fetch plan enriched with ledger state.
+class UnresolvedFetchPlan(BaseFetchPlan):
+    """Fetch plan for an object not yet known to the ledger.
 
-    ``raw_object`` is ``None`` when the object has never been seen.
-    ``current_version`` is ``None`` when no version has been stored yet.
+    The ledger has never recorded this identity hash, so no ``raw_object``
+    entry or ``current_version`` exists. A full fetch is required.
     """
 
-    raw_object: RawObjectEntry | None
-    current_version: RawObjectVersion | None
+    pass
+
+
+@dataclass(frozen=True)
+class ResolvedFetchPlan(BaseFetchPlan):
+    """Fetch plan enriched with complete ledger state.
+
+    Both ``raw_object`` and ``current_version`` are guaranteed present.
+    """
+
+    raw_object: RawObjectEntry
+    current_version: RawObjectVersion
+
+
+FetchPlan: TypeAlias = UnresolvedFetchPlan | ResolvedFetchPlan

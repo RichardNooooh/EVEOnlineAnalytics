@@ -28,12 +28,13 @@ from ingest.cache.models import (
     CacheResult,
     CacheResultStatus,
     FetchOutcome,
+    FetchPlan,
     FetchResult,
     ModifiedResult,
     PublicationContext,
-    RawObjectEntry,
-    RevalidationMetadata,
+    RawObjectRef,
     ResolvedFetchPlan,
+    RevalidationMetadata,
     UpdateMode,
 )
 from ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
@@ -96,21 +97,16 @@ class Cache:
             ValueError: If ``dataset_name`` or ``source_name`` contain path
                 separators or are empty.
         """
-        self._dataset_name = _validate_path_segment(
-            dataset_name, field_name="dataset_name"
-        )
+        self._dataset_name = _validate_path_segment(dataset_name, field_name="dataset_name")
         if not isinstance(update_mode, UpdateMode):
             raise TypeError("update_mode must be an UpdateMode")
         self._update_mode = update_mode
-        self._source_name = _validate_path_segment(
-            source_name, field_name="source_name"
-        )
+        self._source_name = _validate_path_segment(source_name, field_name="source_name")
         self._raw_root = Path(raw_root)
         self._client = client or HttpRawObjectClient()
         self._ledger = ledger or RawObjectLedger(ledger_url=ledger_url)
 
     def __enter__(self) -> Cache:
-        """Enter context manager.  Returns ``self``."""
         return self
 
     def __exit__(
@@ -119,7 +115,6 @@ class Cache:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        """Exit context manager and close ledger and client connections."""
         self._ledger.close()
         self._client.close()
 
@@ -127,7 +122,7 @@ class Cache:
         self,
         cache_object: CacheObject,
         *,
-        plan: ResolvedFetchPlan | None = None,
+        plan: FetchPlan | None = None,
     ) -> CacheResult:
         """Fetch one raw object and return its current local version.
 
@@ -160,40 +155,32 @@ class Cache:
         """
 
         plan = plan or self._plan(cache_object)
-
         current_local_path = _current_local_path(plan, raw_root=self._raw_root)
-        if plan.update_mode is UpdateMode.SNAPSHOT and _file_exists(current_local_path):
-            if plan.current_version is not None:
-                return self._record_hit(plan)
-            logger.info(
-                "cached file missing ledger state; re-reading source_url=%s",
-                plan.source_url,
-            )
+
+        # fast path: SNAPSHOT with cached file and known ledger state
+        if (
+            isinstance(plan, ResolvedFetchPlan)
+            and plan.update_mode is UpdateMode.SNAPSHOT
+            and _file_exists(current_local_path)
+        ):
+            return self._record_hit(plan)
 
         read_result = self._read_source(
             plan,
-            request_headers=_request_headers_for(plan.raw_object, plan.update_mode),
+            request_headers=_request_headers_for(plan, plan.update_mode),
         )
-        if read_result.outcome is FetchOutcome.NOT_MODIFIED and _file_exists(
-            current_local_path
-        ):
-            if plan.current_version is not None:
+
+        # server says not-modified; need to validate local state
+        if read_result.outcome is FetchOutcome.NOT_MODIFIED:
+            if isinstance(plan, ResolvedFetchPlan) and _file_exists(current_local_path):
                 return self._record_hit(plan, read_result=read_result)
             logger.info(
-                "not-modified response missing ledger state; re-reading source_url=%s",
-                plan.source_url,
-            )
-            read_result = self._read_source(plan, request_headers={})
-
-        if read_result.outcome is FetchOutcome.NOT_MODIFIED:
-            logger.info(
-                "cached file missing after not-modified response; re-reading source_url=%s",
+                "not-modified response but local state incomplete; re-reading source_url=%s",
                 plan.source_url,
             )
             read_result = self._read_source(plan, request_headers={})
 
         modified_result = _ensure_downloaded(read_result)
-
         return self._record_store(plan, modified_result)
 
     def _read_source(
@@ -232,8 +219,7 @@ class Cache:
         return [
             result
             for result in results
-            if (result.raw_object.identity_hash, result.version.sha256)
-            not in published_versions
+            if (result.raw_object.ref.identity_hash, result.version.sha256) not in published_versions
         ]
 
     def get_all(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
@@ -393,11 +379,7 @@ class Cache:
         *,
         read_result: FetchResult | None = None,
     ) -> CacheResult:
-        if plan.current_version is None:
-            raise RuntimeError("hit recording requires current_version")
-        checked_at = (
-            read_result.fetched_at if read_result is not None else datetime.now(UTC)
-        )
+        checked_at = read_result.fetched_at if read_result is not None else datetime.now(UTC)
         with self._ledger.transaction() as tx:
             raw_object = tx.touch_raw_object(
                 definition=plan.definition,
@@ -410,9 +392,7 @@ class Cache:
             version=plan.current_version,
         )
 
-    def _record_store(
-        self, plan: ResolvedFetchPlan, read_result: ModifiedResult
-    ) -> CacheResult:
+    def _record_store(self, plan: BaseFetchPlan, read_result: ModifiedResult) -> CacheResult:
         final_path = _build_final_path(
             raw_root=self._raw_root,
             plan=plan,
@@ -447,15 +427,13 @@ class Cache:
             version=stored.version,
         )
 
-    def _plan(self, cache_object: CacheObject) -> ResolvedFetchPlan:
+    def _plan(self, cache_object: CacheObject) -> FetchPlan:
         base_plan = self._base_plan(cache_object)
 
         with self._ledger.transaction() as tx:
             return tx.resolve_fetch_plan(base_plan)
 
-    def _plan_many(
-        self, cache_objects: Iterable[CacheObject]
-    ) -> list[ResolvedFetchPlan]:
+    def _plan_many(self, cache_objects: Iterable[CacheObject]) -> list[FetchPlan]:
         base_plans = [self._base_plan(cache_object) for cache_object in cache_objects]
         with self._ledger.transaction() as tx:
             return tx.resolve_fetch_plans(base_plans)
@@ -473,16 +451,16 @@ class Cache:
         identity_hash = hash_identity_key(resolved_identity_key)
 
         return BaseFetchPlan(
-            source_name=self._source_name,
-            dataset_name=self._dataset_name,
+            ref=RawObjectRef(
+                source_name=self._source_name,
+                dataset_name=self._dataset_name,
+                identity_hash=identity_hash,
+            ),
             source_url=cache_object.source_url,
             source_relative_path=source_relative_path,
             update_mode=self._update_mode,
             identity_key=resolved_identity_key,
-            identity_hash=identity_hash,
-            temp_path=str(
-                _build_temp_path(raw_root=self._raw_root, source_name=self._source_name)
-            ),
+            temp_path=str(_build_temp_path(raw_root=self._raw_root, source_name=self._source_name)),
         )
 
     def _filter_published(self, results: Iterable[CacheResult]) -> set[tuple[str, str]]:
@@ -490,7 +468,7 @@ class Cache:
         grouped_results: dict[tuple[str, str], list[tuple[str, str]]] = {}
         for result in result_list:
             grouped_results.setdefault(result.raw_object.ref.group_key, []).append(
-                (result.raw_object.identity_hash, result.version.sha256)
+                (result.raw_object.ref.identity_hash, result.version.sha256)
             )
 
         published_versions: set[tuple[str, str]] = set()
@@ -505,8 +483,8 @@ class Cache:
         return published_versions
 
 
-def _current_local_path(plan: ResolvedFetchPlan, *, raw_root: Path) -> str | None:
-    if plan.current_version is not None:
+def _current_local_path(plan: FetchPlan, *, raw_root: Path) -> str | None:
+    if isinstance(plan, ResolvedFetchPlan):
         return plan.current_version.local_path
     if plan.update_mode is UpdateMode.SNAPSHOT:
         return str(_build_snapshot_path(raw_root=raw_root, plan=plan))
@@ -517,21 +495,15 @@ def _file_exists(path: str | None) -> bool:
     return path is not None and Path(path).exists()
 
 
-def _request_headers_for(
-    raw_object: RawObjectEntry | None, update_mode: UpdateMode
-) -> Mapping[str, str]:
-    if update_mode is not UpdateMode.MUTABLE or raw_object is None:
+def _request_headers_for(plan: FetchPlan, update_mode: UpdateMode) -> Mapping[str, str]:
+    if update_mode is not UpdateMode.MUTABLE or not isinstance(plan, ResolvedFetchPlan):
         return {}
-    return raw_object.revalidation.request_headers()
+    return plan.raw_object.revalidation.request_headers()
 
 
-def _revalidation_for_hit(
-    plan: ResolvedFetchPlan, read_result: FetchResult | None
-) -> RevalidationMetadata:
+def _revalidation_for_hit(plan: ResolvedFetchPlan, read_result: FetchResult | None) -> RevalidationMetadata:
     if read_result is None:
-        if plan.raw_object is not None:
-            return plan.raw_object.revalidation
-        return plan.current_version.revalidation
+        return plan.raw_object.revalidation
     return read_result.revalidation
 
 
@@ -557,8 +529,8 @@ def _build_final_path(
     if plan.update_mode is UpdateMode.SNAPSHOT:
         return _build_snapshot_path(raw_root=raw_root, plan=plan)
 
-    source_name = _validate_path_segment(plan.source_name, field_name="source_name")
-    dataset_name = _validate_path_segment(plan.dataset_name, field_name="dataset_name")
+    source_name = _validate_path_segment(plan.ref.source_name, field_name="source_name")
+    dataset_name = _validate_path_segment(plan.ref.dataset_name, field_name="dataset_name")
 
     basename = Path(plan.source_relative_path).name or f"{dataset_name}.bin"
     timestamp = fetched_at.strftime("%Y%m%dT%H%M%SZ")
@@ -567,13 +539,13 @@ def _build_final_path(
         / source_name
         / dataset_name
         / "objects"
-        / plan.identity_hash
+        / plan.ref.identity_hash
         / f"{timestamp}__{sha256[:12]}__{uuid4().hex[:8]}__{basename}"
     )
 
 
 def _build_snapshot_path(*, raw_root: Path, plan: BaseFetchPlan) -> Path:
-    source_name = _validate_path_segment(plan.source_name, field_name="source_name")
+    source_name = _validate_path_segment(plan.ref.source_name, field_name="source_name")
     return raw_root / source_name / Path(plan.source_relative_path)
 
 

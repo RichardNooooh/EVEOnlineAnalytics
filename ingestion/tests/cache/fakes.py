@@ -9,13 +9,15 @@ from uuid import uuid4
 from ingest.cache.ledger.types import ReplaceCurrentVersionResult
 from ingest.cache.models import (
     BaseFetchPlan,
+    FetchPlan,
     PublicationContext,
     RawObjectDefinition,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
-    RevalidationMetadata,
     ResolvedFetchPlan,
+    RevalidationMetadata,
+    UnresolvedFetchPlan,
 )
 
 
@@ -44,49 +46,47 @@ class InMemoryRawObjectLedgerTx:
         *,
         ref: RawObjectRef,
     ) -> RawObjectEntry | None:
-        return self._ledger._raw_objects_by_key.get(
-            ref.group_key + (ref.identity_hash,)
-        )
+        return self._ledger._raw_objects_by_key.get(ref.group_key + (ref.identity_hash,))
 
-    def resolve_fetch_plan(self, base_plan: BaseFetchPlan) -> ResolvedFetchPlan:
+    def resolve_fetch_plan(self, base_plan: BaseFetchPlan) -> FetchPlan:
         return self.resolve_fetch_plans([base_plan])[0]
 
-    def resolve_fetch_plans(
-        self, base_plans: list[BaseFetchPlan]
-    ) -> list[ResolvedFetchPlan]:
+    def resolve_fetch_plans(self, base_plans: list[BaseFetchPlan]) -> list[FetchPlan]:
         self._ledger.resolve_fetch_plans_calls += 1
-        resolved_plans: list[ResolvedFetchPlan] = []
+        resolved_plans: list[FetchPlan] = []
         for base_plan in base_plans:
             raw_object = self._ledger._raw_objects_by_key.get(
-                (base_plan.source_name, base_plan.dataset_name, base_plan.identity_hash)
+                (base_plan.ref.source_name, base_plan.ref.dataset_name, base_plan.ref.identity_hash)
             )
-            if (
-                raw_object is not None
-                and raw_object.update_mode is not base_plan.update_mode
-            ):
+            if raw_object is not None and raw_object.update_mode is not base_plan.update_mode:
                 raise ValueError(
                     "raw object update_mode mismatch: "
                     f"stored={raw_object.update_mode.value} requested={base_plan.update_mode.value}"
                 )
-            current_version = (
-                self._ledger._versions_by_object_id.get(raw_object.id, [None])[0]
-                if raw_object is not None
-                else None
-            )
-            resolved_plans.append(
-                ResolvedFetchPlan(
-                    source_name=base_plan.source_name,
-                    dataset_name=base_plan.dataset_name,
+            if raw_object is None:
+                resolved: FetchPlan = UnresolvedFetchPlan(
+                    ref=base_plan.ref,
                     source_url=base_plan.source_url,
                     source_relative_path=base_plan.source_relative_path,
                     update_mode=base_plan.update_mode,
                     identity_key=base_plan.identity_key,
-                    identity_hash=base_plan.identity_hash,
+                    temp_path=base_plan.temp_path,
+                )
+            else:
+                current_version = self._ledger._versions_by_object_id.get(raw_object.id, [None])[0]
+                if current_version is None:
+                    raise RuntimeError(f"Ledger corruption: raw_object {raw_object.id} exists but has no versions")
+                resolved = ResolvedFetchPlan(
+                    ref=base_plan.ref,
+                    source_url=base_plan.source_url,
+                    source_relative_path=base_plan.source_relative_path,
+                    update_mode=base_plan.update_mode,
+                    identity_key=base_plan.identity_key,
                     temp_path=base_plan.temp_path,
                     raw_object=raw_object,
                     current_version=current_version,
                 )
-            )
+            resolved_plans.append(resolved)
         return resolved_plans
 
     def touch_raw_object(
@@ -102,10 +102,8 @@ class InMemoryRawObjectLedgerTx:
         if existing is None:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
-                source_name=definition.ref.source_name,
-                dataset_name=definition.ref.dataset_name,
+                ref=definition.ref,
                 identity_key=dict(definition.identity_key),
-                identity_hash=definition.ref.identity_hash,
                 update_mode=definition.update_mode,
                 created_at=checked_at,
                 last_checked_at=checked_at,
@@ -138,9 +136,7 @@ class InMemoryRawObjectLedgerTx:
             checked_at=fetched_at,
             revalidation=revalidation,
         )
-        stale_versions = list(
-            self._ledger._versions_by_object_id.get(raw_object.id, [])
-        )
+        stale_versions = list(self._ledger._versions_by_object_id.get(raw_object.id, []))
         version = RawObjectVersion(
             id=uuid4().hex,
             raw_object_id=raw_object.id,
@@ -199,19 +195,9 @@ class InMemoryRawObjectLedgerTx:
         }
 
 
-def _merge_revalidation(
-    existing: RevalidationMetadata, incoming: RevalidationMetadata
-) -> RevalidationMetadata:
+def _merge_revalidation(existing: RevalidationMetadata, incoming: RevalidationMetadata) -> RevalidationMetadata:
     return RevalidationMetadata(
         etag=incoming.etag if incoming.etag is not None else existing.etag,
-        last_modified=(
-            incoming.last_modified
-            if incoming.last_modified is not None
-            else existing.last_modified
-        ),
-        content_length=(
-            incoming.content_length
-            if incoming.content_length is not None
-            else existing.content_length
-        ),
+        last_modified=(incoming.last_modified if incoming.last_modified is not None else existing.last_modified),
+        content_length=(incoming.content_length if incoming.content_length is not None else existing.content_length),
     )
