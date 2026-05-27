@@ -39,8 +39,6 @@ class RawObjectWriter:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
                 ref=ref,
-                identity_key=dict(ref.identity_key),
-                update_mode=ref.update_mode,
                 created_at=checked_at,
                 last_checked_at=checked_at,
                 revalidation=revalidation,

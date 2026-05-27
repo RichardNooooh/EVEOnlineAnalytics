@@ -35,10 +35,10 @@ def normalize_ledger_url(ledger_url: str) -> str:
 
 
 def require_update_mode(raw_object: RawObjectEntry | None, update_mode: UpdateMode) -> None:
-    if raw_object is None or raw_object.update_mode is update_mode:
+    if raw_object is None or raw_object.ref.update_mode is update_mode:
         return
     raise ValueError(
-        f"raw object update_mode mismatch: stored={raw_object.update_mode.value} requested={update_mode.value}"
+        f"raw object update_mode mismatch: stored={raw_object.ref.update_mode.value} requested={update_mode.value}"
     )
 
 
@@ -152,8 +152,6 @@ def row_to_raw_object(row: RowMapping) -> RawObjectEntry:
             identity_key=identity_key,
             update_mode=update_mode,
         ),
-        identity_key=identity_key,
-        update_mode=update_mode,
         created_at=cast(datetime, row["created_at"]),
         last_checked_at=cast(datetime | None, row["last_checked_at"]),
         revalidation=RevalidationMetadata(

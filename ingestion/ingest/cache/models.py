@@ -91,13 +91,13 @@ class CacheResult:
             ```
         """
 
-        return self.raw_object.identity_key
+        return self.raw_object.ref.identity_key
 
     @property
     def update_mode(self) -> UpdateMode:
         """Return update mode used by this raw object."""
 
-        return self.raw_object.update_mode
+        return self.raw_object.ref.update_mode
 
     @property
     def changed(self) -> bool:
