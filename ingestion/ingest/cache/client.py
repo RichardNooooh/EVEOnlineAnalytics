@@ -129,17 +129,20 @@ class HttpRawObjectClient:
             ) as response:
                 fetched_at = datetime.now(UTC)
 
+                header_etag = response.headers.get("ETag")
+                header_last_mod = response.headers.get("Last-Modified")
+                header_content_length = _parse_content_length(response.headers.get("Content-Length"))
+
                 if response.status_code == 304:
+                    revalidation_data = RevalidationMetadata(
+                        etag=header_etag,
+                        last_modified=header_last_mod,
+                        content_length=header_content_length,
+                    )
                     return NotModifiedResult(
                         outcome=FetchOutcome.NOT_MODIFIED,
                         fetched_at=fetched_at,
-                        revalidation=RevalidationMetadata(
-                            etag=response.headers.get("ETag"),
-                            last_modified=response.headers.get("Last-Modified"),
-                            content_length=_parse_content_length(
-                                response.headers.get("Content-Length")
-                            ),
-                        ),
+                        revalidation=revalidation_data,
                     )
 
                 response.raise_for_status()
@@ -149,17 +152,25 @@ class HttpRawObjectClient:
                     response=response,
                     temp_file=temp_file,
                 )
+                if header_content_length and content_length != header_content_length:
+                    logger.warning(
+                        f"Header content length ({header_content_length}) "
+                        + f"not equal to calculated content length ({content_length}). "
+                        + f"url: {source_url}"
+                    )
+
+                revalidation_data = RevalidationMetadata(
+                    etag=header_etag,
+                    last_modified=header_last_mod,
+                    content_length=content_length,
+                )
 
                 return ModifiedResult(
                     outcome=FetchOutcome.MODIFIED,
                     fetched_at=fetched_at,
                     temp_path=str(temp_file),
                     sha256=sha256,
-                    revalidation=RevalidationMetadata(
-                        etag=response.headers.get("ETag"),
-                        last_modified=response.headers.get("Last-Modified"),
-                        content_length=content_length,
-                    ),
+                    revalidation=revalidation_data,
                 )
         except Exception:
             logger.exception("raw object read failed source_url=%s", source_url)
@@ -171,12 +182,6 @@ class HttpRawObjectClient:
         """Close the underlying HTTP session.
 
         Safe to call multiple times; subsequent calls are no-ops.
-
-        Example:
-            ```python
-            with HttpRawObjectClient() as client:
-                ...
-            ```
         """
 
         self._session.close()
@@ -194,7 +199,6 @@ class HttpRawObjectClient:
             raise_on_status=False,
         )
         adapter = HTTPAdapter(max_retries=retry)
-        session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
 

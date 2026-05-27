@@ -41,10 +41,7 @@ def configure_logging(*, force: bool = False) -> None:
 
 
 def log_runtime_context() -> None:
-    context = {
-        name: os.environ.get(env_var)
-        for name, env_var in _RUNTIME_CONTEXT_ENV_VARS.items()
-    }
+    context = {name: os.environ.get(env_var) for name, env_var in _RUNTIME_CONTEXT_ENV_VARS.items()}
     context = {name: value for name, value in context.items() if value}
     if not context:
         return
