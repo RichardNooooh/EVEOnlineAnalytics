@@ -21,20 +21,25 @@ from ingest.cache.identity import (
     resolve_identity_key,
 )
 from ingest.cache.ledger import RawObjectLedger
+from ingest.cache.client_types import (
+    ModifiedRead,
+    ReadResult,
+    ReadStatus,
+    RevalidationMetadata,
+)
+from ingest.cache.ledger.types import RawObjectRef
 from ingest.cache.models import (
-    BaseFetchPlan,
     CacheObject,
     CacheResult,
     CacheResultStatus,
+    GetMode,
+)
+from ingest.cache.primitives import UpdateMode
+from ingest.cache.plans import (
+    BaseFetchPlan,
     FetchPlan,
-    ModifiedRead,
-    RawObjectRef,
-    ReadResult,
-    ReadStatus,
     ResolvedFetchPlan,
-    RevalidationMetadata,
     UnresolvedFetchPlan,
-    UpdateMode,
 )
 from ingest.cache.paths import (
     build_final_path,
@@ -153,7 +158,7 @@ class Cache:
 
             get()
               ├─ _handle_resolved()                # plan has ledger state
-              │    ├─ _try_local_hit()             # SNAPSHOT + file exists -> HIT
+               │    ├─ _try_snapshot_local_hit()    # SNAPSHOT + file exists -> HIT
               │    └─ _fetch_with_revalidation()   # conditional GET -> HIT or STORED
               └─ _handle_unresolved()              # no ledger state -> STORED
 
@@ -189,9 +194,9 @@ class Cache:
     def _handle_unresolved(self, plan: UnresolvedFetchPlan) -> CacheResult:
         """No ledger state; must fetch unconditionally."""
         read_result = self._read_source(plan, request_headers={})
-        # Defensive guard: some servers return 304 even without conditional
-        # headers (misconfiguration, CDN behaviour, stale cache layers).
-        # Re-read unconditionally to recover.
+        # Some origin servers return 304 even for unconditional requests
+        # (misconfigured CDN, stale cache layers). When there's no ledger
+        # state, a 304 is meaningless — re-fetch unconditionally.
         if read_result.status is ReadStatus.NOT_MODIFIED:
             logger.info(
                 "not-modified response but no ledger state; re-reading source_url=%s",
@@ -202,12 +207,12 @@ class Cache:
 
     def _handle_resolved(self, plan: ResolvedFetchPlan) -> CacheResult:
         """Try local cache hit, fall back to conditional fetch."""
-        hit = self._try_local_hit(plan)
+        hit = self._try_snapshot_local_hit(plan)
         if hit is not None:
             return hit
         return self._fetch_with_revalidation(plan)
 
-    def _try_local_hit(self, plan: ResolvedFetchPlan) -> CacheResult | None:
+    def _try_snapshot_local_hit(self, plan: ResolvedFetchPlan) -> CacheResult | None:
         """SNAPSHOT with cached file on disk -> HIT, no remote call."""
         if plan.update_mode is UpdateMode.SNAPSHOT and _file_exists(plan.current_version.local_path):
             return self._record_hit(plan)
@@ -246,24 +251,41 @@ class Cache:
             temp_path=plan.temp_path,
         )
 
-    def _get_many(
+    def get_many(
         self,
         objects: Iterable[CacheObject],
         *,
-        changed_only: bool = True,
-        unpublished_only: bool = False,
+        mode: GetMode = GetMode.CHANGED,
     ) -> list[CacheResult]:
+        """Fetch objects and return results filtered by *mode*.
+
+        Args:
+            objects: Source objects to fetch.
+            mode: ``CHANGED`` (default) — return only newly downloaded versions.
+                  ``ALL`` — return every result (hits + stores).
+                  ``UNPUBLISHED`` — return versions not yet marked as published.
+
+        Returns:
+            List of ``CacheResult`` filtered by the selected mode.
+
+        Example:
+            ```python
+            results = cache.get_many(objects, mode=GetMode.ALL)
+            changed = cache.get_many(objects)
+            unpublished = cache.get_many(objects, mode=GetMode.UNPUBLISHED)
+            ```
+        """
         object_list = list(objects)
         plans = self._plan_many(object_list)
 
         results: list[CacheResult] = []
         for cache_object, plan in zip(object_list, plans, strict=True):
             result = self.get(cache_object, plan=plan)
-            if changed_only and not result.changed:
+            if mode is GetMode.CHANGED and not result.changed:
                 continue
             results.append(result)
 
-        if not unpublished_only:
+        if mode is not GetMode.UNPUBLISHED:
             return results
 
         published_versions = self.pubtrack.filter_published(results)
@@ -272,68 +294,6 @@ class Cache:
             for result in results
             if (result.raw_object.ref.identity_hash, result.version.sha256) not in published_versions
         ]
-
-    def get_all(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
-        """Fetch every requested object and return hits plus downloads.
-
-        Args:
-            objects: Source objects to fetch.
-
-        Returns:
-            List of ``CacheResult`` including both hits and stored versions.
-
-        Example:
-            ```python
-            results = cache.get_all([
-                CacheObject(source_url=url)
-            ])
-            ```
-        """
-
-        return self._get_many(objects, changed_only=False)
-
-    def get_changed(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
-        """Fetch objects and return only newly downloaded versions.
-
-        Args:
-            objects: Source objects to fetch.
-
-        Returns:
-            Subset of ``CacheResult`` where ``status`` is ``STORED``.
-
-        Example:
-            ```python
-            for result in cache.get_changed(requests):
-                publish(result.path)
-            ```
-        """
-
-        return self._get_many(objects)
-
-    def get_unpublished(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
-        """Fetch objects and return versions not marked as published.
-
-        Use this when retrying a publication job after files have already been cached.
-
-        Args:
-            objects: Source objects to fetch.
-
-        Returns:
-            ``CacheResult`` items that lack a publication marker for their
-            current checksum.
-
-        Example:
-            ```python
-            unpublished = cache.get_unpublished(requests)
-            publish_many(unpublished)
-            cache.pubtrack.mark_published_many(
-                unpublished,
-                context=PublicationContext(publication_scope="raw-market-history"),
-            )
-            ```
-        """
-
-        return self._get_many(objects, changed_only=False, unpublished_only=True)
 
     def _record_hit(
         self,
@@ -366,7 +326,7 @@ class Cache:
 
         try:
             with self._ledger.transaction() as tx:
-                stored = tx.writer.replace_current_version(
+                stored = tx.writer.rotate_version(
                     ref=plan.ref,
                     source_url=plan.source_url,
                     fetched_at=read_result.fetched_at,
@@ -412,19 +372,20 @@ class Cache:
         )
         identity_hash = hash_identity_key(resolved_identity_key)
 
+        ref = RawObjectRef(
+            source_name=self._source_name,
+            dataset_name=self._dataset_name,
+            identity_hash=identity_hash,
+            identity_key=resolved_identity_key,
+            update_mode=self._update_mode,
+        )
         return BaseFetchPlan(
-            ref=RawObjectRef(
-                source_name=self._source_name,
-                dataset_name=self._dataset_name,
-                identity_hash=identity_hash,
-                identity_key=resolved_identity_key,
-                update_mode=self._update_mode,
-            ),
+            ref=ref,
             source_url=cache_object.source_url,
             source_relative_path=source_relative_path,
             update_mode=self._update_mode,
             identity_key=resolved_identity_key,
-            temp_path=str(build_temp_path(raw_root=self._raw_root, source_name=self._source_name)),
+            temp_path=str(build_temp_path(raw_root=self._raw_root, ref=ref)),
         )
 
 

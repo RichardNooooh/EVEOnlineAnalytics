@@ -13,7 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
-from ingest.cache.models import UpdateMode
+from ingest.cache.primitives import UpdateMode
 
 
 def _enum_values(enum_cls: type[UpdateMode]) -> list[str]:

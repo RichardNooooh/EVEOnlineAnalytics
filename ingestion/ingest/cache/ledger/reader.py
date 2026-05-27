@@ -6,7 +6,7 @@ from sqlalchemy.engine import Connection
 from ingest.cache.ledger.mappers import row_to_raw_object, row_to_raw_object_version
 from ingest.cache.ledger._db import _fetchall, _fetchone
 from ingest.cache.ledger.schema import raw_object_versions, raw_objects
-from ingest.cache.models import RawObjectEntry, RawObjectRef, RawObjectVersion
+from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
 
 
 class RawObjectReader:
