@@ -134,15 +134,10 @@ class HttpRawObjectClient:
                 header_content_length = _parse_content_length(response.headers.get("Content-Length"))
 
                 if response.status_code == 304:
-                    revalidation_data = RevalidationMetadata(
-                        etag=header_etag,
-                        last_modified=header_last_mod,
-                        content_length=header_content_length,
-                    )
                     return NotModifiedRead(
                         status=ReadStatus.NOT_MODIFIED,
                         fetched_at=fetched_at,
-                        revalidation=revalidation_data,
+                        revalidation=_build_revalidation(header_etag, header_last_mod, header_content_length),
                     )
 
                 response.raise_for_status()
@@ -159,18 +154,12 @@ class HttpRawObjectClient:
                         + f"url: {source_url}"
                     )
 
-                revalidation_data = RevalidationMetadata(
-                    etag=header_etag,
-                    last_modified=header_last_mod,
-                    content_length=content_length,
-                )
-
                 return ModifiedRead(
                     status=ReadStatus.MODIFIED,
                     fetched_at=fetched_at,
                     temp_path=str(temp_file),
                     sha256=sha256,
-                    revalidation=revalidation_data,
+                    revalidation=_build_revalidation(header_etag, header_last_mod, content_length),
                 )
         except Exception:
             logger.exception("raw object read failed source_url=%s", source_url)
@@ -227,3 +216,15 @@ def _parse_content_length(value: str | None) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+def _build_revalidation(
+    etag: str | None,
+    last_modified: str | None,
+    content_length: int | None,
+) -> RevalidationMetadata:
+    return RevalidationMetadata(
+        etag=etag,
+        last_modified=last_modified,
+        content_length=content_length,
+    )

@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import datetime
 from uuid import uuid4
 
+from ingest.cache.helpers import merge_revalidation
 from ingest.cache.ledger.types import ReplaceCurrentVersionResult
 from ingest.cache.models import (
     BaseFetchPlan,
@@ -115,7 +116,7 @@ class InMemoryRawObjectLedgerTx:
         updated = replace(
             existing,
             last_checked_at=checked_at,
-            revalidation=_merge_revalidation(existing.revalidation, revalidation),
+            revalidation=merge_revalidation(existing.revalidation, revalidation),
         )
         self._ledger._raw_objects_by_key[key] = updated
         return updated
@@ -193,11 +194,3 @@ class InMemoryRawObjectLedgerTx:
             for identity_hash, sha256 in versions
             if (*group_key, identity_hash, sha256) in self._ledger._publications
         }
-
-
-def _merge_revalidation(existing: RevalidationMetadata, incoming: RevalidationMetadata) -> RevalidationMetadata:
-    return RevalidationMetadata(
-        etag=incoming.etag if incoming.etag is not None else existing.etag,
-        last_modified=(incoming.last_modified if incoming.last_modified is not None else existing.last_modified),
-        content_length=(incoming.content_length if incoming.content_length is not None else existing.content_length),
-    )
