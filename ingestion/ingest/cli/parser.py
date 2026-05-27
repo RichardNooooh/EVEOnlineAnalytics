@@ -112,12 +112,6 @@ def _build_shared_parents() -> dict[str, argparse.ArgumentParser]:
         default=DEFAULT_RAW_LEDGER_URL,
         help="Raw source-file ledger URL.",
     )
-    runtime_parent.add_argument(
-        "--raw-max-copies-per-date",
-        type=int,
-        default=None,
-        help="Maximum raw file copies to keep per source date; 0 disables deletion.",
-    )
 
     ducklake_parent = argparse.ArgumentParser(add_help=False)
     ducklake_parent.add_argument(
