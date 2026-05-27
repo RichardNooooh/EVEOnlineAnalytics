@@ -17,6 +17,8 @@ from ingest.cache.models import (
 
 
 def normalize_ledger_url(ledger_url: str) -> str:
+    if "+psycopg" in ledger_url:
+        return ledger_url
     if ledger_url.startswith("postgresql://"):
         return "postgresql+psycopg://" + ledger_url.removeprefix("postgresql://")
     if ledger_url.startswith("postgres://"):
