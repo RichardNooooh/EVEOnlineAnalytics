@@ -42,7 +42,6 @@ from ingest.cache.models import (
     BaseFetchPlan,
     FetchPlan,
     PublicationContext,
-    RawObjectDefinition,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
@@ -305,7 +304,7 @@ class RawObjectLedgerTx:
     def touch_raw_object(
         self,
         *,
-        definition: RawObjectDefinition,
+        ref: RawObjectRef,
         checked_at: datetime,
         revalidation: RevalidationMetadata | None = None,
     ) -> RawObjectEntry:
@@ -315,7 +314,7 @@ class RawObjectLedgerTx:
         updates ``last_checked_at`` and merges revalidation fields.
 
         Args:
-            definition: Immutable description of the object.
+            ref: Composite key with identity and cache policy.
             checked_at: Timestamp for this observation.
             revalidation: Fresh revalidation metadata from the origin.  Merged
                 with existing fields so that non-``None`` values win.
@@ -323,14 +322,14 @@ class RawObjectLedgerTx:
         Returns:
             The inserted or updated ``RawObjectEntry``.
         """
-        existing = self.load_raw_object(ref=definition.ref)
+        existing = self.load_raw_object(ref=ref)
         revalidation = revalidation or RevalidationMetadata()
         if existing is None:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
-                ref=definition.ref,
-                identity_key=dict(definition.identity_key),
-                update_mode=definition.update_mode,
+                ref=ref,
+                identity_key=dict(ref.identity_key),
+                update_mode=ref.update_mode,
                 created_at=checked_at,
                 last_checked_at=checked_at,
                 revalidation=revalidation,
@@ -351,7 +350,7 @@ class RawObjectLedgerTx:
     def replace_current_version(
         self,
         *,
-        definition: RawObjectDefinition,
+        ref: RawObjectRef,
         source_url: str,
         fetched_at: datetime,
         revalidation: RevalidationMetadata,
@@ -362,7 +361,7 @@ class RawObjectLedgerTx:
         """Store a new version and delete previous ones for the same object.
 
         Args:
-            definition: Immutable description of the object.
+            ref: Composite key with identity and cache policy.
             source_url: Origin URL that produced this payload.
             fetched_at: Timestamp when the download completed.
             revalidation: Revalidation metadata observed from the response.
@@ -375,7 +374,7 @@ class RawObjectLedgerTx:
             stale versions that were replaced.
         """
         raw_object = self.touch_raw_object(
-            definition=definition,
+            ref=ref,
             checked_at=fetched_at,
             revalidation=revalidation,
         )

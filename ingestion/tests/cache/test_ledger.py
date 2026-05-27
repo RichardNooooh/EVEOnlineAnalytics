@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -11,7 +10,6 @@ from ingest.cache.ledger import runtime as ledger_runtime
 from ingest.cache.ledger.schema import raw_objects, raw_object_versions
 from ingest.cache.models import (
     PublicationContext,
-    RawObjectDefinition,
     RawObjectRef,
     RevalidationMetadata,
     UpdateMode,
@@ -258,7 +256,13 @@ def test_load_latest_versions_with_varying_counts(monkeypatch) -> None:
 
 def test_mark_published_idempotent(monkeypatch) -> None:
     ledger = _make_ledger(monkeypatch)
-    ref = RawObjectRef(source_name="everef", dataset_name="market-history", identity_hash="hash-1")
+    ref = RawObjectRef(
+        source_name="everef",
+        dataset_name="market-history",
+        identity_hash="hash-1",
+        identity_key={"source_date": "2026-01-01"},
+        update_mode=UpdateMode.MUTABLE,
+    )
     ctx = PublicationContext(publication_scope="scope", publisher_run_id="run-1")
     with ledger.transaction() as tx:
         tx.mark_published(ref=ref, sha256="sha1", version_id="v1", context=ctx)
@@ -279,8 +283,10 @@ def test_replace_current_version_deletes_stale_versions(monkeypatch) -> None:
         )
 
         result = tx.replace_current_version(
-            definition=RawObjectDefinition(
-                ref=RawObjectRef(source_name="everef", dataset_name="market-history", identity_hash="hash-1"),
+            ref=RawObjectRef(
+                source_name="everef",
+                dataset_name="market-history",
+                identity_hash="hash-1",
                 identity_key={"source_date": "2026-01-01"},
                 update_mode=UpdateMode.MUTABLE,
             ),
@@ -321,8 +327,10 @@ def test_replace_current_version_rolls_back_on_delete_failure(monkeypatch) -> No
     with pytest.raises(RuntimeError, match="boom"):
         with ledger.transaction() as tx:
             tx.replace_current_version(
-                definition=RawObjectDefinition(
-                    ref=RawObjectRef(source_name="everef", dataset_name="market-history", identity_hash="hash-1"),
+                ref=RawObjectRef(
+                    source_name="everef",
+                    dataset_name="market-history",
+                    identity_hash="hash-1",
                     identity_key={"source_date": "2026-01-01"},
                     update_mode=UpdateMode.MUTABLE,
                 ),
