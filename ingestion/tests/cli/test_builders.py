@@ -69,19 +69,6 @@ def test_market_history_uses_runtime_defaults() -> None:
                 "2025-01-01",
                 "--end-date",
                 "2025-01-31",
-                "--raw-max-copies-per-date",
-                "-1",
-            ],
-            "raw_max_copies_per_date must be greater than or equal to 0",
-        ),
-        (
-            [
-                "everef",
-                "market-history",
-                "--start-date",
-                "2025-01-01",
-                "--end-date",
-                "2025-01-31",
                 "--raw-ledger-url",
                 "sqlite:///:memory:",
             ],
@@ -96,23 +83,3 @@ def test_market_history_validation_errors(argv: list[str], error_message: str) -
     with pytest.raises(ValueError, match=error_message):
         build_everef_market_history_config(args)
 
-
-def test_market_history_zero_max_copies_normalizes_to_unlimited() -> None:
-    parser = build_parser()
-
-    args = parser.parse_args(
-        [
-            "everef",
-            "market-history",
-            "--start-date",
-            "2025-01-01",
-            "--end-date",
-            "2025-01-31",
-            "--raw-max-copies-per-date",
-            "0",
-        ]
-    )
-
-    config = build_everef_market_history_config(args)
-
-    assert config.raw_files.raw_max_copies_per_date is None

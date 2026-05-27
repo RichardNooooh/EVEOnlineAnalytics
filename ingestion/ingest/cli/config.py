@@ -13,7 +13,6 @@ class DateRangeCliConfig:
 class RawFilesCliConfig:
     raw_root: str
     raw_ledger_url: str
-    raw_max_copies_per_date: int | None = None
 
 
 @dataclass(frozen=True)
