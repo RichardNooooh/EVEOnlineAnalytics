@@ -7,7 +7,15 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from ingest.cache.models import RawObjectEntry, RawObjectVersion, UpdateMode
+from ingest.cache.ledger.types import ReplaceCurrentVersionResult
+from ingest.cache.models import (
+    BaseFetchPlan,
+    RawObjectEntry,
+    RawObjectVersion,
+    RevalidationMetadata,
+    ResolvedFetchPlan,
+    UpdateMode,
+)
 
 
 class InMemoryRawObjectLedger:
@@ -15,8 +23,7 @@ class InMemoryRawObjectLedger:
         self._raw_objects_by_key: dict[tuple[str, str, str], RawObjectEntry] = {}
         self._versions_by_object_id: dict[str, list[RawObjectVersion]] = {}
         self._publications: set[tuple[str, str, str, str]] = set()
-        self.load_raw_objects_calls = 0
-        self.load_latest_versions_calls = 0
+        self.resolve_fetch_plans_calls = 0
         self.filter_published_calls = 0
 
     def close(self) -> None:
@@ -42,38 +49,46 @@ class InMemoryRawObjectLedgerTx:
             (source_name, dataset_name, identity_hash)
         )
 
-    def load_raw_objects(
-        self,
-        *,
-        source_name: str,
-        dataset_name: str,
-        identity_hashes: list[str],
-    ) -> dict[str, RawObjectEntry]:
-        self._ledger.load_raw_objects_calls += 1
-        return {
-            identity_hash: raw_object
-            for identity_hash in identity_hashes
+    def resolve_fetch_plan(self, base_plan: BaseFetchPlan) -> ResolvedFetchPlan:
+        return self.resolve_fetch_plans([base_plan])[0]
+
+    def resolve_fetch_plans(
+        self, base_plans: list[BaseFetchPlan]
+    ) -> list[ResolvedFetchPlan]:
+        self._ledger.resolve_fetch_plans_calls += 1
+        resolved_plans: list[ResolvedFetchPlan] = []
+        for base_plan in base_plans:
+            raw_object = self._ledger._raw_objects_by_key.get(
+                (base_plan.source_name, base_plan.dataset_name, base_plan.identity_hash)
+            )
             if (
-                raw_object := self._ledger._raw_objects_by_key.get(
-                    (source_name, dataset_name, identity_hash)
+                raw_object is not None
+                and raw_object.update_mode is not base_plan.update_mode
+            ):
+                raise ValueError(
+                    "raw object update_mode mismatch: "
+                    f"stored={raw_object.update_mode.value} requested={base_plan.update_mode.value}"
+                )
+            current_version = (
+                self._ledger._versions_by_object_id.get(raw_object.id, [None])[0]
+                if raw_object is not None
+                else None
+            )
+            resolved_plans.append(
+                ResolvedFetchPlan(
+                    source_name=base_plan.source_name,
+                    dataset_name=base_plan.dataset_name,
+                    source_url=base_plan.source_url,
+                    source_relative_path=base_plan.source_relative_path,
+                    update_mode=base_plan.update_mode,
+                    identity_key=base_plan.identity_key,
+                    identity_hash=base_plan.identity_hash,
+                    temp_path=base_plan.temp_path,
+                    raw_object=raw_object,
+                    current_version=current_version,
                 )
             )
-            is not None
-        }
-
-    def load_latest_version(self, raw_object_id: str) -> RawObjectVersion | None:
-        versions = self._ledger._versions_by_object_id.get(raw_object_id, [])
-        return versions[0] if versions else None
-
-    def load_latest_versions(
-        self, raw_object_ids: list[str]
-    ) -> dict[str, RawObjectVersion]:
-        self._ledger.load_latest_versions_calls += 1
-        return {
-            raw_object_id: versions[0]
-            for raw_object_id in raw_object_ids
-            if (versions := self._ledger._versions_by_object_id.get(raw_object_id))
-        }
+        return resolved_plans
 
     def touch_raw_object(
         self,
@@ -84,10 +99,11 @@ class InMemoryRawObjectLedgerTx:
         identity_hash: str,
         update_mode: UpdateMode,
         checked_at: datetime,
-        current_version: RawObjectVersion | None,
+        revalidation: RevalidationMetadata | None = None,
     ) -> RawObjectEntry:
         key = (source_name, dataset_name, identity_hash)
         existing = self._ledger._raw_objects_by_key.get(key)
+        revalidation = revalidation or RevalidationMetadata()
         if existing is None:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
@@ -98,13 +114,7 @@ class InMemoryRawObjectLedgerTx:
                 update_mode=update_mode,
                 created_at=checked_at,
                 last_checked_at=checked_at,
-                last_seen_etag=current_version.etag if current_version else None,
-                last_seen_last_modified=current_version.last_modified
-                if current_version
-                else None,
-                last_seen_content_length=current_version.content_length
-                if current_version
-                else None,
+                revalidation=revalidation,
             )
             self._ledger._raw_objects_by_key[key] = raw_object
             return raw_object
@@ -112,49 +122,72 @@ class InMemoryRawObjectLedgerTx:
         updated = replace(
             existing,
             last_checked_at=checked_at,
-            last_seen_etag=(
-                current_version.etag if current_version else existing.last_seen_etag
-            ),
-            last_seen_last_modified=(
-                current_version.last_modified
-                if current_version
-                else existing.last_seen_last_modified
-            ),
-            last_seen_content_length=(
-                current_version.content_length
-                if current_version
-                else existing.last_seen_content_length
-            ),
+            revalidation=_merge_revalidation(existing.revalidation, revalidation),
         )
         self._ledger._raw_objects_by_key[key] = updated
         return updated
 
-    def insert_version(self, version: RawObjectVersion) -> None:
-        versions = self._ledger._versions_by_object_id.setdefault(
-            version.raw_object_id, []
+    def replace_current_version(
+        self,
+        *,
+        source_name: str,
+        dataset_name: str,
+        identity_key: Mapping[str, Any],
+        identity_hash: str,
+        update_mode: UpdateMode,
+        source_url: str,
+        fetched_at: datetime,
+        etag: str | None,
+        last_modified: str | None,
+        content_length: int | None,
+        sha256: str,
+        local_path: str,
+        storage_encoding: str,
+    ) -> ReplaceCurrentVersionResult:
+        revalidation = RevalidationMetadata(
+            etag=etag,
+            last_modified=last_modified,
+            content_length=content_length,
         )
-        versions.append(version)
-        versions.sort(key=lambda item: (item.fetched_at, item.id), reverse=True)
-
-        for key, raw_object in self._ledger._raw_objects_by_key.items():
-            if raw_object.id == version.raw_object_id:
-                self._ledger._raw_objects_by_key[key] = replace(
-                    raw_object,
-                    last_seen_etag=version.etag,
-                    last_seen_last_modified=version.last_modified,
-                    last_seen_content_length=version.content_length,
-                )
+        raw_object = self.touch_raw_object(
+            source_name=source_name,
+            dataset_name=dataset_name,
+            identity_key=identity_key,
+            identity_hash=identity_hash,
+            update_mode=update_mode,
+            checked_at=fetched_at,
+            revalidation=revalidation,
+        )
+        stale_versions = list(
+            self._ledger._versions_by_object_id.get(raw_object.id, [])
+        )
+        version = RawObjectVersion(
+            id=uuid4().hex,
+            raw_object_id=raw_object.id,
+            source_url=source_url,
+            fetched_at=fetched_at,
+            etag=etag,
+            last_modified=last_modified,
+            content_length=content_length,
+            sha256=sha256,
+            local_path=local_path,
+            storage_encoding=storage_encoding,
+        )
+        self._ledger._versions_by_object_id[raw_object.id] = [version]
+        updated_raw_object = replace(
+            raw_object,
+            last_checked_at=fetched_at,
+            revalidation=revalidation,
+        )
+        for key, candidate in self._ledger._raw_objects_by_key.items():
+            if candidate.id == raw_object.id:
+                self._ledger._raw_objects_by_key[key] = updated_raw_object
                 break
-
-    def list_versions(self, raw_object_id: str) -> list[RawObjectVersion]:
-        return list(self._ledger._versions_by_object_id.get(raw_object_id, []))
-
-    def delete_versions(self, version_ids: list[str]) -> None:
-        ids = set(version_ids)
-        for raw_object_id, versions in self._ledger._versions_by_object_id.items():
-            self._ledger._versions_by_object_id[raw_object_id] = [
-                version for version in versions if version.id not in ids
-            ]
+        return ReplaceCurrentVersionResult(
+            raw_object=updated_raw_object,
+            version=version,
+            stale_versions=stale_versions,
+        )
 
     def mark_published(
         self,
@@ -201,3 +234,21 @@ class InMemoryRawObjectLedgerTx:
             if (source_name, dataset_name, identity_hash, sha256)
             in self._ledger._publications
         }
+
+
+def _merge_revalidation(
+    existing: RevalidationMetadata, incoming: RevalidationMetadata
+) -> RevalidationMetadata:
+    return RevalidationMetadata(
+        etag=incoming.etag if incoming.etag is not None else existing.etag,
+        last_modified=(
+            incoming.last_modified
+            if incoming.last_modified is not None
+            else existing.last_modified
+        ),
+        content_length=(
+            incoming.content_length
+            if incoming.content_length is not None
+            else existing.content_length
+        ),
+    )

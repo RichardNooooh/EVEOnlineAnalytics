@@ -22,6 +22,20 @@ class UpdateMode(StrEnum):
 
 
 @dataclass(frozen=True)
+class RevalidationMetadata:
+    etag: str | None = None
+    last_modified: str | None = None
+    content_length: int | None = None
+
+    def request_headers(self) -> dict[str, str]:
+        if self.etag:
+            return {"If-None-Match": self.etag}
+        if self.last_modified:
+            return {"If-Modified-Since": self.last_modified}
+        return {}
+
+
+@dataclass(frozen=True)
 class CacheObject:
     """Per-object description of one raw object to acquire.
 
@@ -144,9 +158,7 @@ class RawObjectEntry:
     update_mode: UpdateMode
     created_at: datetime
     last_checked_at: datetime | None = None
-    last_seen_etag: str | None = None
-    last_seen_last_modified: str | None = None
-    last_seen_content_length: int | None = None
+    revalidation: RevalidationMetadata = RevalidationMetadata()
 
 
 @dataclass(frozen=True)
@@ -184,3 +196,21 @@ class FetchResult:
     content_length: int | None = None
     temp_path: str | None = None
     sha256: str | None = None
+
+
+@dataclass(frozen=True)
+class BaseFetchPlan:
+    source_name: str
+    dataset_name: str
+    source_url: str
+    source_relative_path: str
+    update_mode: UpdateMode
+    identity_key: IdentityKey
+    identity_hash: str
+    temp_path: str
+
+
+@dataclass(frozen=True)
+class ResolvedFetchPlan(BaseFetchPlan):
+    raw_object: RawObjectEntry | None
+    current_version: RawObjectVersion | None
