@@ -7,6 +7,7 @@ from ingest.publishers.ducklake import (
     DuckLakeAttachConfig,
     DuckLakeWriter,
     RawDuckLakeTable,
+    publish_arrow_table,
 )
 
 
@@ -187,3 +188,46 @@ def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
 
     assert any("DROP VIEW IF EXISTS" in query for query in _queries(con))
     assert con.closed is True
+
+
+def test_writer_handles_empty_arrow_table(monkeypatch) -> None:
+    con = FakeConnection()
+    arrow_table = pa.table({"id": pa.array([], type=pa.int64())})
+
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        writer.write(arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
+
+    assert con.arrow_tables == [arrow_table]
+    assert any('INSERT INTO "ducklake"."raw"."raw_market_history" BY NAME' in query for query in _queries(con))
+
+
+def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
+    con = FakeConnection()
+    table_a = pa.table({"id": [1]})
+    table_b = pa.table({"order_id": [10]})
+
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        writer.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY)
+        writer.write(table_b, table=RawDuckLakeTable.MARKET_ORDERS)
+
+    assert con.arrow_tables == [table_a, table_b]
+    queries = _queries(con)
+    assert any('"raw_market_history"' in query for query in queries)
+    assert any('"raw_market_orders"' in query for query in queries)
+    assert con.closed is True
+
+
+def test_publish_arrow_table_one_shot(monkeypatch) -> None:
+    con = FakeConnection()
+    arrow_table = pa.table({"id": [1]})
+
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    publish_arrow_table(arrow_table=arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
+
+    assert con.closed is True
+    assert any('INSERT INTO "ducklake"."raw"."raw_market_history" BY NAME' in query for query in _queries(con))
