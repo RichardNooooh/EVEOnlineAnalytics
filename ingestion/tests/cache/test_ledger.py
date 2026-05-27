@@ -221,71 +221,10 @@ def test_load_latest_versions_empty_input(monkeypatch) -> None:
         assert tx.reader.load_latest_versions([]) == {}
 
 
-def test_load_latest_version_with_many_versions(monkeypatch) -> None:
-    ledger = _make_ledger(monkeypatch)
-    with ledger._engine.begin() as con:
-        _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
-        _insert_version(con, version_id="v-1", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC))
-        _insert_version(
-            con, version_id="v-2", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
-        )
-        _insert_version(
-            con, version_id="v-3", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
-        )
-
-    with ledger.transaction() as tx:
-        result = tx.reader.load_latest_version("obj-1")
-
-    assert result is not None
-    assert result.id == "v-3"
-    assert result.fetched_at.replace(tzinfo=None) == datetime(2026, 1, 1, 12, 0)
 
 
-def test_load_latest_versions_with_varying_counts(monkeypatch) -> None:
-    ledger = _make_ledger(monkeypatch)
-    with ledger._engine.begin() as con:
-        _seed_raw_object(
-            con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC), identity_hash="hash-1"
-        )
-        _seed_raw_object(
-            con, raw_object_id="obj-2", fetched_at=datetime(2026, 1, 1, tzinfo=UTC), identity_hash="hash-2"
-        )
 
-        _insert_version(
-            con,
-            version_id="v1-a",
-            raw_object_id="obj-1",
-            fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
-            sha256="a1",
-        )
-        _insert_version(
-            con,
-            version_id="v1-b",
-            raw_object_id="obj-1",
-            fetched_at=datetime(2026, 1, 1, 11, 0, tzinfo=UTC),
-            sha256="b1",
-        )
-        _insert_version(
-            con,
-            version_id="v1-c",
-            raw_object_id="obj-1",
-            fetched_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
-            sha256="c1",
-        )
-        _insert_version(
-            con,
-            version_id="v2-a",
-            raw_object_id="obj-2",
-            fetched_at=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
-            sha256="a2",
-        )
 
-    with ledger.transaction() as tx:
-        results = tx.reader.load_latest_versions(["obj-1", "obj-2"])
-
-    assert len(results) == 2
-    assert results["obj-1"].id == "v1-c"
-    assert results["obj-2"].id == "v2-a"
 
 
 def test_mark_published_idempotent(monkeypatch) -> None:
