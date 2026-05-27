@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import requests
 
 from ingest.cache.client import HttpRawObjectClient
 from ingest.cache.models import ReadStatus
@@ -31,7 +32,7 @@ class FakeResponse:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise RuntimeError(f"http {self.status_code}")
+            raise requests.HTTPError(f"http {self.status_code}")
 
     def iter_content(self, chunk_size: int):
         del chunk_size
@@ -146,3 +147,73 @@ def test_read_removes_partial_file_when_stream_fails(monkeypatch, tmp_path: Path
 
     assert temp_path.exists() is False
     assert response.closed is True
+
+
+def test_read_returns_not_modified_with_last_modified_fallback(monkeypatch, tmp_path: Path) -> None:
+    response = FakeResponse(
+        status_code=304,
+        headers={
+            "Last-Modified": "Wed, 27 May 2026 12:00:00 GMT",
+            "Content-Length": "42",
+        },
+    )
+    session = FakeSession(response)
+
+    monkeypatch.setattr("ingest.cache.client.requests.Session", lambda: session)
+
+    temp_path = tmp_path / "file.download"
+    with HttpRawObjectClient() as client:
+        result = client.read(
+            source_url="https://example.com/file.csv",
+            request_headers={"If-Modified-Since": "Wed, 27 May 2026 12:00:00 GMT"},
+            temp_path=str(temp_path),
+        )
+
+    assert result.status is ReadStatus.NOT_MODIFIED
+    assert result.revalidation.etag is None
+    assert result.revalidation.last_modified == "Wed, 27 May 2026 12:00:00 GMT"
+    assert result.revalidation.content_length == 42
+    assert session.calls == [
+        (
+            "https://example.com/file.csv",
+            {"If-Modified-Since": "Wed, 27 May 2026 12:00:00 GMT"},
+            True,
+            30.0,
+        )
+    ]
+
+
+def test_read_raises_on_404(monkeypatch, tmp_path: Path) -> None:
+    response = FakeResponse(status_code=404)
+    session = FakeSession(response)
+
+    monkeypatch.setattr("ingest.cache.client.requests.Session", lambda: session)
+
+    temp_path = tmp_path / "file.download"
+    with HttpRawObjectClient() as client:
+        with pytest.raises(requests.HTTPError):
+            client.read(
+                source_url="https://example.com/file.csv",
+                request_headers={},
+                temp_path=str(temp_path),
+            )
+
+    assert temp_path.exists() is False
+
+
+def test_read_raises_on_500(monkeypatch, tmp_path: Path) -> None:
+    response = FakeResponse(status_code=500)
+    session = FakeSession(response)
+
+    monkeypatch.setattr("ingest.cache.client.requests.Session", lambda: session)
+
+    temp_path = tmp_path / "file.download"
+    with HttpRawObjectClient() as client:
+        with pytest.raises(requests.HTTPError):
+            client.read(
+                source_url="https://example.com/file.csv",
+                request_headers={},
+                temp_path=str(temp_path),
+            )
+
+    assert temp_path.exists() is False

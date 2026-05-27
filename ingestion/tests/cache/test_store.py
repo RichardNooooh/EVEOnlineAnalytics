@@ -6,8 +6,13 @@ from pathlib import Path
 
 import pytest
 from ingest.cache import Cache, CacheObject, UpdateMode
+from ingest.cache.ledger.types import ReplaceCurrentVersionResult
 from ingest.cache.models import (
     CacheResultStatus,
+    RawObjectDefinition,
+    RawObjectEntry,
+    RawObjectRef,
+    RawObjectVersion,
     ReadStatus,
     ReadResult,
     ModifiedRead,
@@ -641,3 +646,91 @@ def test_store_accepts_non_everef_hosts_and_uncompressed_paths(tmp_path: Path) -
 
     assert result.raw_object.ref.source_name == "other"
     assert result.identity_key == {"source_path": "file.csv"}
+
+
+def test_get_all_returns_hits_and_stores(tmp_path: Path) -> None:
+    first_client = FakeClient(
+        [
+            _response(tmp_path=tmp_path, status=ReadStatus.MODIFIED, name="a", sha256="sha-a"),
+        ]
+    )
+    second_client = FakeClient(
+        [
+            _response(tmp_path=tmp_path, status=ReadStatus.NOT_MODIFIED, name="a", sha256="sha-a"),
+            _response(tmp_path=tmp_path, status=ReadStatus.MODIFIED, name="b", sha256="sha-b"),
+        ]
+    )
+    first_object = CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2")
+    second_object = CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2")
+
+    with _store(tmp_path=tmp_path, client=SequenceClient([first_client, second_client])) as store:
+        store.get(first_object)
+        results = store.get_all([first_object, second_object])
+
+    assert len(results) == 2
+    statuses = {r.status for r in results}
+    assert statuses == {CacheResultStatus.HIT, CacheResultStatus.STORED}
+
+
+def test_record_store_skips_unlink_when_stale_path_equals_new_path(tmp_path: Path, monkeypatch) -> None:
+    client = FakeClient(
+        [
+            _response(tmp_path=tmp_path, status=ReadStatus.MODIFIED, name="same", sha256="sha-same"),
+        ]
+    )
+
+    final_path = tmp_path / "raw" / "everef" / "market-orders" / "history" / "2026" / "2026-01-01" / "file.csv.bz2"
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    final_path.write_bytes(b"existing")
+
+    def fake_replace(*args, **kwargs) -> ReplaceCurrentVersionResult:
+        version = RawObjectVersion(
+            id="v-new",
+            raw_object_id="obj-1",
+            source_url="https://example.com/file.csv",
+            fetched_at=datetime.now(UTC),
+            revalidation=RevalidationMetadata(),
+            sha256="sha-same",
+            local_path=str(final_path),
+            storage_encoding="bz2",
+        )
+        stale = replace(version, id="v-old")
+        raw_object = RawObjectEntry(
+            id="obj-1",
+            ref=RawObjectRef(source_name="everef", dataset_name="market-orders", identity_hash="hash-1"),
+            identity_key={"source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"},
+            update_mode=UpdateMode.SNAPSHOT,
+            created_at=datetime.now(UTC),
+            last_checked_at=datetime.now(UTC),
+            revalidation=RevalidationMetadata(),
+        )
+        return ReplaceCurrentVersionResult(raw_object=raw_object, version=version, stale_versions=[stale])
+
+    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectLedgerTx.replace_current_version", fake_replace)
+
+    with _store(tmp_path=tmp_path, client=client) as store:
+        store.get(CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2"))
+
+    assert final_path.exists()
+
+
+def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monkeypatch) -> None:
+    client = FakeClient(
+        [
+            _response(tmp_path=tmp_path, status=ReadStatus.MODIFIED, name="fail", sha256="sha-fail"),
+        ]
+    )
+
+    def fail_replace(*args, **kwargs) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectLedgerTx.replace_current_version", fail_replace)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with _store(tmp_path=tmp_path, client=client) as store:
+            store.get(
+                CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2")
+            )
+
+    final_path = tmp_path / "raw" / "everef" / "market-orders" / "history" / "2026" / "2026-01-01" / "file.csv.bz2"
+    assert not final_path.exists()
