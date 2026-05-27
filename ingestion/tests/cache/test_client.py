@@ -92,9 +92,9 @@ def test_read_returns_not_modified_without_writing_file(
         )
 
     assert result.outcome is FetchOutcome.NOT_MODIFIED
-    assert result.etag == '"etag-1"'
-    assert result.last_modified == "Wed, 27 May 2026 12:00:00 GMT"
-    assert result.content_length == 42
+    assert result.revalidation.etag == '"etag-1"'
+    assert result.revalidation.last_modified == "Wed, 27 May 2026 12:00:00 GMT"
+    assert result.revalidation.content_length == 42
     assert temp_path.exists() is False
     assert response.closed is True
     assert session.calls == [
@@ -125,7 +125,7 @@ def test_read_streams_file_and_computes_sha256(monkeypatch, tmp_path: Path) -> N
         )
 
     assert result.outcome is FetchOutcome.DOWNLOADED
-    assert result.content_length == 11
+    assert result.revalidation.content_length == 11
     assert result.sha256 == (
         "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
     )

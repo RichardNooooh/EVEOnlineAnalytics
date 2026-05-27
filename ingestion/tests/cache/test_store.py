@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from ingest.cache import Cache, CacheObject, UpdateMode
-from ingest.cache.models import CacheResultStatus, FetchOutcome, FetchResult
+from ingest.cache.models import (
+    CacheResultStatus,
+    FetchOutcome,
+    FetchResult,
+    PublicationContext,
+    RevalidationMetadata,
+)
 from tests.cache.fakes import InMemoryRawObjectLedger
 
 
@@ -101,9 +107,11 @@ def _response(
     return FetchResult(
         outcome=outcome,
         fetched_at=fetched_at or datetime.now(UTC),
-        etag=etag,
-        last_modified=last_modified,
-        content_length=7,
+        revalidation=RevalidationMetadata(
+            etag=etag,
+            last_modified=last_modified,
+            content_length=7,
+        ),
         temp_path=(
             str(tmp_path / f"{name}.download")
             if outcome is FetchOutcome.DOWNLOADED
@@ -387,7 +395,10 @@ def test_get_uses_stored_revalidation_metadata_not_version_fields(
             )
         )
         ledger._versions_by_object_id[first_result.raw_object.id] = [
-            replace(first_result.version, etag='"wrong-version-etag"')
+            replace(
+                first_result.version,
+                revalidation=RevalidationMetadata(etag='"wrong-version-etag"'),
+            )
         ]
 
         result = store.get(
@@ -505,7 +516,7 @@ def test_get_keeps_one_current_mutable_copy_per_logical_object(tmp_path: Path) -
             )
 
     assert result is not None
-    assert result.version.etag == '"etag-3"'
+    assert result.version.revalidation.etag == '"etag-3"'
     object_files = list(
         (tmp_path / "raw" / "everef" / "market-history" / "objects").rglob("*.bz2")
     )
@@ -545,8 +556,10 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
         unpublished_results = store.get_unpublished([first_object, second_object])
         store.mark_published_many(
             unpublished_results,
-            publication_scope="raw-market-history",
-            publisher_run_id="run-1",
+            context=PublicationContext(
+                publication_scope="raw-market-history",
+                publisher_run_id="run-1",
+            ),
         )
         filtered_results = store.get_unpublished([first_object, second_object])
 

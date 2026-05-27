@@ -11,7 +11,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from ingest.cache.models import FetchOutcome, FetchResult
+from ingest.cache.models import FetchOutcome, FetchResult, RevalidationMetadata
 
 logger = logging.getLogger("ingest.cache")
 
@@ -93,10 +93,12 @@ class HttpRawObjectClient:
                     return FetchResult(
                         outcome=FetchOutcome.NOT_MODIFIED,
                         fetched_at=fetched_at,
-                        etag=response.headers.get("ETag"),
-                        last_modified=response.headers.get("Last-Modified"),
-                        content_length=_parse_content_length(
-                            response.headers.get("Content-Length")
+                        revalidation=RevalidationMetadata(
+                            etag=response.headers.get("ETag"),
+                            last_modified=response.headers.get("Last-Modified"),
+                            content_length=_parse_content_length(
+                                response.headers.get("Content-Length")
+                            ),
                         ),
                     )
 
@@ -111,9 +113,11 @@ class HttpRawObjectClient:
                 return FetchResult(
                     outcome=FetchOutcome.DOWNLOADED,
                     fetched_at=fetched_at,
-                    etag=response.headers.get("ETag"),
-                    last_modified=response.headers.get("Last-Modified"),
-                    content_length=content_length,
+                    revalidation=RevalidationMetadata(
+                        etag=response.headers.get("ETag"),
+                        last_modified=response.headers.get("Last-Modified"),
+                        content_length=content_length,
+                    ),
                     temp_path=str(temp_file),
                     sha256=sha256,
                 )

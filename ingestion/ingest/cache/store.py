@@ -22,6 +22,7 @@ from ingest.cache.models import (
     CacheResultStatus,
     FetchOutcome,
     FetchResult,
+    PublicationContext,
     RawObjectEntry,
     RevalidationMetadata,
     ResolvedFetchPlan,
@@ -236,9 +237,7 @@ class Cache:
         self,
         result: CacheResult,
         *,
-        publication_scope: str | None = None,
-        publisher_run_id: str | None = None,
-        published_at: datetime | None = None,
+        context: PublicationContext | None = None,
     ) -> None:
         """Record that one cached version has been published.
 
@@ -249,52 +248,48 @@ class Cache:
             ```python
             cache.mark_published(
                 result,
-                publication_scope="raw-market-history",
-                publisher_run_id="airflow-run-42",
+                context=PublicationContext(
+                    publication_scope="raw-market-history",
+                    publisher_run_id="airflow-run-42",
+                ),
             )
             ```
         """
 
+        ctx = context or PublicationContext()
         with self._ledger.transaction() as tx:
             tx.mark_published(
-                source_name=result.raw_object.source_name,
-                dataset_name=result.raw_object.dataset_name,
-                identity_hash=result.raw_object.identity_hash,
+                ref=result.raw_object.ref,
                 sha256=result.version.sha256,
                 version_id=result.version.id,
-                published_at=published_at or datetime.now(UTC),
-                publication_scope=publication_scope,
-                publisher_run_id=publisher_run_id,
+                context=ctx,
             )
 
     def mark_published_many(
         self,
         results: Iterable[CacheResult],
         *,
-        publication_scope: str | None = None,
-        publisher_run_id: str | None = None,
-        published_at: datetime | None = None,
+        context: PublicationContext | None = None,
     ) -> None:
         """Record that many cached versions have been published.
 
         Example:
             ```python
-            cache.mark_published_many(results, publication_scope="raw-market-orders")
+            cache.mark_published_many(
+                results,
+                context=PublicationContext(publication_scope="raw-market-orders"),
+            )
             ```
         """
 
-        marked_at = published_at or datetime.now(UTC)
+        ctx = context or PublicationContext()
         with self._ledger.transaction() as tx:
             for result in results:
                 tx.mark_published(
-                    source_name=result.raw_object.source_name,
-                    dataset_name=result.raw_object.dataset_name,
-                    identity_hash=result.raw_object.identity_hash,
+                    ref=result.raw_object.ref,
                     sha256=result.version.sha256,
                     version_id=result.version.id,
-                    published_at=marked_at,
-                    publication_scope=publication_scope,
-                    publisher_run_id=publisher_run_id,
+                    context=ctx,
                 )
 
     def is_published(self, result: CacheResult) -> bool:
@@ -309,9 +304,7 @@ class Cache:
 
         with self._ledger.transaction() as tx:
             return tx.is_published(
-                source_name=result.raw_object.source_name,
-                dataset_name=result.raw_object.dataset_name,
-                identity_hash=result.raw_object.identity_hash,
+                ref=result.raw_object.ref,
                 sha256=result.version.sha256,
             )
 
@@ -328,11 +321,7 @@ class Cache:
         )
         with self._ledger.transaction() as tx:
             raw_object = tx.touch_raw_object(
-                source_name=plan.source_name,
-                dataset_name=plan.dataset_name,
-                identity_key=plan.identity_key,
-                identity_hash=plan.identity_hash,
-                update_mode=plan.update_mode,
+                definition=plan.definition,
                 checked_at=checked_at,
                 revalidation=_revalidation_for_hit(plan, read_result),
             )
@@ -357,16 +346,10 @@ class Cache:
         try:
             with self._ledger.transaction() as tx:
                 stored = tx.replace_current_version(
-                    source_name=plan.source_name,
-                    dataset_name=plan.dataset_name,
-                    identity_key=plan.identity_key,
-                    identity_hash=plan.identity_hash,
-                    update_mode=plan.update_mode,
+                    definition=plan.definition,
                     source_url=plan.source_url,
                     fetched_at=read_result.fetched_at,
-                    etag=read_result.etag,
-                    last_modified=read_result.last_modified,
-                    content_length=read_result.content_length,
+                    revalidation=read_result.revalidation,
                     sha256=read_result.sha256,
                     local_path=str(final_path),
                     storage_encoding=_detect_storage_encoding(final_path),
@@ -427,17 +410,16 @@ class Cache:
         result_list = list(results)
         grouped_results: dict[tuple[str, str], list[tuple[str, str]]] = {}
         for result in result_list:
-            grouped_results.setdefault(
-                (result.raw_object.source_name, result.raw_object.dataset_name), []
-            ).append((result.raw_object.identity_hash, result.version.sha256))
+            grouped_results.setdefault(result.raw_object.ref.group_key, []).append(
+                (result.raw_object.identity_hash, result.version.sha256)
+            )
 
         published_versions: set[tuple[str, str]] = set()
         with self._ledger.transaction() as tx:
-            for (source_name, dataset_name), versions in grouped_results.items():
+            for group_key, versions in grouped_results.items():
                 published_versions.update(
                     tx.filter_published(
-                        source_name=source_name,
-                        dataset_name=dataset_name,
+                        group_key=group_key,
                         versions=versions,
                     )
                 )
@@ -470,16 +452,8 @@ def _revalidation_for_hit(
     if read_result is None:
         if plan.raw_object is not None:
             return plan.raw_object.revalidation
-        return RevalidationMetadata(
-            etag=plan.current_version.etag,
-            last_modified=plan.current_version.last_modified,
-            content_length=plan.current_version.content_length,
-        )
-    return RevalidationMetadata(
-        etag=read_result.etag,
-        last_modified=read_result.last_modified,
-        content_length=read_result.content_length,
-    )
+        return plan.current_version.revalidation
+    return read_result.revalidation
 
 
 def _ensure_downloaded(read_result: FetchResult) -> None:

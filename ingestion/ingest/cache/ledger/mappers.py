@@ -7,6 +7,8 @@ from uuid import uuid4
 from sqlalchemy.engine import RowMapping
 
 from ingest.cache.models import (
+    PublicationContext,
+    RawObjectRef,
     RawObjectEntry,
     RawObjectVersion,
     RevalidationMetadata,
@@ -64,9 +66,9 @@ def raw_object_version_values(version: RawObjectVersion) -> dict[str, Any]:
         "raw_object_id": version.raw_object_id,
         "source_url": version.source_url,
         "fetched_at": version.fetched_at,
-        "etag": version.etag,
-        "last_modified": version.last_modified,
-        "content_length": version.content_length,
+        "etag": version.revalidation.etag,
+        "last_modified": version.revalidation.last_modified,
+        "content_length": version.revalidation.content_length,
         "sha256": version.sha256,
         "local_path": version.local_path,
         "storage_encoding": version.storage_encoding,
@@ -75,25 +77,21 @@ def raw_object_version_values(version: RawObjectVersion) -> dict[str, Any]:
 
 def raw_object_publication_values(
     *,
-    source_name: str,
-    dataset_name: str,
-    identity_hash: str,
+    ref: RawObjectRef,
     sha256: str,
     version_id: str,
-    published_at: datetime,
-    publication_scope: str | None,
-    publisher_run_id: str | None,
+    context: PublicationContext,
 ) -> dict[str, Any]:
     return {
         "id": uuid4().hex,
-        "source_name": source_name,
-        "dataset_name": dataset_name,
-        "identity_hash": identity_hash,
+        "source_name": ref.source_name,
+        "dataset_name": ref.dataset_name,
+        "identity_hash": ref.identity_hash,
         "sha256": sha256,
         "version_id": version_id,
-        "published_at": published_at,
-        "publication_scope": publication_scope,
-        "publisher_run_id": publisher_run_id,
+        "published_at": context.published_at,
+        "publication_scope": context.publication_scope,
+        "publisher_run_id": context.publisher_run_id,
     }
 
 
@@ -121,9 +119,11 @@ def row_to_raw_object_version(row: RowMapping) -> RawObjectVersion:
         raw_object_id=cast(str, row["raw_object_id"]),
         source_url=cast(str, row["source_url"]),
         fetched_at=cast(datetime, row["fetched_at"]),
-        etag=cast(str | None, row["etag"]),
-        last_modified=cast(str | None, row["last_modified"]),
-        content_length=cast(int | None, row["content_length"]),
+        revalidation=RevalidationMetadata(
+            etag=cast(str | None, row["etag"]),
+            last_modified=cast(str | None, row["last_modified"]),
+            content_length=cast(int | None, row["content_length"]),
+        ),
         sha256=cast(str, row["sha256"]),
         local_path=cast(str, row["local_path"]),
         storage_encoding=cast(str, row["storage_encoding"]),

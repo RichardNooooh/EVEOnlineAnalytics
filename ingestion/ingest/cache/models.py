@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Mapping, TypeAlias
 
@@ -33,6 +33,19 @@ class RevalidationMetadata:
         if self.last_modified:
             return {"If-Modified-Since": self.last_modified}
         return {}
+
+
+@dataclass(frozen=True)
+class PublicationContext:
+    """Publication marker for a cached raw object version.
+
+    Bundles scope, run id, and timestamp so the same context can be reused across
+    many `mark_published` calls.
+    """
+
+    published_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    publication_scope: str | None = None
+    publisher_run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -143,6 +156,24 @@ class FetchOutcome(StrEnum):
 
 
 @dataclass(frozen=True)
+class RawObjectRef:
+    source_name: str
+    dataset_name: str
+    identity_hash: str
+
+    @property
+    def group_key(self) -> tuple[str, str]:
+        return (self.source_name, self.dataset_name)
+
+
+@dataclass(frozen=True)
+class RawObjectDefinition:
+    ref: RawObjectRef
+    identity_key: IdentityKey
+    update_mode: UpdateMode
+
+
+@dataclass(frozen=True)
 class RawObjectEntry:
     """Ledger record for logical raw object identity.
 
@@ -160,6 +191,22 @@ class RawObjectEntry:
     last_checked_at: datetime | None = None
     revalidation: RevalidationMetadata = RevalidationMetadata()
 
+    @property
+    def ref(self) -> RawObjectRef:
+        return RawObjectRef(
+            source_name=self.source_name,
+            dataset_name=self.dataset_name,
+            identity_hash=self.identity_hash,
+        )
+
+    @property
+    def definition(self) -> RawObjectDefinition:
+        return RawObjectDefinition(
+            ref=self.ref,
+            identity_key=self.identity_key,
+            update_mode=self.update_mode,
+        )
+
 
 @dataclass(frozen=True)
 class RawObjectVersion:
@@ -173,9 +220,7 @@ class RawObjectVersion:
     raw_object_id: str
     source_url: str
     fetched_at: datetime
-    etag: str | None
-    last_modified: str | None
-    content_length: int | None
+    revalidation: RevalidationMetadata
     sha256: str
     local_path: str
     storage_encoding: str
@@ -191,9 +236,7 @@ class FetchResult:
 
     outcome: FetchOutcome
     fetched_at: datetime
-    etag: str | None = None
-    last_modified: str | None = None
-    content_length: int | None = None
+    revalidation: RevalidationMetadata = RevalidationMetadata()
     temp_path: str | None = None
     sha256: str | None = None
 
@@ -208,6 +251,22 @@ class BaseFetchPlan:
     identity_key: IdentityKey
     identity_hash: str
     temp_path: str
+
+    @property
+    def ref(self) -> RawObjectRef:
+        return RawObjectRef(
+            source_name=self.source_name,
+            dataset_name=self.dataset_name,
+            identity_hash=self.identity_hash,
+        )
+
+    @property
+    def definition(self) -> RawObjectDefinition:
+        return RawObjectDefinition(
+            ref=self.ref,
+            identity_key=self.identity_key,
+            update_mode=self.update_mode,
+        )
 
 
 @dataclass(frozen=True)
