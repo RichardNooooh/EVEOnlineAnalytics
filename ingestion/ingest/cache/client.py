@@ -18,6 +18,20 @@ logger = logging.getLogger("ingest.cache")
 
 @dataclass(frozen=True)
 class HttpRawObjectClient:
+    """HTTP client for streaming raw source files to temporary paths.
+
+    Example:
+        ```python
+        client = HttpRawObjectClient(timeout_seconds=60)
+        result = client.read(
+            source_url="https://example.com/file.csv.bz2",
+            request_headers={},
+            temp_path="/data/raw/.tmp/file.download",
+        )
+        client.close()
+        ```
+    """
+
     timeout_seconds: float = 30.0
     max_retries: int = 3
     backoff_factor: float = 0.5
@@ -32,6 +46,23 @@ class HttpRawObjectClient:
         request_headers: Mapping[str, str],
         temp_path: str,
     ) -> ClientReadResult:
+        """Read one URL into `temp_path`, returning status and source metadata.
+
+        Pass conditional headers such as `If-None-Match` for mutable objects. A 304
+        response returns `ReadOutcome.NOT_MODIFIED` and does not create `temp_path`.
+
+        Example:
+            ```python
+            result = client.read(
+                source_url=url,
+                request_headers={"If-None-Match": '"etag-1"'},
+                temp_path="/tmp/source.download",
+            )
+            if result.outcome is ReadOutcome.DOWNLOADED:
+                print(result.sha256)
+            ```
+        """
+
         response = None
         temp_file = Path(temp_path)
         try:
@@ -86,6 +117,18 @@ class HttpRawObjectClient:
                 response.close()
 
     def close(self) -> None:
+        """Close the underlying HTTP session.
+
+        Example:
+            ```python
+            client = HttpRawObjectClient()
+            try:
+                ...
+            finally:
+                client.close()
+            ```
+        """
+
         self._session.close()
 
     def _build_session(self) -> requests.Session:
