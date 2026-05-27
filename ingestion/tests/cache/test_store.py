@@ -705,8 +705,6 @@ def test_record_store_skips_unlink_when_stale_path_equals_new_path(tmp_path: Pat
                 identity_key={"source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"},
                 update_mode=UpdateMode.SNAPSHOT,
             ),
-            identity_key={"source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"},
-            update_mode=UpdateMode.SNAPSHOT,
             created_at=datetime.now(UTC),
             last_checked_at=datetime.now(UTC),
             revalidation=RevalidationMetadata(),

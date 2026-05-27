@@ -34,13 +34,12 @@ class RawObjectEntry:
     """Ledger record for logical raw object identity.
 
     One entry tracks stable object identity, cache policy, and last-observed remote
-    metadata across version fetches.
+    metadata across version fetches. ``identity_key`` and ``update_mode`` live on
+    ``ref``.
     """
 
     id: str
     ref: RawObjectRef
-    identity_key: IdentityKey
-    update_mode: UpdateMode
     created_at: datetime
     last_checked_at: datetime | None = None
     revalidation: RevalidationMetadata = RevalidationMetadata()
