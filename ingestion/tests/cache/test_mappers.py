@@ -70,8 +70,6 @@ def _entry() -> RawObjectEntry:
             identity_key={"date": "2026-01-01"},
             update_mode=UpdateMode.SNAPSHOT,
         ),
-        identity_key={"date": "2026-01-01"},
-        update_mode=UpdateMode.SNAPSHOT,
         created_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
         last_checked_at=datetime(2026, 1, 1, 12, 30, tzinfo=UTC),
         revalidation=RevalidationMetadata(

@@ -75,8 +75,6 @@ class InMemoryRawObjectWriter:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
                 ref=ref,
-                identity_key=dict(ref.identity_key),
-                update_mode=ref.update_mode,
                 created_at=checked_at,
                 last_checked_at=checked_at,
                 revalidation=revalidation,
@@ -149,10 +147,10 @@ class InMemoryFetchPlanResolver:
         resolved_plans: list[FetchPlan] = []
         for base_plan in base_plans:
             raw_object = self._reader.load_raw_object(ref=base_plan.ref)
-            if raw_object is not None and raw_object.update_mode is not base_plan.update_mode:
+            if raw_object is not None and raw_object.ref.update_mode is not base_plan.update_mode:
                 raise ValueError(
                     "raw object update_mode mismatch: "
-                    f"stored={raw_object.update_mode.value} requested={base_plan.update_mode.value}"
+                    f"stored={raw_object.ref.update_mode.value} requested={base_plan.update_mode.value}"
                 )
             if raw_object is None:
                 resolved: FetchPlan = UnresolvedFetchPlan(
