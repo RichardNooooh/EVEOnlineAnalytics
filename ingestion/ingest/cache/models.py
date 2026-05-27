@@ -26,6 +26,17 @@ class UpdateMode(StrEnum):
     MUTABLE = "mutable"
 
 
+class CacheResultStatus(StrEnum):
+    """Result of cache lookup for one object.
+
+    `HIT` means cache reused existing local version. `STORED` means cache fetched
+    and recorded new local version.
+    """
+
+    HIT = "hit"
+    STORED = "stored"
+
+
 @dataclass(frozen=True)
 class CacheObject:
     """Per-object description of one raw object to acquire.
@@ -89,17 +100,6 @@ class CacheResult:
         """Return true when this call downloaded and stored new version."""
 
         return self.status is CacheResultStatus.STORED
-
-
-class CacheResultStatus(StrEnum):
-    """Result of cache lookup for one object.
-
-    `HIT` means cache reused existing local version. `STORED` means cache fetched
-    and recorded new local version.
-    """
-
-    HIT = "hit"
-    STORED = "stored"
 
 
 class ReadStatus(StrEnum):
