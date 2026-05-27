@@ -538,17 +538,14 @@ def test_mark_published_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_store_rejects_non_postgres_ledger_urls(tmp_path: Path) -> None:
-    store = Cache(
-        dataset_name="market-orders",
-        update_mode=UpdateMode.SNAPSHOT,
-        raw_root=str(tmp_path / "raw"),
-        ledger_url=f"sqlite:///{tmp_path / 'raw_files.sqlite'}",
-        client=FakeClient([]),
-    )
-
     with pytest.raises(ValueError, match="ledger_url must be a PostgreSQL URL"):
-        with store:
-            pass
+        Cache(
+            dataset_name="market-orders",
+            update_mode=UpdateMode.SNAPSHOT,
+            raw_root=str(tmp_path / "raw"),
+            ledger_url=f"sqlite:///{tmp_path / 'raw_files.sqlite'}",
+            client=FakeClient([]),
+        )
 
 
 def test_store_rejects_query_string_urls(tmp_path: Path) -> None:

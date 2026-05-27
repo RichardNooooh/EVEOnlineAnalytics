@@ -25,7 +25,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import Connection
 
 from ingest.cache.identity import canonical_identity_json
 from ingest.cache.models import RawObjectEntry, RawObjectVersion, UpdateMode
@@ -106,12 +106,10 @@ Index(
 
 class RawObjectLedger:
     def __init__(self, *, ledger_url: str) -> None:
-        self._ledger_url = ledger_url
-        self._engine: Engine | None = None
-        self._con: Connection | None = None
+        self._engine = create_engine(_normalize_ledger_url(ledger_url))
+        self._bootstrapped = False
 
     def __enter__(self) -> RawObjectLedger:
-        self.open()
         return self
 
     def __exit__(
@@ -122,26 +120,26 @@ class RawObjectLedger:
     ) -> None:
         self.close()
 
-    def open(self) -> None:
-        if self._engine is not None or self._con is not None:
-            raise RuntimeError("RawObjectLedger is already open")
-        self._engine = create_engine(_normalize_ledger_url(self._ledger_url))
-        self._con = self._engine.connect()
-        self._bootstrap()
-
     def close(self) -> None:
-        if self._con is not None:
-            self._con.close()
-        if self._engine is not None:
-            self._engine.dispose()
-        self._con = None
-        self._engine = None
+        self._engine.dispose()
 
     @contextmanager
-    def transaction(self) -> Iterator[None]:
-        con = self._require_open()
-        with con.begin():
-            yield
+    def transaction(self) -> Iterator[RawObjectLedgerTx]:
+        self._bootstrap()
+        with self._engine.begin() as con:
+            yield RawObjectLedgerTx(con)
+
+    def _bootstrap(self) -> None:
+        if self._bootstrapped:
+            return
+        with self._engine.begin() as con:
+            _METADATA.create_all(con)
+        self._bootstrapped = True
+
+
+class RawObjectLedgerTx:
+    def __init__(self, con: Connection) -> None:
+        self._con = con
 
     def load_raw_object(
         self,
@@ -250,57 +248,36 @@ class RawObjectLedger:
                 if current_version
                 else None,
             )
-            self._execute(
-                raw_objects.insert().values(
-                    id=raw_object.id,
-                    source_name=raw_object.source_name,
-                    dataset_name=raw_object.dataset_name,
-                    identity_key_json=canonical_identity_json(raw_object.identity_key),
-                    identity_hash=raw_object.identity_hash,
-                    update_mode=raw_object.update_mode.value,
-                    created_at=raw_object.created_at.isoformat(),
-                    last_checked_at=raw_object.last_checked_at.isoformat()
-                    if raw_object.last_checked_at
-                    else None,
-                    last_seen_etag=raw_object.last_seen_etag,
-                    last_seen_last_modified=raw_object.last_seen_last_modified,
-                    last_seen_content_length=raw_object.last_seen_content_length,
-                )
-            )
+            self._execute(raw_objects.insert().values(**_raw_object_values(raw_object)))
             return raw_object
 
+        updated = replace(
+            existing,
+            last_checked_at=checked_at,
+            last_seen_etag=current_version.etag
+            if current_version
+            else existing.last_seen_etag,
+            last_seen_last_modified=(
+                current_version.last_modified
+                if current_version
+                else existing.last_seen_last_modified
+            ),
+            last_seen_content_length=(
+                current_version.content_length
+                if current_version
+                else existing.last_seen_content_length
+            ),
+        )
         self._execute(
             update(raw_objects)
             .where(raw_objects.c.id == existing.id)
-            .values(
-                last_checked_at=checked_at.isoformat(),
-                last_seen_etag=current_version.etag
-                if current_version
-                else existing.last_seen_etag,
-                last_seen_last_modified=current_version.last_modified
-                if current_version
-                else existing.last_seen_last_modified,
-                last_seen_content_length=current_version.content_length
-                if current_version
-                else existing.last_seen_content_length,
-            )
+            .values(**_raw_object_seen_values(updated))
         )
-        return replace(existing, last_checked_at=checked_at)
+        return updated
 
     def insert_version(self, version: RawObjectVersion) -> None:
         self._execute(
-            raw_object_versions.insert().values(
-                id=version.id,
-                raw_object_id=version.raw_object_id,
-                source_url=version.source_url,
-                fetched_at=version.fetched_at.isoformat(),
-                etag=version.etag,
-                last_modified=version.last_modified,
-                content_length=version.content_length,
-                sha256=version.sha256,
-                local_path=version.local_path,
-                storage_encoding=version.storage_encoding,
-            )
+            raw_object_versions.insert().values(**_raw_object_version_values(version))
         )
         self._execute(
             update(raw_objects)
@@ -343,15 +320,16 @@ class RawObjectLedger:
         publisher_run_id: str | None,
     ) -> None:
         statement = pg_insert(raw_object_publications).values(
-            id=uuid4().hex,
-            source_name=source_name,
-            dataset_name=dataset_name,
-            identity_hash=identity_hash,
-            sha256=sha256,
-            version_id=version_id,
-            published_at=published_at.isoformat(),
-            publication_scope=publication_scope,
-            publisher_run_id=publisher_run_id,
+            **_raw_object_publication_values(
+                source_name=source_name,
+                dataset_name=dataset_name,
+                identity_hash=identity_hash,
+                sha256=sha256,
+                version_id=version_id,
+                published_at=published_at,
+                publication_scope=publication_scope,
+                publisher_run_id=publisher_run_id,
+            )
         )
         self._execute(
             statement.on_conflict_do_nothing(
@@ -406,13 +384,8 @@ class RawObjectLedger:
         )
         return {(row["identity_hash"], row["sha256"]) for row in rows}
 
-    def _bootstrap(self) -> None:
-        con = self._require_open()
-        _METADATA.create_all(con)
-        con.commit()
-
     def _execute(self, statement: Any) -> Any:
-        return self._require_open().execute(statement)
+        return self._con.execute(statement)
 
     def _fetchone(self, statement: Any) -> dict[str, Any] | None:
         row = self._execute(statement).mappings().first()
@@ -423,11 +396,6 @@ class RawObjectLedger:
     def _fetchall(self, statement: Any) -> list[dict[str, Any]]:
         return [dict(row) for row in self._execute(statement).mappings().all()]
 
-    def _require_open(self) -> Connection:
-        if self._con is None:
-            raise RuntimeError("RawObjectLedger must be opened before use")
-        return self._con
-
 
 def _normalize_ledger_url(ledger_url: str) -> str:
     if ledger_url.startswith("postgresql://"):
@@ -435,6 +403,74 @@ def _normalize_ledger_url(ledger_url: str) -> str:
     if ledger_url.startswith("postgres://"):
         return "postgresql+psycopg://" + ledger_url.removeprefix("postgres://")
     raise ValueError("ledger_url must be a PostgreSQL URL")
+
+
+def _raw_object_values(raw_object: RawObjectEntry) -> dict[str, Any]:
+    return {
+        "id": raw_object.id,
+        "source_name": raw_object.source_name,
+        "dataset_name": raw_object.dataset_name,
+        "identity_key_json": canonical_identity_json(raw_object.identity_key),
+        "identity_hash": raw_object.identity_hash,
+        "update_mode": raw_object.update_mode.value,
+        "created_at": raw_object.created_at.isoformat(),
+        "last_checked_at": raw_object.last_checked_at.isoformat()
+        if raw_object.last_checked_at
+        else None,
+        "last_seen_etag": raw_object.last_seen_etag,
+        "last_seen_last_modified": raw_object.last_seen_last_modified,
+        "last_seen_content_length": raw_object.last_seen_content_length,
+    }
+
+
+def _raw_object_seen_values(raw_object: RawObjectEntry) -> dict[str, Any]:
+    return {
+        "last_checked_at": raw_object.last_checked_at.isoformat()
+        if raw_object.last_checked_at
+        else None,
+        "last_seen_etag": raw_object.last_seen_etag,
+        "last_seen_last_modified": raw_object.last_seen_last_modified,
+        "last_seen_content_length": raw_object.last_seen_content_length,
+    }
+
+
+def _raw_object_version_values(version: RawObjectVersion) -> dict[str, Any]:
+    return {
+        "id": version.id,
+        "raw_object_id": version.raw_object_id,
+        "source_url": version.source_url,
+        "fetched_at": version.fetched_at.isoformat(),
+        "etag": version.etag,
+        "last_modified": version.last_modified,
+        "content_length": version.content_length,
+        "sha256": version.sha256,
+        "local_path": version.local_path,
+        "storage_encoding": version.storage_encoding,
+    }
+
+
+def _raw_object_publication_values(
+    *,
+    source_name: str,
+    dataset_name: str,
+    identity_hash: str,
+    sha256: str,
+    version_id: str,
+    published_at: datetime,
+    publication_scope: str | None,
+    publisher_run_id: str | None,
+) -> dict[str, Any]:
+    return {
+        "id": uuid4().hex,
+        "source_name": source_name,
+        "dataset_name": dataset_name,
+        "identity_hash": identity_hash,
+        "sha256": sha256,
+        "version_id": version_id,
+        "published_at": published_at.isoformat(),
+        "publication_scope": publication_scope,
+        "publisher_run_id": publisher_run_id,
+    }
 
 
 def _row_to_raw_object(row: Mapping[str, Any]) -> RawObjectEntry:

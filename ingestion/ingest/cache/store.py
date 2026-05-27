@@ -80,7 +80,6 @@ class Cache:
         self._ledger = ledger or RawObjectLedger(ledger_url=ledger_url)
 
     def __enter__(self) -> Cache:
-        self._ledger.open()
         return self
 
     def __exit__(
@@ -242,8 +241,8 @@ class Cache:
             ```
         """
 
-        with self._ledger.transaction():
-            self._ledger.mark_published(
+        with self._ledger.transaction() as tx:
+            tx.mark_published(
                 source_name=result.raw_object.source_name,
                 dataset_name=result.raw_object.dataset_name,
                 identity_hash=result.raw_object.identity_hash,
@@ -270,13 +269,19 @@ class Cache:
             ```
         """
 
-        for result in results:
-            self.mark_published(
-                result,
-                publication_scope=publication_scope,
-                publisher_run_id=publisher_run_id,
-                published_at=published_at,
-            )
+        marked_at = published_at or datetime.now(UTC)
+        with self._ledger.transaction() as tx:
+            for result in results:
+                tx.mark_published(
+                    source_name=result.raw_object.source_name,
+                    dataset_name=result.raw_object.dataset_name,
+                    identity_hash=result.raw_object.identity_hash,
+                    sha256=result.version.sha256,
+                    version_id=result.version.id,
+                    published_at=marked_at,
+                    publication_scope=publication_scope,
+                    publisher_run_id=publisher_run_id,
+                )
 
     def is_published(self, result: CacheResult) -> bool:
         """Return whether a cached version already has a publication marker.
@@ -288,8 +293,8 @@ class Cache:
             ```
         """
 
-        with self._ledger.transaction():
-            return self._ledger.is_published(
+        with self._ledger.transaction() as tx:
+            return tx.is_published(
                 source_name=result.raw_object.source_name,
                 dataset_name=result.raw_object.dataset_name,
                 identity_hash=result.raw_object.identity_hash,
@@ -305,8 +310,8 @@ class Cache:
         checked_at = (
             read_result.fetched_at if read_result is not None else datetime.now(UTC)
         )
-        with self._ledger.transaction():
-            raw_object = self._ledger.touch_raw_object(
+        with self._ledger.transaction() as tx:
+            raw_object = tx.touch_raw_object(
                 source_name=plan.source_name,
                 dataset_name=plan.dataset_name,
                 identity_key=plan.identity_key,
@@ -338,8 +343,8 @@ class Cache:
         previous_versions: list[RawObjectVersion] = []
         version: RawObjectVersion | None = None
         try:
-            with self._ledger.transaction():
-                raw_object = self._ledger.touch_raw_object(
+            with self._ledger.transaction() as tx:
+                raw_object = tx.touch_raw_object(
                     source_name=plan.source_name,
                     dataset_name=plan.dataset_name,
                     identity_key=plan.identity_key,
@@ -360,8 +365,8 @@ class Cache:
                     local_path=str(final_path),
                     storage_encoding=_detect_storage_encoding(final_path),
                 )
-                previous_versions = self._ledger.list_versions(raw_object.id)
-                self._ledger.insert_version(version)
+                previous_versions = tx.list_versions(raw_object.id)
+                tx.insert_version(version)
                 raw_object = replace(
                     raw_object,
                     last_checked_at=read_result.fetched_at,
@@ -377,8 +382,8 @@ class Cache:
             raise RuntimeError("stored version was not created")
 
         if previous_versions:
-            with self._ledger.transaction():
-                self._ledger.delete_versions([stale.id for stale in previous_versions])
+            with self._ledger.transaction() as tx:
+                tx.delete_versions([stale.id for stale in previous_versions])
             for stale_version in previous_versions:
                 if stale_version.local_path != version.local_path:
                     Path(stale_version.local_path).unlink(missing_ok=True)
@@ -392,15 +397,15 @@ class Cache:
     def _plan(self, object: CacheObject) -> RawObjectFetchPlan:
         plan = self._base_plan(object)
 
-        with self._ledger.transaction():
-            raw_object = self._ledger.load_raw_object(
+        with self._ledger.transaction() as tx:
+            raw_object = tx.load_raw_object(
                 source_name=plan.source_name,
                 dataset_name=plan.dataset_name,
                 identity_hash=plan.identity_hash,
             )
             _require_update_mode(raw_object, plan.update_mode)
             current_version = (
-                self._ledger.load_latest_version(raw_object.id)
+                tx.load_latest_version(raw_object.id)
                 if raw_object is not None
                 else None
             )
@@ -423,14 +428,14 @@ class Cache:
             )
 
         resolved_plans: dict[int, RawObjectFetchPlan] = {}
-        with self._ledger.transaction():
+        with self._ledger.transaction() as tx:
             for (source_name, dataset_name), plans in grouped_plans.items():
-                raw_objects = self._ledger.load_raw_objects(
+                raw_objects = tx.load_raw_objects(
                     source_name=source_name,
                     dataset_name=dataset_name,
                     identity_hashes=[plan.identity_hash for plan in plans],
                 )
-                current_versions = self._ledger.load_latest_versions(
+                current_versions = tx.load_latest_versions(
                     [raw_object.id for raw_object in raw_objects.values()]
                 )
                 for plan in plans:
@@ -490,10 +495,10 @@ class Cache:
             ).append((result.raw_object.identity_hash, result.version.sha256))
 
         published_versions: set[tuple[str, str]] = set()
-        with self._ledger.transaction():
+        with self._ledger.transaction() as tx:
             for (source_name, dataset_name), versions in grouped_results.items():
                 published_versions.update(
-                    self._ledger.filter_published(
+                    tx.filter_published(
                         source_name=source_name,
                         dataset_name=dataset_name,
                         versions=versions,
