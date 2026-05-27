@@ -7,6 +7,7 @@ auto-committed transaction block.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
@@ -233,9 +234,9 @@ class RawObjectLedgerTx:
         if not base_plans:
             return []
 
-        grouped_plans: dict[tuple[str, str], list[BaseFetchPlan]] = {}
+        grouped_plans: dict[tuple[str, str], list[BaseFetchPlan]] = defaultdict(list)
         for base_plan in base_plans:
-            grouped_plans.setdefault(base_plan.ref.group_key, []).append(base_plan)
+            grouped_plans[base_plan.ref.group_key].append(base_plan)
 
         resolved_by_identity: dict[tuple[str, str, str], FetchPlan] = {}
         for (source_name, dataset_name), plans in grouped_plans.items():
