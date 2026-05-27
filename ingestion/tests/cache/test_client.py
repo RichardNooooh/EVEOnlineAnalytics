@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from ingest.cache.client import HttpRawObjectClient
-from ingest.cache.models import ReadStatus
+from ingest.cache.client_types import ReadStatus
 
 
 class FakeResponse:

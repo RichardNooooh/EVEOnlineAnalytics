@@ -6,11 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from ingest.cache.models import BaseFetchPlan, UpdateMode
+from ingest.cache.plans import BaseFetchPlan
+from ingest.cache.ledger.types import RawObjectRef
+from ingest.cache.primitives import UpdateMode
 
 
-def build_temp_path(*, raw_root: Path, source_name: str) -> Path:
-    source_name = validate_path_segment(source_name, field_name="source_name")
+def build_temp_path(*, raw_root: Path, ref: RawObjectRef) -> Path:
+    source_name = validate_path_segment(ref.source_name, field_name="source_name")
     return raw_root / source_name / ".tmp" / f"{uuid4().hex}.download"
 
 

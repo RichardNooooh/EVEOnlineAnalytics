@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from hashlib import sha256
 from urllib.parse import urlparse
 
-from ingest.cache.models import IdentityKey, IdentityScalar
+from ingest.cache.primitives import IdentityKey, IdentityScalar
 
 _SCALAR_TYPES = (str, int, float, bool, type(None))
 
