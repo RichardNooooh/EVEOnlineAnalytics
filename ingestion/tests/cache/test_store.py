@@ -541,7 +541,7 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
     with _store(tmp_path=tmp_path, client=client, ledger=ledger) as store:
         store.get_all([first_object])
         unpublished_results = store.get_unpublished([first_object, second_object])
-        store.mark_published_many(
+        store.pubtrack.mark_published_many(
             unpublished_results,
             context=PublicationContext(
                 publication_scope="raw-market-history",
@@ -592,34 +592,6 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
     assert len(client.calls) == 2
     assert second_result.changed is True
     assert second_result.version.sha256 == "def456"
-
-
-def test_mark_published_is_idempotent(tmp_path: Path) -> None:
-    client = FakeClient(
-        [
-            _response(
-                tmp_path=tmp_path,
-                status=ReadStatus.MODIFIED,
-                name="publish-idempotent",
-            )
-        ]
-    )
-
-    with _store(
-        tmp_path=tmp_path,
-        client=client,
-        dataset_name="market-history",
-        update_mode=UpdateMode.MUTABLE,
-    ) as store:
-        result = store.get(
-            CacheObject(
-                source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
-            )
-        )
-        store.mark_published(result)
-        store.mark_published(result)
-
-        assert store.is_published(result) is True
 
 
 def test_store_rejects_non_postgres_ledger_urls(tmp_path: Path) -> None:

@@ -12,7 +12,6 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
-from uuid import uuid4
 
 from ingest.cache.client import HttpRawObjectClient
 from ingest.cache.identity import (
@@ -27,16 +26,23 @@ from ingest.cache.models import (
     CacheObject,
     CacheResult,
     CacheResultStatus,
-    ReadStatus,
     FetchPlan,
-    ReadResult,
     ModifiedRead,
-    PublicationContext,
     RawObjectRef,
+    ReadResult,
+    ReadStatus,
     ResolvedFetchPlan,
     RevalidationMetadata,
     UpdateMode,
 )
+from ingest.cache.paths import (
+    build_final_path,
+    build_snapshot_path,
+    build_temp_path,
+    detect_storage_encoding,
+    validate_path_segment,
+)
+from ingest.cache.publishing import PublicationTracker
 from ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
 
 logger = logging.getLogger("ingest.cache")
@@ -97,16 +103,19 @@ class Cache:
             ValueError: If ``dataset_name`` or ``source_name`` contain path
                 separators or are empty.
         """
-        self._dataset_name = _validate_path_segment(dataset_name, field_name="dataset_name")
+        self._dataset_name = validate_path_segment(dataset_name, field_name="dataset_name")
         if not isinstance(update_mode, UpdateMode):
             raise TypeError("update_mode must be an UpdateMode")
         self._update_mode = update_mode
-        self._source_name = _validate_path_segment(source_name, field_name="source_name")
+        self._source_name = validate_path_segment(source_name, field_name="source_name")
         self._raw_root = Path(raw_root)
         self._client = client or HttpRawObjectClient()
         self._ledger = ledger or RawObjectLedger(ledger_url=ledger_url)
+        self._pubtrack: PublicationTracker | None = None
 
     def __enter__(self) -> Cache:
+        self._pubtrack = PublicationTracker(ledger=self._ledger)
+        self._pubtrack.__enter__()
         return self
 
     def __exit__(
@@ -115,8 +124,17 @@ class Cache:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        if self._pubtrack is not None:
+            self._pubtrack.__exit__(exc_type, exc, tb)
+            self._pubtrack = None
         self._ledger.close()
         self._client.close()
+
+    @property
+    def pubtrack(self) -> PublicationTracker:
+        if self._pubtrack is None:
+            raise RuntimeError("Cache must be entered before accessing pubtrack")
+        return self._pubtrack
 
     def get(
         self,
@@ -215,7 +233,7 @@ class Cache:
         if not unpublished_only:
             return results
 
-        published_versions = self._filter_published(results)
+        published_versions = self.pubtrack.filter_published(results)
         return [
             result
             for result in results
@@ -275,103 +293,14 @@ class Cache:
             ```python
             unpublished = cache.get_unpublished(requests)
             publish_many(unpublished)
-            cache.mark_published_many(unpublished, publication_scope="raw-market-history")
+            cache.pubtrack.mark_published_many(
+                unpublished,
+                context=PublicationContext(publication_scope="raw-market-history"),
+            )
             ```
         """
 
         return self._get_many(objects, changed_only=False, unpublished_only=True)
-
-    def mark_published(
-        self,
-        result: CacheResult,
-        *,
-        context: PublicationContext | None = None,
-    ) -> None:
-        """Record that one cached version has been published.
-
-        Publication markers are idempotent for the same source, dataset, identity, and
-        checksum.
-
-        Args:
-            result: The cached version that was published.
-            context: Optional publication scope and run id.  Defaults to an
-                empty context with the current timestamp.
-
-        Example:
-            ```python
-            cache.mark_published(
-                result,
-                context=PublicationContext(
-                    publication_scope="raw-market-history",
-                    publisher_run_id="airflow-run-42",
-                ),
-            )
-            ```
-        """
-
-        ctx = context or PublicationContext()
-        with self._ledger.transaction() as tx:
-            tx.mark_published(
-                ref=result.raw_object.ref,
-                sha256=result.version.sha256,
-                version_id=result.version.id,
-                context=ctx,
-            )
-
-    def mark_published_many(
-        self,
-        results: Iterable[CacheResult],
-        *,
-        context: PublicationContext | None = None,
-    ) -> None:
-        """Record that many cached versions have been published.
-
-        Args:
-            results: Cached versions that were published.
-            context: Optional publication scope and run id shared across all
-                results.
-
-        Example:
-            ```python
-            cache.mark_published_many(
-                results,
-                context=PublicationContext(publication_scope="raw-market-orders"),
-            )
-            ```
-        """
-
-        ctx = context or PublicationContext()
-        with self._ledger.transaction() as tx:
-            for result in results:
-                tx.mark_published(
-                    ref=result.raw_object.ref,
-                    sha256=result.version.sha256,
-                    version_id=result.version.id,
-                    context=ctx,
-                )
-
-    def is_published(self, result: CacheResult) -> bool:
-        """Return whether a cached version already has a publication marker.
-
-        Args:
-            result: The cached version to check.
-
-        Returns:
-            ``True`` when a marker exists for this source, dataset, identity,
-            and checksum.
-
-        Example:
-            ```python
-            if not cache.is_published(result):
-                publish(result.path)
-            ```
-        """
-
-        with self._ledger.transaction() as tx:
-            return tx.is_published(
-                ref=result.raw_object.ref,
-                sha256=result.version.sha256,
-            )
 
     def _record_hit(
         self,
@@ -393,7 +322,7 @@ class Cache:
         )
 
     def _record_store(self, plan: BaseFetchPlan, read_result: ModifiedRead) -> CacheResult:
-        final_path = _build_final_path(
+        final_path = build_final_path(
             raw_root=self._raw_root,
             plan=plan,
             fetched_at=read_result.fetched_at,
@@ -411,7 +340,7 @@ class Cache:
                     revalidation=read_result.revalidation,
                     sha256=read_result.sha256,
                     local_path=str(final_path),
-                    storage_encoding=_detect_storage_encoding(final_path),
+                    storage_encoding=detect_storage_encoding(final_path),
                 )
         except Exception:
             final_path.unlink(missing_ok=True)
@@ -460,34 +389,15 @@ class Cache:
             source_relative_path=source_relative_path,
             update_mode=self._update_mode,
             identity_key=resolved_identity_key,
-            temp_path=str(_build_temp_path(raw_root=self._raw_root, source_name=self._source_name)),
+            temp_path=str(build_temp_path(raw_root=self._raw_root, source_name=self._source_name)),
         )
-
-    def _filter_published(self, results: Iterable[CacheResult]) -> set[tuple[str, str]]:
-        result_list = list(results)
-        grouped_results: dict[tuple[str, str], list[tuple[str, str]]] = {}
-        for result in result_list:
-            grouped_results.setdefault(result.raw_object.ref.group_key, []).append(
-                (result.raw_object.ref.identity_hash, result.version.sha256)
-            )
-
-        published_versions: set[tuple[str, str]] = set()
-        with self._ledger.transaction() as tx:
-            for group_key, versions in grouped_results.items():
-                published_versions.update(
-                    tx.filter_published(
-                        group_key=group_key,
-                        versions=versions,
-                    )
-                )
-        return published_versions
 
 
 def _current_local_path(plan: FetchPlan, *, raw_root: Path) -> str | None:
     if isinstance(plan, ResolvedFetchPlan):
         return plan.current_version.local_path
     if plan.update_mode is UpdateMode.SNAPSHOT:
-        return str(_build_snapshot_path(raw_root=raw_root, plan=plan))
+        return str(build_snapshot_path(raw_root=raw_root, plan=plan))
     return None
 
 
@@ -512,53 +422,3 @@ def _ensure_downloaded(read_result: ReadResult) -> ModifiedRead:
         assert isinstance(read_result, ModifiedRead)
         return read_result
     raise RuntimeError("client returned unexpected outcome without download")
-
-
-def _build_temp_path(*, raw_root: Path, source_name: str) -> Path:
-    source_name = _validate_path_segment(source_name, field_name="source_name")
-    return raw_root / source_name / ".tmp" / f"{uuid4().hex}.download"
-
-
-def _build_final_path(
-    *,
-    raw_root: Path,
-    plan: BaseFetchPlan,
-    fetched_at: datetime,
-    sha256: str,
-) -> Path:
-    if plan.update_mode is UpdateMode.SNAPSHOT:
-        return _build_snapshot_path(raw_root=raw_root, plan=plan)
-
-    source_name = _validate_path_segment(plan.ref.source_name, field_name="source_name")
-    dataset_name = _validate_path_segment(plan.ref.dataset_name, field_name="dataset_name")
-
-    basename = Path(plan.source_relative_path).name or f"{dataset_name}.bin"
-    timestamp = fetched_at.strftime("%Y%m%dT%H%M%SZ")
-    return (
-        raw_root
-        / source_name
-        / dataset_name
-        / "objects"
-        / plan.ref.identity_hash
-        / f"{timestamp}__{sha256[:12]}__{uuid4().hex[:8]}__{basename}"
-    )
-
-
-def _build_snapshot_path(*, raw_root: Path, plan: BaseFetchPlan) -> Path:
-    source_name = _validate_path_segment(plan.ref.source_name, field_name="source_name")
-    return raw_root / source_name / Path(plan.source_relative_path)
-
-
-def _detect_storage_encoding(path: Path) -> str:
-    suffixes = [suffix.lstrip(".") for suffix in path.suffixes]
-    if not suffixes:
-        return "raw"
-    return ".".join(suffixes)
-
-
-def _validate_path_segment(value: str, *, field_name: str) -> str:
-    if not value or value in {".", ".."}:
-        raise ValueError(f"{field_name} must be a safe non-empty path segment")
-    if "/" in value or "\\" in value:
-        raise ValueError(f"{field_name} must not contain path separators")
-    return value
