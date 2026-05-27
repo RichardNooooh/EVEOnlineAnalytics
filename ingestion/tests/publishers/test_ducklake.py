@@ -81,9 +81,9 @@ def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
 
     attach_call = con.calls[-1]
 
-    assert 'ATTACH \'ducklake:postgres:dbname=raw host=postgres\' AS "custom_raw"' in attach_call[0]
-    assert 'DATA_PATH \'/data/custom/raw\'' in attach_call[0]
-    assert 'METADATA_SCHEMA \'custom_metadata\'' in attach_call[0]
+    assert "ATTACH 'ducklake:postgres:dbname=raw host=postgres' AS \"custom_raw\"" in attach_call[0]
+    assert "DATA_PATH '/data/custom/raw'" in attach_call[0]
+    assert "METADATA_SCHEMA 'custom_metadata'" in attach_call[0]
 
 
 def test_writer_appends_by_name(monkeypatch) -> None:

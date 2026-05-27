@@ -46,16 +46,12 @@ def test_normalize_source_relative_path_rejects_no_host() -> None:
 
 
 def test_normalize_source_relative_path_rejects_query() -> None:
-    with pytest.raises(
-        ValueError, match="source_url must not include query strings or fragments"
-    ):
+    with pytest.raises(ValueError, match="source_url must not include query strings or fragments"):
         normalize_source_relative_path("https://data.everef.net/a.csv?foo=1")
 
 
 def test_normalize_source_relative_path_rejects_fragment() -> None:
-    with pytest.raises(
-        ValueError, match="source_url must not include query strings or fragments"
-    ):
+    with pytest.raises(ValueError, match="source_url must not include query strings or fragments"):
         normalize_source_relative_path("https://data.everef.net/a.csv#section")
 
 
@@ -88,16 +84,12 @@ def test_normalize_source_path_rejects_absolute() -> None:
 
 
 def test_normalize_source_path_rejects_query() -> None:
-    with pytest.raises(
-        ValueError, match="must not include query strings or fragments"
-    ):
+    with pytest.raises(ValueError, match="must not include query strings or fragments"):
         normalize_source_path("a/file.csv?q=1")
 
 
 def test_normalize_source_path_rejects_fragment() -> None:
-    with pytest.raises(
-        ValueError, match="must not include query strings or fragments"
-    ):
+    with pytest.raises(ValueError, match="must not include query strings or fragments"):
         normalize_source_path("a/file.csv#frag")
 
 

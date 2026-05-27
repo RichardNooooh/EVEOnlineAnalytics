@@ -77,7 +77,11 @@ class TestIterDates:
         [
             (date(2025, 1, 1), date(2025, 1, 5), [date(2025, 1, d) for d in range(1, 6)]),
             (date(2025, 1, 31), date(2025, 2, 2), [date(2025, 1, 31), date(2025, 2, 1), date(2025, 2, 2)]),
-            (date(2024, 12, 30), date(2025, 1, 2), [date(2024, 12, 30), date(2024, 12, 31), date(2025, 1, 1), date(2025, 1, 2)]),
+            (
+                date(2024, 12, 30),
+                date(2025, 1, 2),
+                [date(2024, 12, 30), date(2024, 12, 31), date(2025, 1, 1), date(2025, 1, 2)],
+            ),
         ],
     )
     def test_date_ranges(self, start: date, end: date, expected: list[date]) -> None:

@@ -221,12 +221,6 @@ def test_load_latest_versions_empty_input(monkeypatch) -> None:
         assert tx.reader.load_latest_versions([]) == {}
 
 
-
-
-
-
-
-
 def test_mark_published_idempotent(monkeypatch) -> None:
     ledger = _make_ledger(monkeypatch)
     ref = RawObjectRef(
