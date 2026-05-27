@@ -8,10 +8,10 @@ import pytest
 from ingest.cache import Cache, CacheObject, UpdateMode
 from ingest.cache.models import (
     CacheResultStatus,
-    FetchOutcome,
-    FetchResult,
-    ModifiedResult,
-    NotModifiedResult,
+    ReadStatus,
+    ReadResult,
+    ModifiedRead,
+    NotModifiedRead,
     PublicationContext,
     RevalidationMetadata,
 )
@@ -19,7 +19,7 @@ from tests.cache.fakes import InMemoryRawObjectLedger
 
 
 class FakeClient:
-    def __init__(self, responses: list[FetchResult]) -> None:
+    def __init__(self, responses: list[ReadResult]) -> None:
         self.responses = responses
         self.calls: list[tuple[str, dict[str, str], str]] = []
         self.closed = False
@@ -30,10 +30,10 @@ class FakeClient:
         source_url: str,
         request_headers: dict[str, str],
         temp_path: str,
-    ) -> FetchResult:
+    ) -> ReadResult:
         self.calls.append((source_url, request_headers, temp_path))
         response = self.responses.pop(0)
-        if isinstance(response, ModifiedResult):
+        if isinstance(response, ModifiedRead):
             Path(response.temp_path).parent.mkdir(parents=True, exist_ok=True)
             Path(response.temp_path).write_bytes(b"payload")
         return response
@@ -54,7 +54,7 @@ class SequenceClient:
         source_url: str,
         request_headers: dict[str, str],
         temp_path: str,
-    ) -> FetchResult:
+    ) -> ReadResult:
         if not self.clients:
             raise AssertionError("No fake clients remain")
         client = self.clients[0]
@@ -95,28 +95,28 @@ def _store(
 def _response(
     *,
     tmp_path: Path,
-    outcome: FetchOutcome,
+    status: ReadStatus,
     name: str,
     etag: str | None = None,
     last_modified: str | None = None,
     fetched_at: datetime | None = None,
     sha256: str = "abc123",
-) -> FetchResult:
+) -> ReadResult:
     revalidation = RevalidationMetadata(
         etag=etag,
         last_modified=last_modified,
         content_length=7,
     )
-    if outcome is FetchOutcome.MODIFIED:
-        return ModifiedResult(
-            outcome=outcome,
+    if status is ReadStatus.MODIFIED:
+        return ModifiedRead(
+            status=status,
             fetched_at=fetched_at or datetime.now(UTC),
             temp_path=str(tmp_path / f"{name}.download"),
             sha256=sha256,
             revalidation=revalidation,
         )
-    return NotModifiedResult(
-        outcome=outcome,
+    return NotModifiedRead(
+        status=status,
         fetched_at=fetched_at or datetime.now(UTC),
         revalidation=revalidation,
     )
@@ -150,7 +150,7 @@ def test_get_defaults_identity_to_source_relative_path(
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="default-identity",
             )
         ]
@@ -175,19 +175,19 @@ def test_get_changed_returns_changed_objects(tmp_path: Path) -> None:
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="batch-first",
                 etag='"etag-1"',
             ),
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.NOT_MODIFIED,
+                status=ReadStatus.NOT_MODIFIED,
                 name="batch-second",
                 etag='"etag-1"',
             ),
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="batch-third",
                 etag='"etag-2"',
             ),
@@ -210,7 +210,7 @@ def test_get_uses_explicit_source_path_for_non_everef_url(tmp_path: Path) -> Non
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="explicit-source-path",
             )
         ]
@@ -233,7 +233,7 @@ def test_get_reuses_existing_snapshot_without_remote_read(tmp_path: Path) -> Non
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="snapshot-first",
             )
         ]
@@ -271,7 +271,7 @@ def test_get_rejects_update_mode_mismatch(tmp_path: Path) -> None:
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="update-mode-mismatch",
             )
         ]
@@ -304,7 +304,7 @@ def test_get_uses_conditional_headers_for_mutable_files(tmp_path: Path) -> None:
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="mutable-first",
                 etag='"etag-1"',
             )
@@ -315,7 +315,7 @@ def test_get_uses_conditional_headers_for_mutable_files(tmp_path: Path) -> None:
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.NOT_MODIFIED,
+                status=ReadStatus.NOT_MODIFIED,
                 name="mutable-second",
                 etag='"etag-1"',
             )
@@ -356,7 +356,7 @@ def test_get_uses_stored_revalidation_metadata_not_version_fields(
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="mutable-seed",
                 etag='"etag-1"',
             )
@@ -366,7 +366,7 @@ def test_get_uses_stored_revalidation_metadata_not_version_fields(
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.NOT_MODIFIED,
+                status=ReadStatus.NOT_MODIFIED,
                 name="mutable-revalidate",
                 etag='"etag-1"',
             )
@@ -411,7 +411,7 @@ def test_get_rereads_when_not_modified_but_local_file_missing(tmp_path: Path) ->
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="seed",
                 etag='"etag-1"',
             )
@@ -422,13 +422,13 @@ def test_get_rereads_when_not_modified_but_local_file_missing(tmp_path: Path) ->
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.NOT_MODIFIED,
+                status=ReadStatus.NOT_MODIFIED,
                 name="missing-local-first",
                 etag='"etag-1"',
             ),
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="missing-local-second",
                 etag='"etag-1"',
             ),
@@ -468,7 +468,7 @@ def test_get_keeps_one_current_mutable_copy_per_logical_object(tmp_path: Path) -
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="one",
                 etag='"etag-1"',
                 fetched_at=datetime(2026, 1, 1, 1, 0, tzinfo=UTC),
@@ -476,7 +476,7 @@ def test_get_keeps_one_current_mutable_copy_per_logical_object(tmp_path: Path) -
             ),
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="two",
                 etag='"etag-2"',
                 fetched_at=datetime(2026, 1, 1, 2, 0, tzinfo=UTC),
@@ -484,7 +484,7 @@ def test_get_keeps_one_current_mutable_copy_per_logical_object(tmp_path: Path) -
             ),
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="three",
                 etag='"etag-3"',
                 fetched_at=datetime(2026, 1, 1, 3, 0, tzinfo=UTC),
@@ -523,13 +523,13 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="publish-first",
                 sha256="sha-first",
             ),
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="publish-second",
                 sha256="sha-second",
             ),
@@ -564,13 +564,13 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="missing-ledger-first",
                 fetched_at=datetime(2026, 1, 1, tzinfo=UTC),
             ),
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="missing-ledger-second",
                 fetched_at=datetime(2026, 1, 2, tzinfo=UTC),
                 sha256="def456",
@@ -599,7 +599,7 @@ def test_mark_published_is_idempotent(tmp_path: Path) -> None:
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="publish-idempotent",
             )
         ]
@@ -658,7 +658,7 @@ def test_store_accepts_non_everef_hosts_and_uncompressed_paths(tmp_path: Path) -
         [
             _response(
                 tmp_path=tmp_path,
-                outcome=FetchOutcome.MODIFIED,
+                status=ReadStatus.MODIFIED,
                 name="generic-host",
             )
         ]
