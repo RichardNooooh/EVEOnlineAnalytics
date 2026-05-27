@@ -95,15 +95,19 @@ def raw_object_publication_values(
 
 
 def row_to_raw_object(row: RowMapping) -> RawObjectEntry:
+    identity_key: dict[str, Any] = cast(dict[str, Any], row["identity_key"])
+    update_mode: UpdateMode = cast(UpdateMode, row["update_mode"])
     return RawObjectEntry(
         id=cast(str, row["id"]),
         ref=RawObjectRef(
             source_name=cast(str, row["source_name"]),
             dataset_name=cast(str, row["dataset_name"]),
             identity_hash=cast(str, row["identity_hash"]),
+            identity_key=identity_key,
+            update_mode=update_mode,
         ),
-        identity_key=cast(dict[str, Any], row["identity_key"]),
-        update_mode=cast(UpdateMode, row["update_mode"]),
+        identity_key=identity_key,
+        update_mode=update_mode,
         created_at=cast(datetime, row["created_at"]),
         last_checked_at=cast(datetime | None, row["last_checked_at"]),
         revalidation=RevalidationMetadata(

@@ -311,7 +311,7 @@ class Cache:
         checked_at = read_result.fetched_at if read_result is not None else datetime.now(UTC)
         with self._ledger.transaction() as tx:
             raw_object = tx.touch_raw_object(
-                definition=plan.definition,
+                ref=plan.ref,
                 checked_at=checked_at,
                 revalidation=_revalidation_for_hit(plan, read_result),
             )
@@ -334,7 +334,7 @@ class Cache:
         try:
             with self._ledger.transaction() as tx:
                 stored = tx.replace_current_version(
-                    definition=plan.definition,
+                    ref=plan.ref,
                     source_url=plan.source_url,
                     fetched_at=read_result.fetched_at,
                     revalidation=read_result.revalidation,
@@ -384,6 +384,8 @@ class Cache:
                 source_name=self._source_name,
                 dataset_name=self._dataset_name,
                 identity_hash=identity_hash,
+                identity_key=resolved_identity_key,
+                update_mode=self._update_mode,
             ),
             source_url=cache_object.source_url,
             source_relative_path=source_relative_path,

@@ -23,16 +23,19 @@ def _plan(
     source_relative_path: str = "market-orders/history/2026/2026-01-01/file.csv.bz2",
     update_mode: UpdateMode = UpdateMode.SNAPSHOT,
 ) -> BaseFetchPlan:
+    identity_key: dict[str, str] = {"source_path": source_relative_path}
     return BaseFetchPlan(
         ref=RawObjectRef(
             source_name=source_name,
             dataset_name=dataset_name,
             identity_hash=identity_hash,
+            identity_key=identity_key,
+            update_mode=update_mode,
         ),
         source_url=f"https://data.everef.net/{source_relative_path}",
         source_relative_path=source_relative_path,
         update_mode=update_mode,
-        identity_key={"source_path": source_relative_path},
+        identity_key=identity_key,
         temp_path="/tmp/dummy",
     )
 
