@@ -16,10 +16,11 @@ from types import TracebackType
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import create_engine, delete, select, tuple_, update
+from sqlalchemy import create_engine, delete, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Connection, RowMapping
 
+from ingest.cache.helpers import merge_revalidation
 from ingest.cache.ledger.mappers import (
     normalize_ledger_url,
     raw_object_publication_values,
@@ -180,13 +181,22 @@ class RawObjectLedgerTx:
         Returns:
             The latest version or ``None`` when no versions exist.
         """
-        row = self._fetchone(select(raw_object_versions).where(raw_object_versions.c.raw_object_id == raw_object_id))
+        row = self._fetchone(
+            select(raw_object_versions)
+            .where(raw_object_versions.c.raw_object_id == raw_object_id)
+            .order_by(raw_object_versions.c.fetched_at.desc(), raw_object_versions.c.id.desc())
+            .limit(1)
+        )
         if row is None:
             return None
         return row_to_raw_object_version(row)
 
     def load_latest_versions(self, raw_object_ids: list[str]) -> dict[str, RawObjectVersion]:
         """Batch-lookup the latest version for many raw objects.
+
+        Uses a ``ROW_NUMBER()`` window so that only the most recent version per
+        ``raw_object_id`` is returned, even when multiple rows exist (e.g. after a
+        crash mid-replace).
 
         Args:
             raw_object_ids: Internal UUIDs to resolve.
@@ -196,9 +206,23 @@ class RawObjectLedgerTx:
         """
         if not raw_object_ids:
             return {}
-        rows = self._fetchall(
-            select(raw_object_versions).where(raw_object_versions.c.raw_object_id.in_(raw_object_ids))
+        subq = (
+            select(
+                raw_object_versions,
+                func.row_number()
+                .over(
+                    partition_by=raw_object_versions.c.raw_object_id,
+                    order_by=[
+                        raw_object_versions.c.fetched_at.desc(),
+                        raw_object_versions.c.id.desc(),
+                    ],
+                )
+                .label("rn"),
+            )
+            .where(raw_object_versions.c.raw_object_id.in_(raw_object_ids))
+            .subquery()
         )
+        rows = self._fetchall(select(subq).where(subq.c.rn == 1))
         return {version.raw_object_id: version for version in (row_to_raw_object_version(row) for row in rows)}
 
     def resolve_fetch_plan(self, base_plan: BaseFetchPlan) -> FetchPlan:
@@ -317,7 +341,7 @@ class RawObjectLedgerTx:
         updated = replace(
             existing,
             last_checked_at=checked_at,
-            revalidation=_merge_revalidation(existing.revalidation, revalidation),
+            revalidation=merge_revalidation(existing.revalidation, revalidation),
         )
         self._execute(
             update(raw_objects).where(raw_objects.c.id == existing.id).values(**raw_object_seen_values(updated))
@@ -489,11 +513,3 @@ class RawObjectLedgerTx:
     def _list_versions(self, raw_object_id: str) -> list[RawObjectVersion]:
         rows = self._fetchall(select(raw_object_versions).where(raw_object_versions.c.raw_object_id == raw_object_id))
         return [row_to_raw_object_version(row) for row in rows]
-
-
-def _merge_revalidation(existing: RevalidationMetadata, incoming: RevalidationMetadata) -> RevalidationMetadata:
-    return RevalidationMetadata(
-        etag=incoming.etag if incoming.etag is not None else existing.etag,
-        last_modified=(incoming.last_modified if incoming.last_modified is not None else existing.last_modified),
-        content_length=(incoming.content_length if incoming.content_length is not None else existing.content_length),
-    )
