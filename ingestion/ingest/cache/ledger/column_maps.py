@@ -45,5 +45,3 @@ RAW_OBJECT_VERSION_COLUMNS: Mapping[str, str] = {
     "local_path": "local_path",
     "storage_encoding": "storage_encoding",
 }
-
-
