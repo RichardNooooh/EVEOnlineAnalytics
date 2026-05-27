@@ -15,9 +15,11 @@ from ingest.cache.ledger.mappers import (
     row_to_raw_object_version,
 )
 from ingest.cache.ledger._db import _execute, _fetchall
+from ingest.cache.ledger.reader import RawObjectReader
 from ingest.cache.ledger.schema import raw_object_versions, raw_objects
-from ingest.cache.ledger.types import ReplaceCurrentVersionResult
-from ingest.cache.models import RawObjectEntry, RawObjectRef, RawObjectVersion, RevalidationMetadata
+from ingest.cache.ledger.types import RotateVersionResult
+from ingest.cache.client_types import RevalidationMetadata
+from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
 
 
 class RawObjectWriter:
@@ -31,8 +33,6 @@ class RawObjectWriter:
         checked_at: datetime,
         revalidation: RevalidationMetadata | None = None,
     ) -> RawObjectEntry:
-        from ingest.cache.ledger.reader import RawObjectReader
-
         existing = RawObjectReader(self._con).load_raw_object(ref=ref)
         revalidation = revalidation or RevalidationMetadata()
         if existing is None:
@@ -65,7 +65,7 @@ class RawObjectWriter:
         )
         return [row_to_raw_object_version(row) for row in rows]
 
-    def replace_current_version(
+    def rotate_version(
         self,
         *,
         ref: RawObjectRef,
@@ -75,7 +75,7 @@ class RawObjectWriter:
         sha256: str,
         local_path: str,
         storage_encoding: str,
-    ) -> ReplaceCurrentVersionResult:
+    ) -> RotateVersionResult:
         raw_object = self.touch_raw_object(
             ref=ref,
             checked_at=fetched_at,
@@ -98,7 +98,7 @@ class RawObjectWriter:
                 self._con,
                 delete(raw_object_versions).where(raw_object_versions.c.id.in_([stale.id for stale in stale_versions])),
             )
-        return ReplaceCurrentVersionResult(
+        return RotateVersionResult(
             raw_object=replace(
                 raw_object,
                 last_checked_at=fetched_at,

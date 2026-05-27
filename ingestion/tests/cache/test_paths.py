@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from ingest.cache.models import BaseFetchPlan, RawObjectRef, UpdateMode
+from ingest.cache.plans import BaseFetchPlan
+from ingest.cache.ledger.types import RawObjectRef
+from ingest.cache.primitives import UpdateMode
 from ingest.cache.paths import (
     build_final_path,
     build_snapshot_path,
@@ -42,15 +44,29 @@ def _plan(
 
 class TestBuildTempPath:
     def test_suffix_and_dir(self) -> None:
-        path = build_temp_path(raw_root=Path("/data/raw"), source_name="everef")
+        ref = RawObjectRef(
+            source_name="everef",
+            dataset_name="market-orders",
+            identity_hash="abc123",
+            identity_key={"source_path": "market-orders/history/2026/file.csv.bz2"},
+            update_mode=UpdateMode.SNAPSHOT,
+        )
+        path = build_temp_path(raw_root=Path("/data/raw"), ref=ref)
         assert path.parent.parent == Path("/data/raw/everef")
         assert path.parent.name == ".tmp"
         assert path.suffix == ".download"
         assert len(path.stem) == 32  # uuid4 hex
 
     def test_rejects_bad_source_name(self) -> None:
+        ref = RawObjectRef(
+            source_name="bad/name",
+            dataset_name="market-orders",
+            identity_hash="abc123",
+            identity_key={"source_path": "market-orders/history/2026/file.csv.bz2"},
+            update_mode=UpdateMode.SNAPSHOT,
+        )
         with pytest.raises(ValueError, match="must be a safe non-empty|must not contain"):
-            build_temp_path(raw_root=Path("/data"), source_name="bad/name")
+            build_temp_path(raw_root=Path("/data"), ref=ref)
 
 
 class TestBuildSnapshotPath:

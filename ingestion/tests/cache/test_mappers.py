@@ -12,14 +12,14 @@ from ingest.cache.ledger.mappers import (
     raw_object_values,
     raw_object_version_values,
 )
-from ingest.cache.models import (
+from ingest.cache.client_types import RevalidationMetadata
+from ingest.cache.ledger.types import (
     PublicationContext,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
-    RevalidationMetadata,
-    UpdateMode,
 )
+from ingest.cache.primitives import UpdateMode
 
 
 @pytest.mark.parametrize(
@@ -186,7 +186,7 @@ class TestEntityToRow:
 
     def test_entity_to_row_handles_none_field_path(self) -> None:
         from ingest.cache.ledger.column_maps import RAW_OBJECT_PUBLICATION_COLUMNS
-        from ingest.cache.models import PublicationContext
+        from ingest.cache.ledger.types import PublicationContext
 
         ctx = PublicationContext()
         result = entity_to_row(ctx, RAW_OBJECT_PUBLICATION_COLUMNS)

@@ -14,14 +14,14 @@ from ingest.cache.ledger.column_maps import (
     RAW_OBJECT_SEEN_COLUMNS,
     RAW_OBJECT_VERSION_COLUMNS,
 )
-from ingest.cache.models import (
+from ingest.cache.client_types import RevalidationMetadata
+from ingest.cache.ledger.types import (
     PublicationContext,
-    RawObjectRef,
     RawObjectEntry,
+    RawObjectRef,
     RawObjectVersion,
-    RevalidationMetadata,
-    UpdateMode,
 )
+from ingest.cache.primitives import UpdateMode
 
 
 def normalize_ledger_url(ledger_url: str) -> str:
@@ -54,6 +54,27 @@ def entity_to_row(
     Each entry in *column_map* navigates into that structure via dot-separated
     keys to extract the value for the corresponding SQL column.
 
+    Example for ``RAW_OBJECT_COLUMNS``::
+
+        entity = RawObjectEntry(
+            id="abc",
+            ref=RawObjectRef(source_name="everef", ...),
+            revalidation=RevalidationMetadata(etag='"xyz"', ...),
+        )
+
+        ``asdict(entity)`` produces::
+
+            {"id": "abc", "ref": {"source_name": "everef", ...},
+             "revalidation": {"etag": '"xyz"', ...}, ...}
+
+        Dot-path ``"ref.source_name"`` navigates into that dict::
+
+            result["source_name"] = raw["ref"]["source_name"]  # "everef"
+
+        Dot-path ``"revalidation.etag"`` navigates one level deeper::
+
+            result["etag"] = raw["revalidation"]["etag"]  # '"xyz"'
+
     Columns mapped to ``None`` are skipped — use *overrides* to supply them
     from non-entity sources (e.g. synthetic UUIDs, foreign-key references).
 
@@ -63,7 +84,7 @@ def entity_to_row(
         column_map: Mapping of ``{sql_column_name: dot_path}``. A ``None`` path
             means the column is omitted from the result.
         overrides: Optional dict of ``{sql_column_name: value}`` merged on top
-            of the extracted values. Takes precedence over column_map values.
+            of the extracted values. Takes precedence over all column_map values.
 
     Returns:
         Flat dict keyed by SQL column name, ready for ``Table.insert().values()``.

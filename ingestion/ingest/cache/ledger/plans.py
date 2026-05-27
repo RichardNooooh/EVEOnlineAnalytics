@@ -6,7 +6,7 @@ from sqlalchemy.engine import Connection
 
 from ingest.cache.ledger.mappers import require_update_mode
 from ingest.cache.ledger.reader import RawObjectReader
-from ingest.cache.models import (
+from ingest.cache.plans import (
     BaseFetchPlan,
     FetchPlan,
     ResolvedFetchPlan,

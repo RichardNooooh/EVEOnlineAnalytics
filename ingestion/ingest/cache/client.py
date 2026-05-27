@@ -18,7 +18,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from ingest.cache.models import (
+from ingest.cache.client_types import (
     ReadStatus,
     ReadResult,
     ModifiedRead,

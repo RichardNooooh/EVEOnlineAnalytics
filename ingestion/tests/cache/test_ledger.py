@@ -14,12 +14,9 @@ from ingest.cache.ledger.reader import RawObjectReader
 from ingest.cache.ledger.runtime import LedgerTx
 from ingest.cache.ledger.schema import raw_objects, raw_object_versions
 from ingest.cache.ledger.writer import RawObjectWriter
-from ingest.cache.models import (
-    PublicationContext,
-    RawObjectRef,
-    RevalidationMetadata,
-    UpdateMode,
-)
+from ingest.cache.client_types import RevalidationMetadata
+from ingest.cache.ledger.types import PublicationContext, RawObjectRef
+from ingest.cache.primitives import UpdateMode
 
 
 class FakeBegin:
@@ -307,7 +304,7 @@ def test_mark_published_idempotent(monkeypatch) -> None:
         assert tx.publications.is_published(ref=ref, sha256="sha1") is True
 
 
-def test_replace_current_version_deletes_stale_versions(monkeypatch) -> None:
+def test_rotate_version_deletes_stale_versions(monkeypatch) -> None:
     ledger = _make_ledger(monkeypatch)
     with ledger._engine.begin() as con:
         _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
@@ -320,7 +317,7 @@ def test_replace_current_version_deletes_stale_versions(monkeypatch) -> None:
         )
 
     with ledger.transaction() as tx:
-        result = tx.writer.replace_current_version(
+        result = tx.writer.rotate_version(
             ref=RawObjectRef(
                 source_name="everef",
                 dataset_name="market-history",
@@ -344,7 +341,7 @@ def test_replace_current_version_deletes_stale_versions(monkeypatch) -> None:
     assert rows[0]["id"] == result.version.id
 
 
-def test_replace_current_version_rolls_back_on_delete_failure(monkeypatch) -> None:
+def test_rotate_version_rolls_back_on_delete_failure(monkeypatch) -> None:
     ledger = _make_ledger(monkeypatch)
     with ledger._engine.begin() as con:
         _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
@@ -365,7 +362,7 @@ def test_replace_current_version_rolls_back_on_delete_failure(monkeypatch) -> No
 
     with pytest.raises(RuntimeError, match="boom"):
         with ledger.transaction() as tx:
-            tx.writer.replace_current_version(
+            tx.writer.rotate_version(
                 ref=RawObjectRef(
                     source_name="everef",
                     dataset_name="market-history",

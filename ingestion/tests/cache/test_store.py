@@ -5,20 +5,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from ingest.cache import Cache, CacheObject, UpdateMode
-from ingest.cache.ledger.types import ReplaceCurrentVersionResult
-from ingest.cache.models import (
-    CacheResultStatus,
+from ingest.cache import Cache, CacheObject, GetMode, UpdateMode
+from ingest.cache.client_types import (
+    ModifiedRead,
+    NotModifiedRead,
+    ReadResult,
+    ReadStatus,
+    RevalidationMetadata,
+)
+from ingest.cache.ledger.types import (
+    PublicationContext,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
-    ReadStatus,
-    ReadResult,
-    ModifiedRead,
-    NotModifiedRead,
-    PublicationContext,
-    RevalidationMetadata,
+    RotateVersionResult,
 )
+from ingest.cache.models import CacheResultStatus
 from tests.cache.fakes import InMemoryRawObjectLedger
 
 
@@ -201,8 +203,8 @@ def test_get_changed_returns_changed_objects(tmp_path: Path) -> None:
     second_object = CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2")
 
     with _store(tmp_path=tmp_path, client=client) as store:
-        store.get_all([first_object])
-        changed_results = store.get_changed([first_object, second_object])
+        store.get_many([first_object], mode=GetMode.ALL)
+        changed_results = store.get_many([first_object, second_object])
 
     assert len(changed_results) == 1
     assert changed_results[0].identity_key == {"source_path": "market-orders/history/2026/2026-01-02/file.csv.bz2"}
@@ -543,8 +545,8 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
     second_object = CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2")
 
     with _store(tmp_path=tmp_path, client=client, ledger=ledger) as store:
-        store.get_all([first_object])
-        unpublished_results = store.get_unpublished([first_object, second_object])
+        store.get_many([first_object], mode=GetMode.ALL)
+        unpublished_results = store.get_many([first_object, second_object], mode=GetMode.UNPUBLISHED)
         store.pubtrack.mark_published_many(
             unpublished_results,
             context=PublicationContext(
@@ -552,7 +554,7 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
                 publisher_run_id="run-1",
             ),
         )
-        filtered_results = store.get_unpublished([first_object, second_object])
+        filtered_results = store.get_many([first_object, second_object], mode=GetMode.UNPUBLISHED)
 
     assert len(unpublished_results) == 2
     assert unpublished_results[0].status is CacheResultStatus.HIT
@@ -664,7 +666,7 @@ def test_get_all_returns_hits_and_stores(tmp_path: Path) -> None:
 
     with _store(tmp_path=tmp_path, client=SequenceClient([first_client, second_client])) as store:
         store.get(first_object)
-        results = store.get_all([first_object, second_object])
+        results = store.get_many([first_object, second_object], mode=GetMode.ALL)
 
     assert len(results) == 2
     statuses = {r.status for r in results}
@@ -682,7 +684,7 @@ def test_record_store_skips_unlink_when_stale_path_equals_new_path(tmp_path: Pat
     final_path.parent.mkdir(parents=True, exist_ok=True)
     final_path.write_bytes(b"existing")
 
-    def fake_replace(*args, **kwargs) -> ReplaceCurrentVersionResult:
+    def fake_replace(*args, **kwargs) -> RotateVersionResult:
         version = RawObjectVersion(
             id="v-new",
             raw_object_id="obj-1",
@@ -709,9 +711,9 @@ def test_record_store_skips_unlink_when_stale_path_equals_new_path(tmp_path: Pat
             last_checked_at=datetime.now(UTC),
             revalidation=RevalidationMetadata(),
         )
-        return ReplaceCurrentVersionResult(raw_object=raw_object, version=version, stale_versions=[stale])
+        return RotateVersionResult(raw_object=raw_object, version=version, stale_versions=[stale])
 
-    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectWriter.replace_current_version", fake_replace)
+    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectWriter.rotate_version", fake_replace)
 
     with _store(tmp_path=tmp_path, client=client) as store:
         store.get(CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2"))
@@ -729,7 +731,7 @@ def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monke
     def fail_replace(*args, **kwargs) -> None:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectWriter.replace_current_version", fail_replace)
+    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectWriter.rotate_version", fail_replace)
 
     with pytest.raises(RuntimeError, match="boom"):
         with _store(tmp_path=tmp_path, client=client) as store:

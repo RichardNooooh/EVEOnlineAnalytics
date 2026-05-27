@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ingest.cache.models import RevalidationMetadata
+from ingest.cache.client_types import RevalidationMetadata
 
 
 def merge_revalidation(existing: RevalidationMetadata, incoming: RevalidationMetadata) -> RevalidationMetadata:

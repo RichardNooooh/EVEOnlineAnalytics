@@ -6,18 +6,20 @@ from dataclasses import replace
 from datetime import datetime
 from uuid import uuid4
 
+from ingest.cache.client_types import RevalidationMetadata
 from ingest.cache.helpers import merge_revalidation
 from ingest.cache.ledger.runtime import LedgerTx
-from ingest.cache.ledger.types import ReplaceCurrentVersionResult
-from ingest.cache.models import (
-    BaseFetchPlan,
-    FetchPlan,
+from ingest.cache.ledger.types import (
     PublicationContext,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
+    RotateVersionResult,
+)
+from ingest.cache.plans import (
+    BaseFetchPlan,
+    FetchPlan,
     ResolvedFetchPlan,
-    RevalidationMetadata,
     UnresolvedFetchPlan,
 )
 
@@ -90,7 +92,7 @@ class InMemoryRawObjectWriter:
         self._ledger._raw_objects_by_key[key] = updated
         return updated
 
-    def replace_current_version(
+    def rotate_version(
         self,
         *,
         ref: RawObjectRef,
@@ -100,7 +102,7 @@ class InMemoryRawObjectWriter:
         sha256: str,
         local_path: str,
         storage_encoding: str,
-    ) -> ReplaceCurrentVersionResult:
+    ) -> RotateVersionResult:
         raw_object = self.touch_raw_object(
             ref=ref,
             checked_at=fetched_at,
@@ -127,7 +129,7 @@ class InMemoryRawObjectWriter:
             if candidate.id == raw_object.id:
                 self._ledger._raw_objects_by_key[key] = updated_raw_object
                 break
-        return ReplaceCurrentVersionResult(
+        return RotateVersionResult(
             raw_object=updated_raw_object,
             version=version,
             stale_versions=stale_versions,

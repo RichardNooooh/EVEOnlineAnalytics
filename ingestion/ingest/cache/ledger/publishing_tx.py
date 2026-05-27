@@ -7,7 +7,7 @@ from sqlalchemy.engine import Connection
 from ingest.cache.ledger.mappers import raw_object_publication_values
 from ingest.cache.ledger._db import _execute, _fetchone, _fetchall
 from ingest.cache.ledger.schema import raw_object_publications
-from ingest.cache.models import PublicationContext, RawObjectRef
+from ingest.cache.ledger.types import PublicationContext, RawObjectRef
 
 
 class PublicationTrackerTx:
