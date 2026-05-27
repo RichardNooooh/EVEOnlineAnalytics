@@ -24,7 +24,7 @@ from ingest.cache.primitives import UpdateMode
 
 
 def normalize_ledger_url(ledger_url: str) -> str:
-    if "+psycopg" in ledger_url:
+    if "+psycopg" in ledger_url and "+psycopg2" not in ledger_url:
         return ledger_url
     if ledger_url.startswith("postgresql://"):
         return "postgresql+psycopg://" + ledger_url.removeprefix("postgresql://")
