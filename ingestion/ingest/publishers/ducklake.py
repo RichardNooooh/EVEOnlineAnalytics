@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from urllib.parse import parse_qsl, unquote, urlparse
@@ -102,6 +103,18 @@ def _build_merge_keys_clause(merge_keys: Sequence[str]) -> str:
 
 def _target_for(table: RawDuckLakeTable) -> DuckLakeTableTarget:
     return DuckLakeTableTarget(schema=DEFAULT_RAW_SCHEMA, table=table.value)
+
+
+@contextmanager
+def _temporary_arrow_view(
+    con: duckdb.DuckDBPyConnection, arrow_table: pa.Table
+) -> Iterator[str]:
+    source_name = f"_arrow_source_{uuid4().hex}"
+    con.from_arrow(arrow_table).create_view(source_name)
+    try:
+        yield source_name
+    finally:
+        con.execute(f"DROP VIEW IF EXISTS {_quote_identifier(source_name)}")
 
 
 def _attach_ducklake(
@@ -219,14 +232,9 @@ class DuckLakeWriter:
                 + ", ".join(missing_merge_keys)
             )
 
-        source_name = f"_arrow_source_{uuid4().hex}"
-        source_relation = con.from_arrow(arrow_table)
-        source_relation.create_view(source_name)
-
         quoted_target = _quote_table_target(self._attach.alias, _target_for(table))
-        quoted_source = _quote_identifier(source_name)
-
-        try:
+        with _temporary_arrow_view(con, arrow_table) as source_name:
+            quoted_source = _quote_identifier(source_name)
             if merge_keys:
                 con.execute(
                     f"""
@@ -245,8 +253,6 @@ class DuckLakeWriter:
                 FROM {quoted_source}
                 """
             )
-        finally:
-            con.execute(f"DROP VIEW IF EXISTS {_quote_identifier(source_name)}")
 
 
 def publish_arrow_table(

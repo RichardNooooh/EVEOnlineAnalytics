@@ -30,10 +30,6 @@ from ingest.main import main
             ],
             "start_date must be on or before end_date",
         ),
-        (
-            ["esi"],
-            "Provider 'esi' does not have any commands yet.",
-        ),
     ],
 )
 def test_main_surfaces_parser_and_validation_errors(

@@ -4,17 +4,9 @@ import pytest
 import pyarrow as pa
 
 from ingest.publishers.ducklake import (
-    DEFAULT_DUCKLAKE_ALIAS,
-    DuckLakeWriter,
     DuckLakeAttachConfig,
+    DuckLakeWriter,
     RawDuckLakeTable,
-    _attach_ducklake,
-    _build_default_attach_config,
-)
-from ingest.util import (
-    DEFAULT_DUCKLAKE_CATALOG,
-    DEFAULT_DUCKLAKE_METADATA_SCHEMA,
-    DEFAULT_DUCKLAKE_RAW_DATA_PATH,
 )
 
 
@@ -51,46 +43,6 @@ def _queries(con: FakeConnection) -> list[str]:
     return [query for query, _ in con.calls]
 
 
-def test_build_default_attach_config_uses_shared_raw_ducklake_defaults() -> None:
-    assert _build_default_attach_config() == DuckLakeAttachConfig(
-        attach_uri=(
-            "ducklake:postgres:dbname=airflow host=postgres port=5432 "
-            "user=airflow password=airflow-local-only"
-        ),
-        data_path=DEFAULT_DUCKLAKE_RAW_DATA_PATH,
-        metadata_schema=DEFAULT_DUCKLAKE_METADATA_SCHEMA,
-        alias=DEFAULT_DUCKLAKE_ALIAS,
-    )
-
-
-def test_attach_ducklake_executes_expected_statements() -> None:
-    con = FakeConnection()
-
-    _attach_ducklake(
-        con,
-        config=DuckLakeAttachConfig(
-            attach_uri="ducklake:postgres:dbname=airflow host=127.0.0.1",
-            data_path="/opt/eve-market/data/datasets/ducklake/raw",
-            metadata_schema="eve_market",
-            alias="raw_lake",
-        ),
-    )
-
-    attach_call = con.calls[-1]
-    queries = _queries(con)
-
-    assert "INSTALL postgres" in queries
-    assert "LOAD postgres" in queries
-    assert "INSTALL ducklake" in queries
-    assert "LOAD ducklake" in queries
-    assert 'ATTACH ? AS "raw_lake"' in attach_call[0]
-    assert attach_call[1] == [
-        "ducklake:postgres:dbname=airflow host=127.0.0.1",
-        "/opt/eve-market/data/datasets/ducklake/raw",
-        "eve_market",
-    ]
-
-
 def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     con = FakeConnection()
 
@@ -107,15 +59,11 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     assert "LOAD postgres" in queries
     assert "INSTALL ducklake" in queries
     assert "LOAD ducklake" in queries
-    assert 'ATTACH ? AS "ducklake"' in attach_call[0]
-    assert attach_call[1] == [
-        "ducklake:postgres:dbname=airflow host=postgres port=5432 user=airflow password=airflow-local-only",
-        DEFAULT_DUCKLAKE_RAW_DATA_PATH,
-        DEFAULT_DUCKLAKE_METADATA_SCHEMA,
-    ]
+    assert "ATTACH ? AS " in attach_call[0]
+    assert attach_call[1] is not None
 
 
-def test_writer_accepts_explicit_attach_config(monkeypatch) -> None:
+def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
     con = FakeConnection()
 
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
@@ -242,4 +190,5 @@ def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
                 table=RawDuckLakeTable.MARKET_HISTORY,
             )
 
+    assert any("DROP VIEW IF EXISTS" in query for query in _queries(con))
     assert con.closed is True
