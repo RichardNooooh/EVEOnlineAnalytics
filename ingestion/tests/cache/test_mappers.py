@@ -182,11 +182,4 @@ class TestEntityToRow:
         assert result["source_name"] == "override"
         assert result["id"] == "obj-1"
 
-    def test_entity_to_row_handles_none_field_path(self) -> None:
-        from ingest.cache.ledger.column_maps import RAW_OBJECT_PUBLICATION_COLUMNS
-        from ingest.cache.ledger.types import PublicationContext
 
-        ctx = PublicationContext()
-        result = entity_to_row(ctx, RAW_OBJECT_PUBLICATION_COLUMNS)
-        assert "id" not in result
-        assert "published_at" in result

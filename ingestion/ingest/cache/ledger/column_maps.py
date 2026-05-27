@@ -46,22 +46,4 @@ RAW_OBJECT_VERSION_COLUMNS: Mapping[str, str] = {
     "storage_encoding": "storage_encoding",
 }
 
-RAW_OBJECT_PUBLICATION_COLUMNS: dict[str, str | None] = {
-    "id": None,
-    "source_name": None,
-    "dataset_name": None,
-    "identity_hash": None,
-    "sha256": None,
-    "version_id": None,
-    "published_at": "published_at",
-    "publication_scope": "publication_scope",
-    "publisher_run_id": "publisher_run_id",
-}
 
-
-__column_maps__: list[Mapping[str, Any]] = [
-    RAW_OBJECT_COLUMNS,
-    RAW_OBJECT_SEEN_COLUMNS,
-    RAW_OBJECT_VERSION_COLUMNS,
-    RAW_OBJECT_PUBLICATION_COLUMNS,
-]

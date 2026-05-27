@@ -10,7 +10,6 @@ from sqlalchemy.engine import RowMapping
 
 from ingest.cache.ledger.column_maps import (
     RAW_OBJECT_COLUMNS,
-    RAW_OBJECT_PUBLICATION_COLUMNS,
     RAW_OBJECT_SEEN_COLUMNS,
     RAW_OBJECT_VERSION_COLUMNS,
 )
@@ -126,18 +125,17 @@ def raw_object_publication_values(
     version_id: str,
     context: PublicationContext,
 ) -> dict[str, Any]:
-    return entity_to_row(
-        context,
-        RAW_OBJECT_PUBLICATION_COLUMNS,
-        overrides={
-            "id": uuid4().hex,
-            "source_name": ref.source_name,
-            "dataset_name": ref.dataset_name,
-            "identity_hash": ref.identity_hash,
-            "sha256": sha256,
-            "version_id": version_id,
-        },
-    )
+    return {
+        "id": uuid4().hex,
+        "source_name": ref.source_name,
+        "dataset_name": ref.dataset_name,
+        "identity_hash": ref.identity_hash,
+        "sha256": sha256,
+        "version_id": version_id,
+        "published_at": context.published_at,
+        "publication_scope": context.publication_scope,
+        "publisher_run_id": context.publisher_run_id,
+    }
 
 
 def row_to_raw_object(row: RowMapping) -> RawObjectEntry:
