@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from types import TracebackType
 
 from ingest.cache.ledger import RawObjectLedger
-from ingest.cache.models import CacheResult, PublicationContext
+from ingest.cache.models import CacheResult, PublicationContext, RawObjectRef
 
 
 class PublicationTracker:
@@ -70,7 +70,7 @@ class PublicationTracker:
         self._assert_active()
         ctx = context or PublicationContext()
         with self._ledger.transaction() as tx:
-            tx.mark_published(
+            tx.publications.mark_published(
                 ref=result.raw_object.ref,
                 sha256=result.version.sha256,
                 version_id=result.version.id,
@@ -100,14 +100,14 @@ class PublicationTracker:
         """
         self._assert_active()
         ctx = context or PublicationContext()
+        grouped: dict[tuple[str, str], list[tuple[RawObjectRef, str, str, PublicationContext]]] = defaultdict(list)
+        for result in results:
+            grouped[(result.raw_object.ref.source_name, result.raw_object.ref.dataset_name)].append(
+                (result.raw_object.ref, result.version.sha256, result.version.id, ctx)
+            )
         with self._ledger.transaction() as tx:
-            for result in results:
-                tx.mark_published(
-                    ref=result.raw_object.ref,
-                    sha256=result.version.sha256,
-                    version_id=result.version.id,
-                    context=ctx,
-                )
+            for group_key, pubs in grouped.items():
+                tx.publications.mark_published_many(pubs)
 
     def is_published(self, result: CacheResult) -> bool:
         """Return whether a cached version already has a publication marker.
@@ -127,7 +127,7 @@ class PublicationTracker:
         """
         self._assert_active()
         with self._ledger.transaction() as tx:
-            return tx.is_published(
+            return tx.publications.is_published(
                 ref=result.raw_object.ref,
                 sha256=result.version.sha256,
             )
@@ -160,5 +160,5 @@ class PublicationTracker:
         published: set[tuple[str, str]] = set()
         with self._ledger.transaction() as tx:
             for group_key, versions in versions_by_group.items():
-                published.update(tx.filter_published(group_key=group_key, versions=versions))
+                published.update(tx.publications.filter_published(group_key=group_key, versions=versions))
         return published
