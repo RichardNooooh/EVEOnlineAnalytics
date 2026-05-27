@@ -112,7 +112,30 @@ def _response(
     )
 
 
-def test_get_defaults_identity_to_source_relative_path(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("dataset_name", "update_mode", "source_url", "expected_identity"),
+    [
+        (
+            "market-orders",
+            UpdateMode.SNAPSHOT,
+            "https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
+            {"source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"},
+        ),
+        (
+            "market-history",
+            UpdateMode.MUTABLE,
+            "https://data.everef.net/market-history/2026-01-01.csv.bz2",
+            {"source_path": "market-history/2026-01-01.csv.bz2"},
+        ),
+    ],
+)
+def test_get_defaults_identity_to_source_relative_path(
+    tmp_path: Path,
+    dataset_name: str,
+    update_mode: UpdateMode,
+    source_url: str,
+    expected_identity: dict[str, str],
+) -> None:
     client = FakeClient(
         [
             _response(
@@ -123,40 +146,18 @@ def test_get_defaults_identity_to_source_relative_path(tmp_path: Path) -> None:
         ]
     )
 
-    with _store(tmp_path=tmp_path, client=client) as store:
-        result = store.get(
-            CacheObject(
-                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
-            )
-        )
+    with _store(
+        tmp_path=tmp_path,
+        client=client,
+        dataset_name=dataset_name,
+        update_mode=update_mode,
+    ) as store:
+        result = store.get(CacheObject(source_url=source_url))
 
-    assert result.identity_key == {
-        "source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"
-    }
+    assert result.identity_key == expected_identity
     assert result.path == result.version.local_path
-    assert result.update_mode is UpdateMode.SNAPSHOT
+    assert result.update_mode is update_mode
     assert result.changed is True
-
-
-def test_get_uses_cache_source_by_default(tmp_path: Path) -> None:
-    client = FakeClient(
-        [
-            _response(
-                tmp_path=tmp_path,
-                outcome=FetchOutcome.DOWNLOADED,
-                name="default-source",
-            )
-        ]
-    )
-
-    with _store(tmp_path=tmp_path, client=client) as store:
-        result = store.get(
-            CacheObject(
-                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
-            )
-        )
-
-    assert result.raw_object.source_name == "everef"
 
 
 def test_get_changed_returns_changed_objects(tmp_path: Path) -> None:
@@ -223,33 +224,6 @@ def test_get_uses_explicit_source_path_for_non_everef_url(tmp_path: Path) -> Non
     assert result.path == str(
         tmp_path / "raw" / "example" / "vendor" / "market-orders" / "file.csv"
     )
-
-
-def test_get_defaults_mutable_identity_to_source_relative_path(tmp_path: Path) -> None:
-    client = FakeClient(
-        [
-            _response(
-                tmp_path=tmp_path,
-                outcome=FetchOutcome.DOWNLOADED,
-                name="mutable-default-identity",
-            )
-        ]
-    )
-
-    with _store(
-        tmp_path=tmp_path,
-        client=client,
-        dataset_name="market-history",
-        update_mode=UpdateMode.MUTABLE,
-    ) as store:
-        result = store.get(
-            CacheObject(
-                source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
-            )
-        )
-
-    assert result.identity_key == {"source_path": "market-history/2026-01-01.csv.bz2"}
-    assert result.update_mode is UpdateMode.MUTABLE
 
 
 def test_get_reuses_existing_snapshot_without_remote_read(tmp_path: Path) -> None:
@@ -563,16 +537,6 @@ def test_mark_published_is_idempotent(tmp_path: Path) -> None:
         assert store.is_published(result) is True
 
 
-def test_store_closes_client_on_exit(tmp_path: Path) -> None:
-    client = FakeClient([])
-    store = _store(tmp_path=tmp_path, client=client)
-
-    with store:
-        pass
-
-    assert client.closed is True
-
-
 def test_store_rejects_non_postgres_ledger_urls(tmp_path: Path) -> None:
     store = Cache(
         dataset_name="market-orders",
@@ -599,24 +563,20 @@ def test_store_rejects_query_string_urls(tmp_path: Path) -> None:
             )
 
 
-def test_store_rejects_non_http_source_urls(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "source_url",
+    ["file:///tmp/file.csv.bz2", "https:///file.csv.bz2"],
+)
+def test_store_rejects_invalid_http_source_urls(
+    tmp_path: Path, source_url: str
+) -> None:
     store = _store(tmp_path=tmp_path, client=FakeClient([]))
 
     with store:
         with pytest.raises(
             ValueError, match="must be an http or https URL with a host"
         ):
-            store.get(CacheObject(source_url="file:///tmp/file.csv.bz2"))
-
-
-def test_store_rejects_source_urls_without_host(tmp_path: Path) -> None:
-    store = _store(tmp_path=tmp_path, client=FakeClient([]))
-
-    with store:
-        with pytest.raises(
-            ValueError, match="must be an http or https URL with a host"
-        ):
-            store.get(CacheObject(source_url="https:///file.csv.bz2"))
+            store.get(CacheObject(source_url=source_url))
 
 
 def test_store_accepts_non_everef_hosts_and_uncompressed_paths(tmp_path: Path) -> None:

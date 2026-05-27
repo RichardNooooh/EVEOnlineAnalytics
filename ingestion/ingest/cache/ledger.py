@@ -5,6 +5,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime
+from types import TracebackType
 from typing import Any
 from uuid import uuid4
 
@@ -109,7 +110,21 @@ class RawObjectLedger:
         self._engine: Engine | None = None
         self._con: Connection | None = None
 
+    def __enter__(self) -> RawObjectLedger:
+        self.open()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
     def open(self) -> None:
+        if self._engine is not None or self._con is not None:
+            raise RuntimeError("RawObjectLedger is already open")
         self._engine = create_engine(_normalize_ledger_url(self._ledger_url))
         self._con = self._engine.connect()
         self._bootstrap()
