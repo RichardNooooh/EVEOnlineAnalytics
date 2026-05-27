@@ -102,8 +102,8 @@ class CacheResultStatus(StrEnum):
     STORED = "stored"
 
 
-class FetchOutcome(StrEnum):
-    """Low-level HTTP read outcome from cache client.
+class ReadStatus(StrEnum):
+    """Low-level HTTP read status from cache client.
 
     `NOT_MODIFIED` means origin confirmed existing cached version still current.
     `MODIFIED` means client wrote fresh content to temporary storage.
@@ -231,26 +231,26 @@ class RawObjectVersion:
 
 
 @dataclass(frozen=True)
-class NotModifiedResult:
+class NotModifiedRead:
     """Result when origin reports 304 Not Modified."""
 
-    outcome: Literal[FetchOutcome.NOT_MODIFIED]
+    status: Literal[ReadStatus.NOT_MODIFIED]
     fetched_at: datetime
     revalidation: RevalidationMetadata = RevalidationMetadata()
 
 
 @dataclass(frozen=True)
-class ModifiedResult:
+class ModifiedRead:
     """Result when origin returns new content."""
 
-    outcome: Literal[FetchOutcome.MODIFIED]
+    status: Literal[ReadStatus.MODIFIED]
     fetched_at: datetime
     temp_path: str
     sha256: str
     revalidation: RevalidationMetadata = RevalidationMetadata()
 
 
-FetchResult: TypeAlias = NotModifiedResult | ModifiedResult
+ReadResult: TypeAlias = NotModifiedRead | ModifiedRead
 
 
 @dataclass(frozen=True)
