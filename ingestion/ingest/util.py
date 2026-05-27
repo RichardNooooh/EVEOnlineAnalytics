@@ -1,4 +1,5 @@
-from datetime import date
+from collections.abc import Iterable
+from datetime import date, timedelta
 
 DEFAULT_DATA_ROOT = "/opt/eve-market/data"
 DEFAULT_RAW_ROOT = f"{DEFAULT_DATA_ROOT}/raw"
@@ -13,3 +14,9 @@ def parse_iso_date(value: str, *, field_name: str) -> date:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise ValueError(f"{field_name} must be a valid YYYY-MM-DD date") from exc
+
+
+def iter_dates(start: date, end: date) -> Iterable[date]:
+    """Yield each date in ``[start, end]`` inclusive."""
+    for n in range((end - start).days + 1):
+        yield start + timedelta(n)
