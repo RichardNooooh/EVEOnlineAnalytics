@@ -8,14 +8,14 @@ from pathlib import Path
 from types import TracebackType
 from uuid import uuid4
 
-from ingest.cache.client import HttpRawObjectClient, RawObjectClient
+from ingest.cache.client import HttpRawObjectClient
 from ingest.cache.identity import (
     hash_identity_key,
     normalize_source_path,
     normalize_source_relative_path,
     resolve_identity_key,
 )
-from ingest.cache.ledger import RawObjectLedger, RawObjectLedgerProtocol
+from ingest.cache.ledger import RawObjectLedger
 from ingest.cache.models import (
     ClientReadResult,
     IdentityKey,
@@ -55,8 +55,8 @@ class RawObjectCache:
         source_name: str,
         raw_root: str | Path,
         ledger_url: str,
-        client: RawObjectClient | None = None,
-        ledger: RawObjectLedgerProtocol | None = None,
+        client: HttpRawObjectClient | None = None,
+        ledger: RawObjectLedger | None = None,
     ) -> None:
         self._source_name = _validate_path_segment(
             source_name, field_name="source_name"
@@ -72,8 +72,8 @@ class RawObjectCache:
         source_name: str = "everef",
         raw_root: str = DEFAULT_RAW_ROOT,
         ledger_url: str = DEFAULT_RAW_LEDGER_URL,
-        client: RawObjectClient | None = None,
-        ledger: RawObjectLedgerProtocol | None = None,
+        client: HttpRawObjectClient | None = None,
+        ledger: RawObjectLedger | None = None,
     ) -> RawObjectCache:
         return cls(
             source_name=source_name,

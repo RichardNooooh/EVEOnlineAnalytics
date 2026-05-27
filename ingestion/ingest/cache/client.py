@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Mapping, Protocol
+from collections.abc import Mapping
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -14,18 +14,6 @@ from urllib3.util.retry import Retry
 from ingest.cache.models import ClientReadResult, ReadOutcome
 
 logger = logging.getLogger("ingest.cache")
-
-
-class RawObjectClient(Protocol):
-    def read(
-        self,
-        *,
-        source_url: str,
-        request_headers: Mapping[str, str],
-        temp_path: str,
-    ) -> ClientReadResult: ...
-
-    def close(self) -> None: ...
 
 
 @dataclass(frozen=True)
