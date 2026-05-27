@@ -17,15 +17,15 @@ from ingest.cache.identity import (
 )
 from ingest.cache.ledger import RawObjectLedger
 from ingest.cache.models import (
-    ClientReadResult,
+    CacheRequest,
+    CacheResult,
+    CacheResultStatus,
+    FetchOutcome,
+    FetchResult,
     IdentityKey,
     IdentityScalar,
-    RawObject,
-    RawObjectRequest,
-    RawObjectResult,
-    RawObjectStatus,
+    RawObjectEntry,
     RawObjectVersion,
-    ReadOutcome,
     UpdateMode,
 )
 from ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
@@ -33,29 +33,14 @@ from ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
 logger = logging.getLogger("ingest.cache")
 
 
-@dataclass(frozen=True)
-class RawObjectPlan:
-    source_name: str
-    dataset_name: str
-    source_url: str
-    source_relative_path: str
-    update_mode: UpdateMode
-    identity_key: IdentityKey
-    identity_hash: str
-    request_headers: Mapping[str, str]
-    temp_path: str
-    raw_object: RawObject | None
-    current_version: RawObjectVersion | None
-
-
-class RawObjectCache:
+class Cache:
     """Download and track raw source files before publication.
 
     Example:
         ```python
-        from ingest.cache import RawObjectCache, UpdateMode
+        from ingest.cache import Cache, UpdateMode
 
-        with RawObjectCache.open(raw_root="/data/raw", ledger_url=ledger_url) as cache:
+        with Cache.open(raw_root="/data/raw", ledger_url=ledger_url) as cache:
             result = cache.get(
                 dataset_name="market-history",
                 source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
@@ -91,7 +76,7 @@ class RawObjectCache:
         ledger_url: str = DEFAULT_RAW_LEDGER_URL,
         client: HttpRawObjectClient | None = None,
         ledger: RawObjectLedger | None = None,
-    ) -> RawObjectCache:
+    ) -> Cache:
         """Create a cache using project defaults for source, raw root, and ledger.
 
         Use this as the normal entry point. The returned cache opens its PostgreSQL
@@ -99,7 +84,7 @@ class RawObjectCache:
 
         Example:
             ```python
-            with RawObjectCache.open(ledger_url="postgresql://raw:pw@postgres/raw") as cache:
+            with Cache.open(ledger_url="postgresql://raw:pw@postgres/raw") as cache:
                 ...
             ```
         """
@@ -112,7 +97,7 @@ class RawObjectCache:
             ledger=ledger,
         )
 
-    def __enter__(self) -> RawObjectCache:
+    def __enter__(self) -> Cache:
         self._ledger.open()
         return self
 
@@ -125,64 +110,6 @@ class RawObjectCache:
         self._ledger.close()
         self._client.close()
 
-    def _plan(
-        self,
-        *,
-        source_name: str | None,
-        dataset_name: str,
-        source_url: str,
-        update_mode: UpdateMode | str,
-        source_path: str | None = None,
-        identity_key: Mapping[str, IdentityScalar] | None = None,
-    ) -> RawObjectPlan:
-        resolved_source_name = source_name or self._source_name
-        resolved_mode = UpdateMode(update_mode)
-        source_relative_path = (
-            normalize_source_path(source_path)
-            if source_path is not None
-            else normalize_source_relative_path(source_url)
-        )
-        resolved_identity_key = resolve_identity_key(
-            identity_key=identity_key,
-            source_relative_path=source_relative_path,
-        )
-        identity_hash = hash_identity_key(resolved_identity_key)
-
-        with self._ledger.transaction():
-            raw_object = self._ledger.load_raw_object(
-                source_name=resolved_source_name,
-                dataset_name=dataset_name,
-                identity_hash=identity_hash,
-            )
-            current_version = (
-                self._ledger.load_latest_version(raw_object.id)
-                if raw_object is not None
-                else None
-            )
-            if raw_object is not None and raw_object.update_mode is not resolved_mode:
-                raise ValueError(
-                    "raw object update_mode mismatch: "
-                    f"stored={raw_object.update_mode.value} requested={resolved_mode.value}"
-                )
-
-        return RawObjectPlan(
-            source_name=resolved_source_name,
-            dataset_name=dataset_name,
-            source_url=source_url,
-            source_relative_path=source_relative_path,
-            update_mode=resolved_mode,
-            identity_key=resolved_identity_key,
-            identity_hash=identity_hash,
-            request_headers=_build_request_headers(current_version, resolved_mode),
-            temp_path=str(
-                _build_temp_path(
-                    raw_root=self._raw_root, source_name=resolved_source_name
-                )
-            ),
-            raw_object=raw_object,
-            current_version=current_version,
-        )
-
     def get(
         self,
         *,
@@ -192,7 +119,7 @@ class RawObjectCache:
         update_mode: UpdateMode | str,
         source_path: str | None = None,
         identity_key: Mapping[str, IdentityScalar] | None = None,
-    ) -> RawObjectResult:
+    ) -> CacheResult:
         """Fetch one raw object and return its current local version.
 
         Snapshot objects are reused from disk without remote reads once cached. Mutable
@@ -225,12 +152,12 @@ class RawObjectCache:
             return self._record_hit(plan)
 
         read_result = self._read_source(plan, request_headers=plan.request_headers)
-        if read_result.outcome is ReadOutcome.NOT_MODIFIED and _file_exists(
+        if read_result.outcome is FetchOutcome.NOT_MODIFIED and _file_exists(
             current_local_path
         ):
             return self._record_hit(plan, read_result=read_result)
 
-        if read_result.outcome is ReadOutcome.NOT_MODIFIED:
+        if read_result.outcome is FetchOutcome.NOT_MODIFIED:
             logger.info(
                 "cached file missing after not-modified response; re-reading source_url=%s",
                 plan.source_url,
@@ -243,10 +170,10 @@ class RawObjectCache:
 
     def _read_source(
         self,
-        plan: RawObjectPlan,
+        plan: RawObjectFetchPlan,
         *,
         request_headers: Mapping[str, str],
-    ) -> ClientReadResult:
+    ) -> FetchResult:
         return self._client.read(
             source_url=plan.source_url,
             request_headers=dict(request_headers),
@@ -255,11 +182,11 @@ class RawObjectCache:
 
     def get_many(
         self,
-        objects: Iterable[RawObjectRequest],
+        objects: Iterable[CacheRequest],
         *,
         changed_only: bool = True,
         unpublished_only: bool = False,
-    ) -> list[RawObjectResult]:
+    ) -> list[CacheResult]:
         """Fetch many raw objects with optional filtering.
 
         Prefer `get_all`, `get_changed`, or `get_unpublished` for new callers. This
@@ -272,7 +199,7 @@ class RawObjectCache:
             ```
         """
 
-        results: list[RawObjectResult] = []
+        results: list[CacheResult] = []
         for object_request in objects:
             result = self.get(
                 source_name=object_request.source_name,
@@ -289,13 +216,13 @@ class RawObjectCache:
             results.append(result)
         return results
 
-    def get_all(self, objects: Iterable[RawObjectRequest]) -> list[RawObjectResult]:
+    def get_all(self, objects: Iterable[CacheRequest]) -> list[CacheResult]:
         """Fetch every requested object and return hits plus downloads.
 
         Example:
             ```python
             results = cache.get_all([
-                RawObjectRequest(
+                CacheRequest(
                     dataset_name="market-history",
                     source_url=url,
                     update_mode="mutable",
@@ -306,7 +233,7 @@ class RawObjectCache:
 
         return self.get_many(objects, changed_only=False)
 
-    def get_changed(self, objects: Iterable[RawObjectRequest]) -> list[RawObjectResult]:
+    def get_changed(self, objects: Iterable[CacheRequest]) -> list[CacheResult]:
         """Fetch objects and return only newly downloaded versions.
 
         Example:
@@ -318,9 +245,7 @@ class RawObjectCache:
 
         return self.get_many(objects)
 
-    def get_unpublished(
-        self, objects: Iterable[RawObjectRequest]
-    ) -> list[RawObjectResult]:
+    def get_unpublished(self, objects: Iterable[CacheRequest]) -> list[CacheResult]:
         """Fetch objects and return versions not marked as published.
 
         Use this when retrying a publication job after files have already been cached.
@@ -337,7 +262,7 @@ class RawObjectCache:
 
     def mark_published(
         self,
-        result: RawObjectResult,
+        result: CacheResult,
         *,
         publication_scope: str | None = None,
         publisher_run_id: str | None = None,
@@ -372,7 +297,7 @@ class RawObjectCache:
 
     def mark_published_many(
         self,
-        results: Iterable[RawObjectResult],
+        results: Iterable[CacheResult],
         *,
         publication_scope: str | None = None,
         publisher_run_id: str | None = None,
@@ -394,7 +319,7 @@ class RawObjectCache:
                 published_at=published_at,
             )
 
-    def is_published(self, result: RawObjectResult) -> bool:
+    def is_published(self, result: CacheResult) -> bool:
         """Return whether a cached version already has a publication marker.
 
         Example:
@@ -414,10 +339,10 @@ class RawObjectCache:
 
     def _record_hit(
         self,
-        plan: RawObjectPlan,
+        plan: RawObjectFetchPlan,
         *,
-        read_result: ClientReadResult | None = None,
-    ) -> RawObjectResult:
+        read_result: FetchResult | None = None,
+    ) -> CacheResult:
         checked_at = (
             read_result.fetched_at if read_result is not None else datetime.now(UTC)
         )
@@ -433,15 +358,15 @@ class RawObjectCache:
             )
         if plan.current_version is None:
             raise RuntimeError("current_version is required for cache hit")
-        return RawObjectResult(
-            status=RawObjectStatus.HIT,
+        return CacheResult(
+            status=CacheResultStatus.HIT,
             raw_object=raw_object,
             version=plan.current_version,
         )
 
     def _record_store(
-        self, plan: RawObjectPlan, read_result: ClientReadResult
-    ) -> RawObjectResult:
+        self, plan: RawObjectFetchPlan, read_result: FetchResult
+    ) -> CacheResult:
         final_path = _build_final_path(
             raw_root=self._raw_root,
             plan=plan,
@@ -499,11 +424,84 @@ class RawObjectCache:
                 if stale_version.local_path != version.local_path:
                     Path(stale_version.local_path).unlink(missing_ok=True)
 
-        return RawObjectResult(
-            status=RawObjectStatus.STORED,
+        return CacheResult(
+            status=CacheResultStatus.STORED,
             raw_object=raw_object,
             version=version,
         )
+
+    def _plan(
+        self,
+        *,
+        source_name: str | None,
+        dataset_name: str,
+        source_url: str,
+        update_mode: UpdateMode | str,
+        source_path: str | None = None,
+        identity_key: Mapping[str, IdentityScalar] | None = None,
+    ) -> RawObjectFetchPlan:
+        resolved_source_name = source_name or self._source_name
+        resolved_mode = UpdateMode(update_mode)
+        source_relative_path = (
+            normalize_source_path(source_path)
+            if source_path is not None
+            else normalize_source_relative_path(source_url)
+        )
+        resolved_identity_key = resolve_identity_key(
+            identity_key=identity_key,
+            source_relative_path=source_relative_path,
+        )
+        identity_hash = hash_identity_key(resolved_identity_key)
+
+        with self._ledger.transaction():
+            raw_object = self._ledger.load_raw_object(
+                source_name=resolved_source_name,
+                dataset_name=dataset_name,
+                identity_hash=identity_hash,
+            )
+            current_version = (
+                self._ledger.load_latest_version(raw_object.id)
+                if raw_object is not None
+                else None
+            )
+            if raw_object is not None and raw_object.update_mode is not resolved_mode:
+                raise ValueError(
+                    "raw object update_mode mismatch: "
+                    f"stored={raw_object.update_mode.value} requested={resolved_mode.value}"
+                )
+
+        return RawObjectFetchPlan(
+            source_name=resolved_source_name,
+            dataset_name=dataset_name,
+            source_url=source_url,
+            source_relative_path=source_relative_path,
+            update_mode=resolved_mode,
+            identity_key=resolved_identity_key,
+            identity_hash=identity_hash,
+            request_headers=_build_request_headers(current_version, resolved_mode),
+            temp_path=str(
+                _build_temp_path(
+                    raw_root=self._raw_root, source_name=resolved_source_name
+                )
+            ),
+            raw_object=raw_object,
+            current_version=current_version,
+        )
+
+
+@dataclass(frozen=True)
+class RawObjectFetchPlan:
+    source_name: str
+    dataset_name: str
+    source_url: str
+    source_relative_path: str
+    update_mode: UpdateMode
+    identity_key: IdentityKey
+    identity_hash: str
+    request_headers: Mapping[str, str]
+    temp_path: str
+    raw_object: RawObjectEntry | None
+    current_version: RawObjectVersion | None
 
 
 def _build_request_headers(
@@ -519,7 +517,7 @@ def _build_request_headers(
     return {}
 
 
-def _current_local_path(plan: RawObjectPlan) -> str | None:
+def _current_local_path(plan: RawObjectFetchPlan) -> str | None:
     return plan.current_version.local_path if plan.current_version else None
 
 
@@ -527,8 +525,8 @@ def _file_exists(path: str | None) -> bool:
     return path is not None and Path(path).exists()
 
 
-def _ensure_downloaded(read_result: ClientReadResult) -> None:
-    if read_result.outcome is not ReadOutcome.DOWNLOADED:
+def _ensure_downloaded(read_result: FetchResult) -> None:
+    if read_result.outcome is not FetchOutcome.DOWNLOADED:
         raise RuntimeError("client returned unexpected outcome without download")
     if read_result.temp_path is None or read_result.sha256 is None:
         raise RuntimeError("downloaded client result must include temp_path and sha256")
@@ -542,7 +540,7 @@ def _build_temp_path(*, raw_root: Path, source_name: str) -> Path:
 def _build_final_path(
     *,
     raw_root: Path,
-    plan: RawObjectPlan,
+    plan: RawObjectFetchPlan,
     fetched_at: datetime,
     sha256: str,
 ) -> Path:

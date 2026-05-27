@@ -26,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Connection, Engine
 
 from ingest.cache.identity import canonical_identity_json
-from ingest.cache.models import RawObject, RawObjectVersion, UpdateMode
+from ingest.cache.models import RawObjectEntry, RawObjectVersion, UpdateMode
 
 
 _METADATA = MetaData()
@@ -133,7 +133,7 @@ class RawObjectLedger:
         source_name: str,
         dataset_name: str,
         identity_hash: str,
-    ) -> RawObject | None:
+    ) -> RawObjectEntry | None:
         row = self._fetchone(
             select(raw_objects).where(
                 raw_objects.c.source_name == source_name,
@@ -169,14 +169,14 @@ class RawObjectLedger:
         update_mode: UpdateMode,
         checked_at: datetime,
         current_version: RawObjectVersion | None,
-    ) -> RawObject:
+    ) -> RawObjectEntry:
         existing = self.load_raw_object(
             source_name=source_name,
             dataset_name=dataset_name,
             identity_hash=identity_hash,
         )
         if existing is None:
-            raw_object = RawObject(
+            raw_object = RawObjectEntry(
                 id=uuid4().hex,
                 source_name=source_name,
                 dataset_name=dataset_name,
@@ -356,8 +356,8 @@ def _normalize_ledger_url(ledger_url: str) -> str:
     raise ValueError("ledger_url must be a PostgreSQL URL")
 
 
-def _row_to_raw_object(row: Mapping[str, Any]) -> RawObject:
-    return RawObject(
+def _row_to_raw_object(row: Mapping[str, Any]) -> RawObjectEntry:
+    return RawObjectEntry(
         id=row["id"],
         source_name=row["source_name"],
         dataset_name=row["dataset_name"],
