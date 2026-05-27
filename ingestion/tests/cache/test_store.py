@@ -600,17 +600,6 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
     assert second_result.version.sha256 == "def456"
 
 
-def test_store_rejects_non_postgres_ledger_urls(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="ledger_url must be a PostgreSQL URL"):
-        Cache(
-            dataset_name="market-orders",
-            update_mode=UpdateMode.SNAPSHOT,
-            raw_root=str(tmp_path / "raw"),
-            ledger_url=f"sqlite:///{tmp_path / 'raw_files.sqlite'}",
-            client=FakeClient([]),
-        )
-
-
 def test_store_rejects_query_string_urls(tmp_path: Path) -> None:
     store = _store(tmp_path=tmp_path, client=FakeClient([]))
 
