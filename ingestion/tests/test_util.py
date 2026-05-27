@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+from datetime import date
+
+import pytest
+
+from ingest.util import (
+    DEFAULT_DATA_ROOT,
+    DEFAULT_DUCKLAKE_CATALOG,
+    DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+    DEFAULT_DUCKLAKE_RAW_DATA_PATH,
+    DEFAULT_RAW_LEDGER_URL,
+    DEFAULT_RAW_ROOT,
+    iter_dates,
+    parse_iso_date,
+)
+
+
+class TestConstants:
+    def test_default_data_root(self) -> None:
+        assert DEFAULT_DATA_ROOT == "/opt/eve-market/data"
+
+    def test_default_raw_root(self) -> None:
+        assert DEFAULT_RAW_ROOT == "/opt/eve-market/data/raw"
+
+    def test_default_ducklake_raw_data_path(self) -> None:
+        assert DEFAULT_DUCKLAKE_RAW_DATA_PATH == "/opt/eve-market/data/datasets/ducklake/raw"
+
+    def test_default_ducklake_catalog(self) -> None:
+        assert DEFAULT_DUCKLAKE_CATALOG == "postgresql://airflow:airflow-local-only@postgres:5432/airflow"
+
+    def test_default_raw_ledger_url(self) -> None:
+        assert DEFAULT_RAW_LEDGER_URL == "postgresql://raw_files:password@postgres:5432/raw_files"
+
+    def test_default_ducklake_metadata_schema(self) -> None:
+        assert DEFAULT_DUCKLAKE_METADATA_SCHEMA == "eve_market"
+
+
+class TestParseIsoDate:
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("2025-01-01", date(2025, 1, 1)),
+            ("2025-12-31", date(2025, 12, 31)),
+            ("2024-02-29", date(2024, 2, 29)),
+        ],
+    )
+    def test_valid_date(self, value: str, expected: date) -> None:
+        assert parse_iso_date(value, field_name="test_date") == expected
+
+    @pytest.mark.parametrize(
+        ("value", "field_name"),
+        [
+            ("not-a-date", "start_date"),
+            ("2025/01/01", "end_date"),
+            ("2025-13-01", "date_arg"),
+            ("2025-00-01", "month_arg"),
+            ("", "empty_arg"),
+        ],
+    )
+    def test_invalid_date_raises(self, value: str, field_name: str) -> None:
+        with pytest.raises(ValueError, match=f"{field_name} must be a valid YYYY-MM-DD date"):
+            parse_iso_date(value, field_name=field_name)
+
+
+class TestIterDates:
+    def test_single_day(self) -> None:
+        d = date(2025, 6, 1)
+        assert list(iter_dates(d, d)) == [d]
+
+    def test_two_days(self) -> None:
+        result = list(iter_dates(date(2025, 6, 1), date(2025, 6, 2)))
+        assert result == [date(2025, 6, 1), date(2025, 6, 2)]
+
+    @pytest.mark.parametrize(
+        ("start", "end", "expected"),
+        [
+            (date(2025, 1, 1), date(2025, 1, 5), [date(2025, 1, d) for d in range(1, 6)]),
+            (date(2025, 1, 31), date(2025, 2, 2), [date(2025, 1, 31), date(2025, 2, 1), date(2025, 2, 2)]),
+            (date(2024, 12, 30), date(2025, 1, 2), [date(2024, 12, 30), date(2024, 12, 31), date(2025, 1, 1), date(2025, 1, 2)]),
+        ],
+    )
+    def test_date_ranges(self, start: date, end: date, expected: list[date]) -> None:
+        assert list(iter_dates(start, end)) == expected
+
+    def test_leap_year(self) -> None:
+        result = list(iter_dates(date(2024, 2, 28), date(2024, 3, 1)))
+        assert result == [date(2024, 2, 28), date(2024, 2, 29), date(2024, 3, 1)]
+
+    def test_start_after_end_yields_empty(self) -> None:
+        result = list(iter_dates(date(2025, 6, 5), date(2025, 6, 1)))
+        assert result == []
