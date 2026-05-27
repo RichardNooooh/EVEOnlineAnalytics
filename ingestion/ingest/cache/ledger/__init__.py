@@ -1,2 +1,2 @@
+from ingest.cache.ledger.runtime import LedgerTx as LedgerTx
 from ingest.cache.ledger.runtime import RawObjectLedger as RawObjectLedger
-from ingest.cache.ledger.runtime import RawObjectLedgerTx as RawObjectLedgerTx
