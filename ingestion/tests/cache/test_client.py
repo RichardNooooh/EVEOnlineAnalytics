@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from ingest.cache.client import HttpRawObjectClient
-from ingest.cache.models import FetchOutcome
+from ingest.cache.models import ReadStatus
 
 
 class FakeResponse:
@@ -89,7 +89,7 @@ def test_read_returns_not_modified_without_writing_file(monkeypatch, tmp_path: P
             temp_path=str(temp_path),
         )
 
-    assert result.outcome is FetchOutcome.NOT_MODIFIED
+    assert result.status is ReadStatus.NOT_MODIFIED
     assert result.revalidation.etag == '"etag-1"'
     assert result.revalidation.last_modified == "Wed, 27 May 2026 12:00:00 GMT"
     assert result.revalidation.content_length == 42
@@ -122,7 +122,7 @@ def test_read_streams_file_and_computes_sha256(monkeypatch, tmp_path: Path) -> N
             temp_path=str(temp_path),
         )
 
-    assert result.outcome is FetchOutcome.MODIFIED
+    assert result.status is ReadStatus.MODIFIED
     assert result.revalidation.content_length == 11
     assert result.sha256 == ("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
     assert temp_path.read_bytes() == b"hello world"

@@ -19,10 +19,10 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ingest.cache.models import (
-    FetchOutcome,
-    FetchResult,
-    ModifiedResult,
-    NotModifiedResult,
+    ReadStatus,
+    ReadResult,
+    ModifiedRead,
+    NotModifiedRead,
     RevalidationMetadata,
 )
 
@@ -84,11 +84,11 @@ class HttpRawObjectClient:
         source_url: str,
         request_headers: Mapping[str, str],
         temp_path: str,
-    ) -> FetchResult:
+    ) -> ReadResult:
         """Read one URL into ``temp_path``, returning status and source metadata.
 
         Pass conditional headers such as ``If-None-Match`` for mutable objects. A 304
-        response returns ``FetchOutcome.NOT_MODIFIED`` and does not create ``temp_path``.
+        response returns ``ReadStatus.NOT_MODIFIED`` and does not create ``temp_path``.
 
         Args:
             source_url: Remote URL to fetch.
@@ -99,7 +99,7 @@ class HttpRawObjectClient:
                 Parent directories are created automatically.
 
         Returns:
-            ``NotModifiedResult`` on HTTP 304, otherwise ``ModifiedResult`` with
+            ``NotModifiedRead`` on HTTP 304, otherwise ``ModifiedRead`` with
             the downloaded file path and SHA-256 digest.
 
         Raises:
@@ -114,7 +114,7 @@ class HttpRawObjectClient:
                 request_headers={"If-None-Match": '"etag-1"'},
                 temp_path="/tmp/source.download",
             )
-            if result.outcome is FetchOutcome.MODIFIED:
+            if result.status is ReadStatus.MODIFIED:
                 print(result.sha256)
             ```
         """
@@ -139,8 +139,8 @@ class HttpRawObjectClient:
                         last_modified=header_last_mod,
                         content_length=header_content_length,
                     )
-                    return NotModifiedResult(
-                        outcome=FetchOutcome.NOT_MODIFIED,
+                    return NotModifiedRead(
+                        status=ReadStatus.NOT_MODIFIED,
                         fetched_at=fetched_at,
                         revalidation=revalidation_data,
                     )
@@ -165,8 +165,8 @@ class HttpRawObjectClient:
                     content_length=content_length,
                 )
 
-                return ModifiedResult(
-                    outcome=FetchOutcome.MODIFIED,
+                return ModifiedRead(
+                    status=ReadStatus.MODIFIED,
                     fetched_at=fetched_at,
                     temp_path=str(temp_file),
                     sha256=sha256,

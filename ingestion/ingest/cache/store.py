@@ -27,10 +27,10 @@ from ingest.cache.models import (
     CacheObject,
     CacheResult,
     CacheResultStatus,
-    FetchOutcome,
+    ReadStatus,
     FetchPlan,
-    FetchResult,
-    ModifiedResult,
+    ReadResult,
+    ModifiedRead,
     PublicationContext,
     RawObjectRef,
     ResolvedFetchPlan,
@@ -171,7 +171,7 @@ class Cache:
         )
 
         # server says not-modified; need to validate local state
-        if read_result.outcome is FetchOutcome.NOT_MODIFIED:
+        if read_result.status is ReadStatus.NOT_MODIFIED:
             if isinstance(plan, ResolvedFetchPlan) and _file_exists(current_local_path):
                 return self._record_hit(plan, read_result=read_result)
             logger.info(
@@ -188,7 +188,7 @@ class Cache:
         plan: BaseFetchPlan,
         *,
         request_headers: Mapping[str, str],
-    ) -> FetchResult:
+    ) -> ReadResult:
         return self._client.read(
             source_url=plan.source_url,
             request_headers=dict(request_headers),
@@ -377,7 +377,7 @@ class Cache:
         self,
         plan: ResolvedFetchPlan,
         *,
-        read_result: FetchResult | None = None,
+        read_result: ReadResult | None = None,
     ) -> CacheResult:
         checked_at = read_result.fetched_at if read_result is not None else datetime.now(UTC)
         with self._ledger.transaction() as tx:
@@ -392,7 +392,7 @@ class Cache:
             version=plan.current_version,
         )
 
-    def _record_store(self, plan: BaseFetchPlan, read_result: ModifiedResult) -> CacheResult:
+    def _record_store(self, plan: BaseFetchPlan, read_result: ModifiedRead) -> CacheResult:
         final_path = _build_final_path(
             raw_root=self._raw_root,
             plan=plan,
@@ -501,15 +501,15 @@ def _request_headers_for(plan: FetchPlan, update_mode: UpdateMode) -> Mapping[st
     return plan.raw_object.revalidation.request_headers()
 
 
-def _revalidation_for_hit(plan: ResolvedFetchPlan, read_result: FetchResult | None) -> RevalidationMetadata:
+def _revalidation_for_hit(plan: ResolvedFetchPlan, read_result: ReadResult | None) -> RevalidationMetadata:
     if read_result is None:
         return plan.raw_object.revalidation
     return read_result.revalidation
 
 
-def _ensure_downloaded(read_result: FetchResult) -> ModifiedResult:
-    if read_result.outcome is FetchOutcome.MODIFIED:
-        assert isinstance(read_result, ModifiedResult)
+def _ensure_downloaded(read_result: ReadResult) -> ModifiedRead:
+    if read_result.status is ReadStatus.MODIFIED:
+        assert isinstance(read_result, ModifiedRead)
         return read_result
     raise RuntimeError("client returned unexpected outcome without download")
 
