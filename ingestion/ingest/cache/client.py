@@ -11,7 +11,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from ingest.cache.models import ClientReadResult, ReadOutcome
+from ingest.cache.models import FetchOutcome, FetchResult
 
 logger = logging.getLogger("ingest.cache")
 
@@ -45,11 +45,11 @@ class HttpRawObjectClient:
         source_url: str,
         request_headers: Mapping[str, str],
         temp_path: str,
-    ) -> ClientReadResult:
+    ) -> FetchResult:
         """Read one URL into `temp_path`, returning status and source metadata.
 
         Pass conditional headers such as `If-None-Match` for mutable objects. A 304
-        response returns `ReadOutcome.NOT_MODIFIED` and does not create `temp_path`.
+        response returns `FetchOutcome.NOT_MODIFIED` and does not create `temp_path`.
 
         Example:
             ```python
@@ -58,7 +58,7 @@ class HttpRawObjectClient:
                 request_headers={"If-None-Match": '"etag-1"'},
                 temp_path="/tmp/source.download",
             )
-            if result.outcome is ReadOutcome.DOWNLOADED:
+            if result.outcome is FetchOutcome.DOWNLOADED:
                 print(result.sha256)
             ```
         """
@@ -75,8 +75,8 @@ class HttpRawObjectClient:
             fetched_at = datetime.now(UTC)
 
             if response.status_code == 304:
-                return ClientReadResult(
-                    outcome=ReadOutcome.NOT_MODIFIED,
+                return FetchResult(
+                    outcome=FetchOutcome.NOT_MODIFIED,
                     fetched_at=fetched_at,
                     etag=response.headers.get("ETag"),
                     last_modified=response.headers.get("Last-Modified"),
@@ -98,8 +98,8 @@ class HttpRawObjectClient:
                     stream.write(chunk)
                     content_length += len(chunk)
 
-            return ClientReadResult(
-                outcome=ReadOutcome.DOWNLOADED,
+            return FetchResult(
+                outcome=FetchOutcome.DOWNLOADED,
                 fetched_at=fetched_at,
                 etag=response.headers.get("ETag"),
                 last_modified=response.headers.get("Last-Modified"),

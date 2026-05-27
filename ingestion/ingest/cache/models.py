@@ -14,23 +14,13 @@ class UpdateMode(StrEnum):
     MUTABLE = "mutable"
 
 
-class RawObjectStatus(StrEnum):
-    HIT = "hit"
-    STORED = "stored"
-
-
-class ReadOutcome(StrEnum):
-    NOT_MODIFIED = "not_modified"
-    DOWNLOADED = "downloaded"
-
-
 @dataclass(frozen=True)
-class RawObjectRequest:
+class CacheRequest:
     """Description of one raw object to acquire.
 
     Example:
         ```python
-        request = RawObjectRequest(
+        request = CacheRequest(
             dataset_name="market-history",
             source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
             update_mode="mutable",
@@ -48,47 +38,7 @@ class RawObjectRequest:
 
 
 @dataclass(frozen=True)
-class RawObject:
-    id: str
-    source_name: str
-    dataset_name: str
-    identity_key: IdentityKey
-    identity_hash: str
-    update_mode: UpdateMode
-    created_at: datetime
-    last_checked_at: datetime | None = None
-    last_seen_etag: str | None = None
-    last_seen_last_modified: str | None = None
-    last_seen_content_length: int | None = None
-
-
-@dataclass(frozen=True)
-class RawObjectVersion:
-    id: str
-    raw_object_id: str
-    source_url: str
-    fetched_at: datetime
-    etag: str | None
-    last_modified: str | None
-    content_length: int | None
-    sha256: str
-    local_path: str
-    storage_encoding: str
-
-
-@dataclass(frozen=True)
-class ClientReadResult:
-    outcome: ReadOutcome
-    fetched_at: datetime
-    etag: str | None = None
-    last_modified: str | None = None
-    content_length: int | None = None
-    temp_path: str | None = None
-    sha256: str | None = None
-
-
-@dataclass(frozen=True)
-class RawObjectResult:
+class CacheResult:
     """Current cached version for one raw object.
 
     Example:
@@ -99,8 +49,8 @@ class RawObjectResult:
         ```
     """
 
-    status: RawObjectStatus
-    raw_object: RawObject
+    status: CacheResultStatus
+    raw_object: RawObjectEntry
     version: RawObjectVersion
 
     @property
@@ -142,7 +92,7 @@ class RawObjectResult:
 
     @property
     def changed(self) -> bool:
-        """Return true when this call downloaded and stored a new version.
+        """Return true when this call downloaded and stored new version.
 
         Example:
             ```python
@@ -151,4 +101,54 @@ class RawObjectResult:
             ```
         """
 
-        return self.status is RawObjectStatus.STORED
+        return self.status is CacheResultStatus.STORED
+
+
+class CacheResultStatus(StrEnum):
+    HIT = "hit"
+    STORED = "stored"
+
+
+class FetchOutcome(StrEnum):
+    NOT_MODIFIED = "not_modified"
+    DOWNLOADED = "downloaded"
+
+
+@dataclass(frozen=True)
+class RawObjectEntry:
+    id: str
+    source_name: str
+    dataset_name: str
+    identity_key: IdentityKey
+    identity_hash: str
+    update_mode: UpdateMode
+    created_at: datetime
+    last_checked_at: datetime | None = None
+    last_seen_etag: str | None = None
+    last_seen_last_modified: str | None = None
+    last_seen_content_length: int | None = None
+
+
+@dataclass(frozen=True)
+class RawObjectVersion:
+    id: str
+    raw_object_id: str
+    source_url: str
+    fetched_at: datetime
+    etag: str | None
+    last_modified: str | None
+    content_length: int | None
+    sha256: str
+    local_path: str
+    storage_encoding: str
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    outcome: FetchOutcome
+    fetched_at: datetime
+    etag: str | None = None
+    last_modified: str | None = None
+    content_length: int | None = None
+    temp_path: str | None = None
+    sha256: str | None = None
