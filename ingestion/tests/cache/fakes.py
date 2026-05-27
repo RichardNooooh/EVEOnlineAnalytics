@@ -7,13 +7,13 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from ingest.cache.models import RawObject, RawObjectVersion, UpdateMode
+from ingest.cache.models import RawObjectEntry, RawObjectVersion, UpdateMode
 
 
 class InMemoryRawObjectLedger:
     def __init__(self) -> None:
         self._is_open = False
-        self._raw_objects_by_key: dict[tuple[str, str, str], RawObject] = {}
+        self._raw_objects_by_key: dict[tuple[str, str, str], RawObjectEntry] = {}
         self._versions_by_object_id: dict[str, list[RawObjectVersion]] = {}
         self._publications: set[tuple[str, str, str, str]] = set()
 
@@ -34,7 +34,7 @@ class InMemoryRawObjectLedger:
         source_name: str,
         dataset_name: str,
         identity_hash: str,
-    ) -> RawObject | None:
+    ) -> RawObjectEntry | None:
         self._require_open()
         return self._raw_objects_by_key.get((source_name, dataset_name, identity_hash))
 
@@ -53,12 +53,12 @@ class InMemoryRawObjectLedger:
         update_mode: UpdateMode,
         checked_at: datetime,
         current_version: RawObjectVersion | None,
-    ) -> RawObject:
+    ) -> RawObjectEntry:
         self._require_open()
         key = (source_name, dataset_name, identity_hash)
         existing = self._raw_objects_by_key.get(key)
         if existing is None:
-            raw_object = RawObject(
+            raw_object = RawObjectEntry(
                 id=uuid4().hex,
                 source_name=source_name,
                 dataset_name=dataset_name,
