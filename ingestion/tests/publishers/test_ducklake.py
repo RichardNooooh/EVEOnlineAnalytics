@@ -115,6 +115,31 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     ]
 
 
+def test_writer_accepts_explicit_attach_config(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(
+        DuckLakeAttachConfig(
+            attach_uri="ducklake:postgres:dbname=raw host=postgres",
+            data_path="/data/custom/raw",
+            metadata_schema="custom_metadata",
+            alias="custom_raw",
+        )
+    ):
+        pass
+
+    attach_call = con.calls[-1]
+
+    assert 'ATTACH ? AS "custom_raw"' in attach_call[0]
+    assert attach_call[1] == [
+        "ducklake:postgres:dbname=raw host=postgres",
+        "/data/custom/raw",
+        "custom_metadata",
+    ]
+
+
 def test_writer_appends_by_name(monkeypatch) -> None:
     con = FakeConnection()
     arrow_table = pa.table({"b": [2], "a": [1]})

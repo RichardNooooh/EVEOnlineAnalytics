@@ -133,8 +133,41 @@ def _attach_ducklake(
 
 
 class DuckLakeWriter:
-    def __init__(self) -> None:
-        self._attach = _build_default_attach_config()
+    """Context-managed writer for raw DuckLake tables.
+
+    Example:
+        ```python
+        import pyarrow as pa
+        from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
+
+        rows = pa.table({"type_id": [34], "date": ["2026-01-01"]})
+        with DuckLakeWriter() as writer:
+            writer.write(rows, table=RawDuckLakeTable.MARKET_HISTORY)
+        ```
+
+    Example with explicit attach config:
+        ```python
+        config = DuckLakeAttachConfig(
+            attach_uri="ducklake:postgres:dbname=airflow host=postgres",
+            data_path="/opt/eve-market/data/datasets/ducklake/raw",
+            metadata_schema="eve_market",
+        )
+        with DuckLakeWriter(config) as writer:
+            writer.write(rows, table=RawDuckLakeTable.MARKET_ORDERS, merge_keys=["order_id"])
+        ```
+    """
+
+    def __init__(self, config: DuckLakeAttachConfig | None = None) -> None:
+        """Create a writer for the default or provided DuckLake target.
+
+        Example:
+            ```python
+            writer = DuckLakeWriter()
+            custom_writer = DuckLakeWriter(DuckLakeAttachConfig(...))
+            ```
+        """
+
+        self._attach = config or _build_default_attach_config()
         self._con: duckdb.DuckDBPyConnection | None = None
 
     def __enter__(self) -> DuckLakeWriter:
@@ -155,6 +188,22 @@ class DuckLakeWriter:
         table: RawDuckLakeTable,
         merge_keys: Sequence[str] = (),
     ) -> None:
+        """Write rows to a raw DuckLake table.
+
+        Without `merge_keys`, rows append by column name. With `merge_keys`, rows are
+        inserted only when no target row already matches those keys.
+
+        Example:
+            ```python
+            writer.write(arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
+            writer.write(
+                arrow_table,
+                table=RawDuckLakeTable.MARKET_ORDERS,
+                merge_keys=["order_id"],
+            )
+            ```
+        """
+
         con = self._con
         if con is None:
             raise RuntimeError(
@@ -206,7 +255,23 @@ def publish_arrow_table(
     table: RawDuckLakeTable,
     merge_keys: Sequence[str] = (),
 ) -> None:
-    """Write Arrow rows to default DuckLake raw table, appending or merge-inserting by keys."""
+    """Write Arrow rows to the default raw DuckLake target.
+
+    This is the one-shot helper for callers that do not need to reuse a writer.
+
+    Example:
+        ```python
+        publish_arrow_table(
+            arrow_table=rows,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+        )
+        publish_arrow_table(
+            arrow_table=orders,
+            table=RawDuckLakeTable.MARKET_ORDERS,
+            merge_keys=["order_id"],
+        )
+        ```
+    """
 
     with DuckLakeWriter() as writer:
         writer.write(arrow_table, table=table, merge_keys=merge_keys)

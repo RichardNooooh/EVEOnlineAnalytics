@@ -34,7 +34,7 @@ logger = logging.getLogger("ingest.cache")
 
 
 @dataclass(frozen=True)
-class _RawObjectPlan:
+class RawObjectPlan:
     source_name: str
     dataset_name: str
     source_url: str
@@ -49,6 +49,23 @@ class _RawObjectPlan:
 
 
 class RawObjectCache:
+    """Download and track raw source files before publication.
+
+    Example:
+        ```python
+        from ingest.cache import RawObjectCache, UpdateMode
+
+        with RawObjectCache.open(raw_root="/data/raw", ledger_url=ledger_url) as cache:
+            result = cache.get(
+                dataset_name="market-history",
+                source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
+                update_mode=UpdateMode.MUTABLE,
+                identity_key={"source_date": "2026-01-01"},
+            )
+            print(result.path)
+        ```
+    """
+
     def __init__(
         self,
         *,
@@ -75,6 +92,18 @@ class RawObjectCache:
         client: HttpRawObjectClient | None = None,
         ledger: RawObjectLedger | None = None,
     ) -> RawObjectCache:
+        """Create a cache using project defaults for source, raw root, and ledger.
+
+        Use this as the normal entry point. The returned cache opens its PostgreSQL
+        ledger only when used as a context manager.
+
+        Example:
+            ```python
+            with RawObjectCache.open(ledger_url="postgresql://raw:pw@postgres/raw") as cache:
+                ...
+            ```
+        """
+
         return cls(
             source_name=source_name,
             raw_root=raw_root,
@@ -105,7 +134,7 @@ class RawObjectCache:
         update_mode: UpdateMode | str,
         source_path: str | None = None,
         identity_key: Mapping[str, IdentityScalar] | None = None,
-    ) -> _RawObjectPlan:
+    ) -> RawObjectPlan:
         resolved_source_name = source_name or self._source_name
         resolved_mode = UpdateMode(update_mode)
         source_relative_path = (
@@ -136,7 +165,7 @@ class RawObjectCache:
                     f"stored={raw_object.update_mode.value} requested={resolved_mode.value}"
                 )
 
-        return _RawObjectPlan(
+        return RawObjectPlan(
             source_name=resolved_source_name,
             dataset_name=dataset_name,
             source_url=source_url,
@@ -164,6 +193,24 @@ class RawObjectCache:
         source_path: str | None = None,
         identity_key: Mapping[str, IdentityScalar] | None = None,
     ) -> RawObjectResult:
+        """Fetch one raw object and return its current local version.
+
+        Snapshot objects are reused from disk without remote reads once cached. Mutable
+        objects use `ETag` or `Last-Modified` headers to avoid downloading unchanged
+        files.
+
+        Example:
+            ```python
+            result = cache.get(
+                dataset_name="market-orders",
+                source_url="https://data.everef.net/market-orders/history/2026/file.csv.bz2",
+                update_mode="snapshot",
+            )
+            if result.changed:
+                print("new file", result.path)
+            ```
+        """
+
         plan = self._plan(
             source_name=source_name,
             dataset_name=dataset_name,
@@ -173,25 +220,13 @@ class RawObjectCache:
             identity_key=identity_key,
         )
 
-        current_local_path = (
-            plan.current_version.local_path if plan.current_version else None
-        )
-        if (
-            plan.update_mode is UpdateMode.SNAPSHOT
-            and current_local_path is not None
-            and Path(current_local_path).exists()
-        ):
+        current_local_path = _current_local_path(plan)
+        if plan.update_mode is UpdateMode.SNAPSHOT and _file_exists(current_local_path):
             return self._record_hit(plan)
 
-        read_result = self._client.read(
-            source_url=plan.source_url,
-            request_headers=dict(plan.request_headers),
-            temp_path=plan.temp_path,
-        )
-        if (
-            read_result.outcome is ReadOutcome.NOT_MODIFIED
-            and current_local_path is not None
-            and Path(current_local_path).exists()
+        read_result = self._read_source(plan, request_headers=plan.request_headers)
+        if read_result.outcome is ReadOutcome.NOT_MODIFIED and _file_exists(
+            current_local_path
         ):
             return self._record_hit(plan, read_result=read_result)
 
@@ -200,20 +235,23 @@ class RawObjectCache:
                 "cached file missing after not-modified response; re-reading source_url=%s",
                 plan.source_url,
             )
-            read_result = self._client.read(
-                source_url=plan.source_url,
-                request_headers={},
-                temp_path=plan.temp_path,
-            )
+            read_result = self._read_source(plan, request_headers={})
 
-        if read_result.outcome is not ReadOutcome.DOWNLOADED:
-            raise RuntimeError("client returned unexpected outcome without download")
-        if read_result.temp_path is None or read_result.sha256 is None:
-            raise RuntimeError(
-                "downloaded client result must include temp_path and sha256"
-            )
+        _ensure_downloaded(read_result)
 
         return self._record_store(plan, read_result)
+
+    def _read_source(
+        self,
+        plan: RawObjectPlan,
+        *,
+        request_headers: Mapping[str, str],
+    ) -> ClientReadResult:
+        return self._client.read(
+            source_url=plan.source_url,
+            request_headers=dict(request_headers),
+            temp_path=plan.temp_path,
+        )
 
     def get_many(
         self,
@@ -222,6 +260,18 @@ class RawObjectCache:
         changed_only: bool = True,
         unpublished_only: bool = False,
     ) -> list[RawObjectResult]:
+        """Fetch many raw objects with optional filtering.
+
+        Prefer `get_all`, `get_changed`, or `get_unpublished` for new callers. This
+        method stays as the shared implementation for those clearer wrappers.
+
+        Example:
+            ```python
+            changed = cache.get_many(requests, changed_only=True)
+            unpublished = cache.get_many(requests, changed_only=False, unpublished_only=True)
+            ```
+        """
+
         results: list[RawObjectResult] = []
         for object_request in objects:
             result = self.get(
@@ -240,14 +290,49 @@ class RawObjectCache:
         return results
 
     def get_all(self, objects: Iterable[RawObjectRequest]) -> list[RawObjectResult]:
+        """Fetch every requested object and return hits plus downloads.
+
+        Example:
+            ```python
+            results = cache.get_all([
+                RawObjectRequest(
+                    dataset_name="market-history",
+                    source_url=url,
+                    update_mode="mutable",
+                )
+            ])
+            ```
+        """
+
         return self.get_many(objects, changed_only=False)
 
     def get_changed(self, objects: Iterable[RawObjectRequest]) -> list[RawObjectResult]:
+        """Fetch objects and return only newly downloaded versions.
+
+        Example:
+            ```python
+            for result in cache.get_changed(requests):
+                publish(result.path)
+            ```
+        """
+
         return self.get_many(objects)
 
     def get_unpublished(
         self, objects: Iterable[RawObjectRequest]
     ) -> list[RawObjectResult]:
+        """Fetch objects and return versions not marked as published.
+
+        Use this when retrying a publication job after files have already been cached.
+
+        Example:
+            ```python
+            unpublished = cache.get_unpublished(requests)
+            publish_many(unpublished)
+            cache.mark_published_many(unpublished, publication_scope="raw-market-history")
+            ```
+        """
+
         return self.get_many(objects, changed_only=False, unpublished_only=True)
 
     def mark_published(
@@ -258,6 +343,21 @@ class RawObjectCache:
         publisher_run_id: str | None = None,
         published_at: datetime | None = None,
     ) -> None:
+        """Record that one cached version has been published.
+
+        Publication markers are idempotent for the same source, dataset, identity, and
+        checksum.
+
+        Example:
+            ```python
+            cache.mark_published(
+                result,
+                publication_scope="raw-market-history",
+                publisher_run_id="airflow-run-42",
+            )
+            ```
+        """
+
         with self._ledger.transaction():
             self._ledger.mark_published(
                 source_name=result.raw_object.source_name,
@@ -278,6 +378,14 @@ class RawObjectCache:
         publisher_run_id: str | None = None,
         published_at: datetime | None = None,
     ) -> None:
+        """Record that many cached versions have been published.
+
+        Example:
+            ```python
+            cache.mark_published_many(results, publication_scope="raw-market-orders")
+            ```
+        """
+
         for result in results:
             self.mark_published(
                 result,
@@ -287,6 +395,15 @@ class RawObjectCache:
             )
 
     def is_published(self, result: RawObjectResult) -> bool:
+        """Return whether a cached version already has a publication marker.
+
+        Example:
+            ```python
+            if not cache.is_published(result):
+                publish(result.path)
+            ```
+        """
+
         with self._ledger.transaction():
             return self._ledger.is_published(
                 source_name=result.raw_object.source_name,
@@ -297,7 +414,7 @@ class RawObjectCache:
 
     def _record_hit(
         self,
-        plan: _RawObjectPlan,
+        plan: RawObjectPlan,
         *,
         read_result: ClientReadResult | None = None,
     ) -> RawObjectResult:
@@ -323,7 +440,7 @@ class RawObjectCache:
         )
 
     def _record_store(
-        self, plan: _RawObjectPlan, read_result: ClientReadResult
+        self, plan: RawObjectPlan, read_result: ClientReadResult
     ) -> RawObjectResult:
         final_path = _build_final_path(
             raw_root=self._raw_root,
@@ -402,6 +519,21 @@ def _build_request_headers(
     return {}
 
 
+def _current_local_path(plan: RawObjectPlan) -> str | None:
+    return plan.current_version.local_path if plan.current_version else None
+
+
+def _file_exists(path: str | None) -> bool:
+    return path is not None and Path(path).exists()
+
+
+def _ensure_downloaded(read_result: ClientReadResult) -> None:
+    if read_result.outcome is not ReadOutcome.DOWNLOADED:
+        raise RuntimeError("client returned unexpected outcome without download")
+    if read_result.temp_path is None or read_result.sha256 is None:
+        raise RuntimeError("downloaded client result must include temp_path and sha256")
+
+
 def _build_temp_path(*, raw_root: Path, source_name: str) -> Path:
     source_name = _validate_path_segment(source_name, field_name="source_name")
     return raw_root / source_name / ".tmp" / f"{uuid4().hex}.download"
@@ -410,7 +542,7 @@ def _build_temp_path(*, raw_root: Path, source_name: str) -> Path:
 def _build_final_path(
     *,
     raw_root: Path,
-    plan: _RawObjectPlan,
+    plan: RawObjectPlan,
     fetched_at: datetime,
     sha256: str,
 ) -> Path:
