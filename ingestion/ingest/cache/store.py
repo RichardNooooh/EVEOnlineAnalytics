@@ -17,13 +17,12 @@ from ingest.cache.identity import (
 )
 from ingest.cache.ledger import RawObjectLedger
 from ingest.cache.models import (
-    CacheRequest,
+    CacheObject,
     CacheResult,
     CacheResultStatus,
     FetchOutcome,
     FetchResult,
     IdentityKey,
-    IdentityScalar,
     RawObjectEntry,
     RawObjectVersion,
     UpdateMode,
@@ -38,14 +37,19 @@ class Cache:
 
     Example:
         ```python
-        from ingest.cache import Cache, UpdateMode
+        from ingest.cache import Cache, CacheObject, UpdateMode
 
-        with Cache(raw_root="/data/raw", ledger_url=ledger_url) as cache:
+        with Cache(
+            dataset_name="market-history",
+            update_mode=UpdateMode.MUTABLE,
+            raw_root="/data/raw",
+            ledger_url=ledger_url,
+        ) as cache:
             result = cache.get(
-                dataset_name="market-history",
-                source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
-                update_mode=UpdateMode.MUTABLE,
-                identity_key={"source_date": "2026-01-01"},
+                CacheObject(
+                    source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
+                    identity_key={"source_date": "2026-01-01"},
+                )
             )
             print(result.path)
         ```
@@ -54,12 +58,20 @@ class Cache:
     def __init__(
         self,
         *,
+        dataset_name: str,
+        update_mode: UpdateMode,
         source_name: str = "everef",
         raw_root: str | Path = DEFAULT_RAW_ROOT,
         ledger_url: str = DEFAULT_RAW_LEDGER_URL,
         client: HttpRawObjectClient | None = None,
         ledger: RawObjectLedger | None = None,
     ) -> None:
+        self._dataset_name = _validate_path_segment(
+            dataset_name, field_name="dataset_name"
+        )
+        if not isinstance(update_mode, UpdateMode):
+            raise TypeError("update_mode must be an UpdateMode")
+        self._update_mode = update_mode
         self._source_name = _validate_path_segment(
             source_name, field_name="source_name"
         )
@@ -82,13 +94,9 @@ class Cache:
 
     def get(
         self,
+        object: CacheObject,
         *,
-        source_name: str | None = None,
-        dataset_name: str,
-        source_url: str,
-        update_mode: UpdateMode | str,
-        source_path: str | None = None,
-        identity_key: Mapping[str, IdentityScalar] | None = None,
+        plan: RawObjectFetchPlan | None = None,
     ) -> CacheResult:
         """Fetch one raw object and return its current local version.
 
@@ -99,23 +107,16 @@ class Cache:
         Example:
             ```python
             result = cache.get(
-                dataset_name="market-orders",
-                source_url="https://data.everef.net/market-orders/history/2026/file.csv.bz2",
-                update_mode="snapshot",
+                CacheObject(
+                    source_url="https://data.everef.net/market-orders/history/2026/file.csv.bz2",
+                )
             )
             if result.changed:
                 print("new file", result.path)
             ```
         """
 
-        plan = self._plan(
-            source_name=source_name,
-            dataset_name=dataset_name,
-            source_url=source_url,
-            source_path=source_path,
-            update_mode=update_mode,
-            identity_key=identity_key,
-        )
+        plan = plan or self._plan(object)
 
         current_local_path = _current_local_path(plan)
         if plan.update_mode is UpdateMode.SNAPSHOT and _file_exists(current_local_path):
@@ -150,60 +151,48 @@ class Cache:
             temp_path=plan.temp_path,
         )
 
-    def get_many(
+    def _get_many(
         self,
-        objects: Iterable[CacheRequest],
+        objects: Iterable[CacheObject],
         *,
         changed_only: bool = True,
         unpublished_only: bool = False,
     ) -> list[CacheResult]:
-        """Fetch many raw objects with optional filtering.
-
-        Prefer `get_all`, `get_changed`, or `get_unpublished` for new callers. This
-        method stays as the shared implementation for those clearer wrappers.
-
-        Example:
-            ```python
-            changed = cache.get_many(requests, changed_only=True)
-            unpublished = cache.get_many(requests, changed_only=False, unpublished_only=True)
-            ```
-        """
+        object_list = list(objects)
+        plans_by_key = self._plan_many(object_list)
 
         results: list[CacheResult] = []
-        for object_request in objects:
-            result = self.get(
-                source_name=object_request.source_name,
-                dataset_name=object_request.dataset_name,
-                source_url=object_request.source_url,
-                source_path=object_request.source_path,
-                update_mode=object_request.update_mode,
-                identity_key=object_request.identity_key,
-            )
+        for object in object_list:
+            result = self.get(object, plan=plans_by_key[id(object)])
             if changed_only and not result.changed:
                 continue
-            if unpublished_only and self.is_published(result):
-                continue
             results.append(result)
-        return results
 
-    def get_all(self, objects: Iterable[CacheRequest]) -> list[CacheResult]:
+        if not unpublished_only:
+            return results
+
+        published_versions = self._filter_published(results)
+        return [
+            result
+            for result in results
+            if (result.raw_object.identity_hash, result.version.sha256)
+            not in published_versions
+        ]
+
+    def get_all(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
         """Fetch every requested object and return hits plus downloads.
 
         Example:
             ```python
             results = cache.get_all([
-                CacheRequest(
-                    dataset_name="market-history",
-                    source_url=url,
-                    update_mode="mutable",
-                )
+                CacheObject(source_url=url)
             ])
             ```
         """
 
-        return self.get_many(objects, changed_only=False)
+        return self._get_many(objects, changed_only=False)
 
-    def get_changed(self, objects: Iterable[CacheRequest]) -> list[CacheResult]:
+    def get_changed(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
         """Fetch objects and return only newly downloaded versions.
 
         Example:
@@ -213,9 +202,9 @@ class Cache:
             ```
         """
 
-        return self.get_many(objects)
+        return self._get_many(objects)
 
-    def get_unpublished(self, objects: Iterable[CacheRequest]) -> list[CacheResult]:
+    def get_unpublished(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
         """Fetch objects and return versions not marked as published.
 
         Use this when retrying a publication job after files have already been cached.
@@ -228,7 +217,7 @@ class Cache:
             ```
         """
 
-        return self.get_many(objects, changed_only=False, unpublished_only=True)
+        return self._get_many(objects, changed_only=False, unpublished_only=True)
 
     def mark_published(
         self,
@@ -400,67 +389,122 @@ class Cache:
             version=version,
         )
 
-    def _plan(
-        self,
-        *,
-        source_name: str | None,
-        dataset_name: str,
-        source_url: str,
-        update_mode: UpdateMode | str,
-        source_path: str | None = None,
-        identity_key: Mapping[str, IdentityScalar] | None = None,
-    ) -> RawObjectFetchPlan:
-        resolved_source_name = source_name or self._source_name
-        resolved_mode = UpdateMode(update_mode)
-        source_relative_path = (
-            normalize_source_path(source_path)
-            if source_path is not None
-            else normalize_source_relative_path(source_url)
-        )
-        resolved_identity_key = resolve_identity_key(
-            identity_key=identity_key,
-            source_relative_path=source_relative_path,
-        )
-        identity_hash = hash_identity_key(resolved_identity_key)
+    def _plan(self, object: CacheObject) -> RawObjectFetchPlan:
+        plan = self._base_plan(object)
 
         with self._ledger.transaction():
             raw_object = self._ledger.load_raw_object(
-                source_name=resolved_source_name,
-                dataset_name=dataset_name,
-                identity_hash=identity_hash,
+                source_name=plan.source_name,
+                dataset_name=plan.dataset_name,
+                identity_hash=plan.identity_hash,
             )
+            _require_update_mode(raw_object, plan.update_mode)
             current_version = (
                 self._ledger.load_latest_version(raw_object.id)
                 if raw_object is not None
                 else None
             )
-            if raw_object is not None and raw_object.update_mode is not resolved_mode:
-                raise ValueError(
-                    "raw object update_mode mismatch: "
-                    f"stored={raw_object.update_mode.value} requested={resolved_mode.value}"
-                )
 
-        return RawObjectFetchPlan(
-            source_name=resolved_source_name,
-            dataset_name=dataset_name,
-            source_url=source_url,
-            source_relative_path=source_relative_path,
-            update_mode=resolved_mode,
-            identity_key=resolved_identity_key,
-            identity_hash=identity_hash,
-            request_headers=_build_request_headers(current_version, resolved_mode),
-            temp_path=str(
-                _build_temp_path(
-                    raw_root=self._raw_root, source_name=resolved_source_name
-                )
-            ),
+        return replace(
+            plan,
+            request_headers=_build_request_headers(current_version, plan.update_mode),
             raw_object=raw_object,
             current_version=current_version,
         )
 
+    def _plan_many(
+        self, objects: Iterable[CacheObject]
+    ) -> dict[int, RawObjectFetchPlan]:
+        base_plans = [self._base_plan(object) for object in objects]
+        grouped_plans: dict[tuple[str, str], list[RawObjectFetchPlan]] = {}
+        for plan in base_plans:
+            grouped_plans.setdefault((plan.source_name, plan.dataset_name), []).append(
+                plan
+            )
+
+        resolved_plans: dict[int, RawObjectFetchPlan] = {}
+        with self._ledger.transaction():
+            for (source_name, dataset_name), plans in grouped_plans.items():
+                raw_objects = self._ledger.load_raw_objects(
+                    source_name=source_name,
+                    dataset_name=dataset_name,
+                    identity_hashes=[plan.identity_hash for plan in plans],
+                )
+                current_versions = self._ledger.load_latest_versions(
+                    [raw_object.id for raw_object in raw_objects.values()]
+                )
+                for plan in plans:
+                    raw_object = raw_objects.get(plan.identity_hash)
+                    _require_update_mode(raw_object, plan.update_mode)
+                    current_version = (
+                        current_versions.get(raw_object.id)
+                        if raw_object is not None
+                        else None
+                    )
+                    resolved_plans[plan.object_key] = replace(
+                        plan,
+                        request_headers=_build_request_headers(
+                            current_version, plan.update_mode
+                        ),
+                        raw_object=raw_object,
+                        current_version=current_version,
+                    )
+
+        return resolved_plans
+
+    def _base_plan(self, object: CacheObject) -> RawObjectFetchPlan:
+        source_relative_path = (
+            normalize_source_path(object.source_path)
+            if object.source_path is not None
+            else normalize_source_relative_path(object.source_url)
+        )
+        resolved_identity_key = resolve_identity_key(
+            identity_key=object.identity_key,
+            source_relative_path=source_relative_path,
+        )
+        identity_hash = hash_identity_key(resolved_identity_key)
+
+        return RawObjectFetchPlan(
+            object_key=id(object),
+            source_name=self._source_name,
+            dataset_name=self._dataset_name,
+            source_url=object.source_url,
+            source_relative_path=source_relative_path,
+            update_mode=self._update_mode,
+            identity_key=resolved_identity_key,
+            identity_hash=identity_hash,
+            request_headers={},
+            temp_path=str(
+                _build_temp_path(raw_root=self._raw_root, source_name=self._source_name)
+            ),
+            raw_object=None,
+            current_version=None,
+        )
+
+    def _filter_published(self, results: Iterable[CacheResult]) -> set[tuple[str, str]]:
+        result_list = list(results)
+        grouped_results: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        for result in result_list:
+            grouped_results.setdefault(
+                (result.raw_object.source_name, result.raw_object.dataset_name), []
+            ).append((result.raw_object.identity_hash, result.version.sha256))
+
+        published_versions: set[tuple[str, str]] = set()
+        with self._ledger.transaction():
+            for (source_name, dataset_name), versions in grouped_results.items():
+                published_versions.update(
+                    self._ledger.filter_published(
+                        source_name=source_name,
+                        dataset_name=dataset_name,
+                        versions=versions,
+                    )
+                )
+        return published_versions
+
 
 @dataclass(frozen=True)
 class RawObjectFetchPlan:
+    object_key: int
     source_name: str
     dataset_name: str
     source_url: str
@@ -485,6 +529,17 @@ def _build_request_headers(
     if current_version.last_modified:
         return {"If-Modified-Since": current_version.last_modified}
     return {}
+
+
+def _require_update_mode(
+    raw_object: RawObjectEntry | None, update_mode: UpdateMode
+) -> None:
+    if raw_object is None or raw_object.update_mode is update_mode:
+        return
+    raise ValueError(
+        "raw object update_mode mismatch: "
+        f"stored={raw_object.update_mode.value} requested={update_mode.value}"
+    )
 
 
 def _current_local_path(plan: RawObjectFetchPlan) -> str | None:

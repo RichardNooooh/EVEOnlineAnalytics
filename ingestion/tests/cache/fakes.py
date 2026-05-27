@@ -16,6 +16,9 @@ class InMemoryRawObjectLedger:
         self._raw_objects_by_key: dict[tuple[str, str, str], RawObjectEntry] = {}
         self._versions_by_object_id: dict[str, list[RawObjectVersion]] = {}
         self._publications: set[tuple[str, str, str, str]] = set()
+        self.load_raw_objects_calls = 0
+        self.load_latest_versions_calls = 0
+        self.filter_published_calls = 0
 
     def open(self) -> None:
         self._is_open = True
@@ -38,10 +41,41 @@ class InMemoryRawObjectLedger:
         self._require_open()
         return self._raw_objects_by_key.get((source_name, dataset_name, identity_hash))
 
+    def load_raw_objects(
+        self,
+        *,
+        source_name: str,
+        dataset_name: str,
+        identity_hashes: list[str],
+    ) -> dict[str, RawObjectEntry]:
+        self._require_open()
+        self.load_raw_objects_calls += 1
+        return {
+            identity_hash: raw_object
+            for identity_hash in identity_hashes
+            if (
+                raw_object := self._raw_objects_by_key.get(
+                    (source_name, dataset_name, identity_hash)
+                )
+            )
+            is not None
+        }
+
     def load_latest_version(self, raw_object_id: str) -> RawObjectVersion | None:
         self._require_open()
         versions = self._versions_by_object_id.get(raw_object_id, [])
         return versions[0] if versions else None
+
+    def load_latest_versions(
+        self, raw_object_ids: list[str]
+    ) -> dict[str, RawObjectVersion]:
+        self._require_open()
+        self.load_latest_versions_calls += 1
+        return {
+            raw_object_id: versions[0]
+            for raw_object_id in raw_object_ids
+            if (versions := self._versions_by_object_id.get(raw_object_id))
+        }
 
     def touch_raw_object(
         self,
@@ -151,6 +185,21 @@ class InMemoryRawObjectLedger:
     ) -> bool:
         self._require_open()
         return (source_name, dataset_name, identity_hash, sha256) in self._publications
+
+    def filter_published(
+        self,
+        *,
+        source_name: str,
+        dataset_name: str,
+        versions: list[tuple[str, str]],
+    ) -> set[tuple[str, str]]:
+        self._require_open()
+        self.filter_published_calls += 1
+        return {
+            (identity_hash, sha256)
+            for identity_hash, sha256 in versions
+            if (source_name, dataset_name, identity_hash, sha256) in self._publications
+        }
 
     def _require_open(self) -> None:
         if not self._is_open:

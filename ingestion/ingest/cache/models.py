@@ -10,30 +10,32 @@ IdentityKey: TypeAlias = Mapping[str, IdentityScalar]
 
 
 class UpdateMode(StrEnum):
+    """Cache behavior for how source object changes over time.
+
+    `SNAPSHOT` means URL points at immutable content, so cache can trust local file
+    once stored. `MUTABLE` means URL may change in place, so cache must re-check
+    origin with conditional requests.
+    """
+
     SNAPSHOT = "snapshot"
     MUTABLE = "mutable"
 
 
 @dataclass(frozen=True)
-class CacheRequest:
-    """Description of one raw object to acquire.
+class CacheObject:
+    """Per-object description of one raw object to acquire.
 
     Example:
         ```python
-        request = CacheRequest(
-            dataset_name="market-history",
+        object_ref = CacheObject(
             source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
-            update_mode="mutable",
             identity_key={"source_date": "2026-01-01"},
         )
         ```
     """
 
-    dataset_name: str
     source_url: str
-    update_mode: UpdateMode | str
     identity_key: IdentityKey | None = None
-    source_name: str | None = None
     source_path: str | None = None
 
 
@@ -43,7 +45,7 @@ class CacheResult:
 
     Example:
         ```python
-        result = cache.get(...)
+        result = cache.get(CacheObject(source_url=url))
         if result.changed:
             print("downloaded", result.path)
         ```
@@ -105,17 +107,35 @@ class CacheResult:
 
 
 class CacheResultStatus(StrEnum):
+    """Result of cache lookup for one object.
+
+    `HIT` means cache reused existing local version. `STORED` means cache fetched
+    and recorded new local version.
+    """
+
     HIT = "hit"
     STORED = "stored"
 
 
 class FetchOutcome(StrEnum):
+    """Low-level HTTP read outcome from cache client.
+
+    `NOT_MODIFIED` means origin confirmed existing cached version still current.
+    `DOWNLOADED` means client wrote fresh content to temporary storage.
+    """
+
     NOT_MODIFIED = "not_modified"
     DOWNLOADED = "downloaded"
 
 
 @dataclass(frozen=True)
 class RawObjectEntry:
+    """Ledger record for logical raw object identity.
+
+    One entry tracks stable object identity, cache policy, and last-observed remote
+    metadata across version fetches.
+    """
+
     id: str
     source_name: str
     dataset_name: str
@@ -131,6 +151,12 @@ class RawObjectEntry:
 
 @dataclass(frozen=True)
 class RawObjectVersion:
+    """Ledger record for one concrete fetched version of raw object.
+
+    Stores provenance, fetch metadata, checksum, and local filesystem path for one
+    cached payload.
+    """
+
     id: str
     raw_object_id: str
     source_url: str
@@ -145,6 +171,12 @@ class RawObjectVersion:
 
 @dataclass(frozen=True)
 class FetchResult:
+    """Result returned by cache client after reading source object.
+
+    Carries HTTP freshness metadata for not-modified checks or downloaded file
+    metadata for newly fetched content.
+    """
+
     outcome: FetchOutcome
     fetched_at: datetime
     etag: str | None = None

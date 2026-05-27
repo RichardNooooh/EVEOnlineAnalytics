@@ -20,6 +20,7 @@ from sqlalchemy import (
     create_engine,
     delete,
     select,
+    tuple_,
     update,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -145,6 +146,27 @@ class RawObjectLedger:
             return None
         return _row_to_raw_object(row)
 
+    def load_raw_objects(
+        self,
+        *,
+        source_name: str,
+        dataset_name: str,
+        identity_hashes: list[str],
+    ) -> dict[str, RawObjectEntry]:
+        if not identity_hashes:
+            return {}
+        rows = self._fetchall(
+            select(raw_objects).where(
+                raw_objects.c.source_name == source_name,
+                raw_objects.c.dataset_name == dataset_name,
+                raw_objects.c.identity_hash.in_(identity_hashes),
+            )
+        )
+        return {
+            raw_object.identity_hash: raw_object
+            for raw_object in (_row_to_raw_object(row) for row in rows)
+        }
+
     def load_latest_version(self, raw_object_id: str) -> RawObjectVersion | None:
         row = self._fetchone(
             select(raw_object_versions)
@@ -158,6 +180,26 @@ class RawObjectLedger:
         if row is None:
             return None
         return _row_to_raw_object_version(row)
+
+    def load_latest_versions(
+        self, raw_object_ids: list[str]
+    ) -> dict[str, RawObjectVersion]:
+        if not raw_object_ids:
+            return {}
+        rows = self._fetchall(
+            select(raw_object_versions)
+            .where(raw_object_versions.c.raw_object_id.in_(raw_object_ids))
+            .order_by(
+                raw_object_versions.c.raw_object_id,
+                raw_object_versions.c.fetched_at.desc(),
+                raw_object_versions.c.id.desc(),
+            )
+        )
+        latest_versions: dict[str, RawObjectVersion] = {}
+        for row in rows:
+            version = _row_to_raw_object_version(row)
+            latest_versions.setdefault(version.raw_object_id, version)
+        return latest_versions
 
     def touch_raw_object(
         self,
@@ -324,6 +366,30 @@ class RawObjectLedger:
             )
         )
         return row is not None
+
+    def filter_published(
+        self,
+        *,
+        source_name: str,
+        dataset_name: str,
+        versions: list[tuple[str, str]],
+    ) -> set[tuple[str, str]]:
+        if not versions:
+            return set()
+        rows = self._fetchall(
+            select(
+                raw_object_publications.c.identity_hash,
+                raw_object_publications.c.sha256,
+            ).where(
+                raw_object_publications.c.source_name == source_name,
+                raw_object_publications.c.dataset_name == dataset_name,
+                tuple_(
+                    raw_object_publications.c.identity_hash,
+                    raw_object_publications.c.sha256,
+                ).in_(versions),
+            )
+        )
+        return {(row["identity_hash"], row["sha256"]) for row in rows}
 
     def _bootstrap(self) -> None:
         con = self._require_open()
