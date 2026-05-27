@@ -1,3 +1,10 @@
+"""Ledger runtime for raw object metadata and version tracking.
+
+``RawObjectLedger`` manages a SQLAlchemy engine and bootstraps the schema on
+first use.  ``RawObjectLedgerTx`` provides the actual CRUD operations inside an
+auto-committed transaction block.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -36,13 +43,25 @@ from ingest.cache.models import (
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
-    RevalidationMetadata,
     ResolvedFetchPlan,
+    RevalidationMetadata,
 )
 
 
 class RawObjectLedger:
+    """Manages the SQLAlchemy engine and schema for raw object metadata.
+
+    Uses PostgreSQL as the backing store.  The schema is created automatically
+    on first transaction unless a pre-existing ledger is supplied.
+    """
+
     def __init__(self, *, ledger_url: str) -> None:
+        """Create a new ledger connected to ``ledger_url``.
+
+        Args:
+            ledger_url: SQLAlchemy-compatible PostgreSQL URL.  Non-standard
+                ``postgres://`` prefixes are normalised to ``postgresql+psycopg``.
+        """
         self._engine = create_engine(normalize_ledger_url(ledger_url))
         self._bootstrapped = False
 
@@ -58,10 +77,19 @@ class RawObjectLedger:
         self.close()
 
     def close(self) -> None:
+        """Dispose the SQLAlchemy engine and release connections."""
         self._engine.dispose()
 
     @contextmanager
     def transaction(self) -> Iterator[RawObjectLedgerTx]:
+        """Yield a ``RawObjectLedgerTx`` inside an auto-committed transaction.
+
+        Bootstraps the schema on first call.  If the wrapped code raises an
+        exception the transaction is rolled back.
+
+        Yields:
+            A transaction-bound ledger accessor.
+        """
         self._bootstrap()
         with self._engine.begin() as con:
             yield RawObjectLedgerTx(con)
@@ -75,7 +103,18 @@ class RawObjectLedger:
 
 
 class RawObjectLedgerTx:
+    """Transaction-scoped accessor for raw object ledger tables.
+
+    All operations run against the same SQLAlchemy connection and are committed
+    (or rolled back) by the surrounding ``RawObjectLedger.transaction()`` context.
+    """
+
     def __init__(self, con: Connection) -> None:
+        """Create a new transaction accessor.
+
+        Args:
+            con: An active SQLAlchemy connection with a running transaction.
+        """
         self._con = con
 
     def load_raw_object(
@@ -83,6 +122,14 @@ class RawObjectLedgerTx:
         *,
         ref: RawObjectRef,
     ) -> RawObjectEntry | None:
+        """Lookup one raw object by its composite key.
+
+        Args:
+            ref: Composite key (source, dataset, identity_hash).
+
+        Returns:
+            The existing entry or ``None`` when not found.
+        """
         row = self._fetchone(
             select(raw_objects).where(
                 raw_objects.c.source_name == ref.source_name,
@@ -100,6 +147,15 @@ class RawObjectLedgerTx:
         group_key: tuple[str, str],
         identity_hashes: list[str],
     ) -> dict[str, RawObjectEntry]:
+        """Batch-lookup raw objects inside one (source, dataset) group.
+
+        Args:
+            group_key: ``(source_name, dataset_name)`` tuple.
+            identity_hashes: List of identity hashes to fetch.
+
+        Returns:
+            Dict mapping ``identity_hash`` to ``RawObjectEntry``.
+        """
         if not identity_hashes:
             return {}
         source_name, dataset_name = group_key
@@ -116,6 +172,14 @@ class RawObjectLedgerTx:
         }
 
     def load_latest_version(self, raw_object_id: str) -> RawObjectVersion | None:
+        """Return the most recently stored version for a raw object.
+
+        Args:
+            raw_object_id: Internal UUID of the raw object.
+
+        Returns:
+            The latest version or ``None`` when no versions exist.
+        """
         row = self._fetchone(
             select(raw_object_versions).where(
                 raw_object_versions.c.raw_object_id == raw_object_id
@@ -128,6 +192,14 @@ class RawObjectLedgerTx:
     def load_latest_versions(
         self, raw_object_ids: list[str]
     ) -> dict[str, RawObjectVersion]:
+        """Batch-lookup the latest version for many raw objects.
+
+        Args:
+            raw_object_ids: Internal UUIDs to resolve.
+
+        Returns:
+            Dict mapping ``raw_object_id`` to ``RawObjectVersion``.
+        """
         if not raw_object_ids:
             return {}
         rows = self._fetchall(
@@ -141,11 +213,36 @@ class RawObjectLedgerTx:
         }
 
     def resolve_fetch_plan(self, base_plan: BaseFetchPlan) -> ResolvedFetchPlan:
+        """Resolve a single fetch plan against the ledger.
+
+        Args:
+            base_plan: Plan built from a ``CacheObject``.
+
+        Returns:
+            Plan enriched with ledger state.
+
+        Raises:
+            ValueError: If the stored ``update_mode`` does not match the plan.
+        """
         return self.resolve_fetch_plans([base_plan])[0]
 
     def resolve_fetch_plans(
         self, base_plans: list[BaseFetchPlan]
     ) -> list[ResolvedFetchPlan]:
+        """Batch-resolve fetch plans while preserving input order.
+
+        Queries the ledger in grouped batches by ``(source_name, dataset_name)``
+        for efficiency.
+
+        Args:
+            base_plans: Plans built from ``CacheObject`` descriptions.
+
+        Returns:
+            Resolved plans in the same order as the input list.
+
+        Raises:
+            ValueError: If any stored ``update_mode`` does not match its plan.
+        """
         if not base_plans:
             return []
 
@@ -199,6 +296,20 @@ class RawObjectLedgerTx:
         checked_at: datetime,
         revalidation: RevalidationMetadata | None = None,
     ) -> RawObjectEntry:
+        """Upsert a raw object entry and update its revalidation metadata.
+
+        Inserts a new row when the object has never been seen.  Otherwise
+        updates ``last_checked_at`` and merges revalidation fields.
+
+        Args:
+            definition: Immutable description of the object.
+            checked_at: Timestamp for this observation.
+            revalidation: Fresh revalidation metadata from the origin.  Merged
+                with existing fields so that non-``None`` values win.
+
+        Returns:
+            The inserted or updated ``RawObjectEntry``.
+        """
         existing = self.load_raw_object(ref=definition.ref)
         revalidation = revalidation or RevalidationMetadata()
         if existing is None:
@@ -239,6 +350,21 @@ class RawObjectLedgerTx:
         local_path: str,
         storage_encoding: str,
     ) -> ReplaceCurrentVersionResult:
+        """Store a new version and delete previous ones for the same object.
+
+        Args:
+            definition: Immutable description of the object.
+            source_url: Origin URL that produced this payload.
+            fetched_at: Timestamp when the download completed.
+            revalidation: Revalidation metadata observed from the response.
+            sha256: Hex digest of the downloaded payload.
+            local_path: Final filesystem path where the payload is stored.
+            storage_encoding: Detected file encoding (e.g. ``bz2`` or ``raw``).
+
+        Returns:
+            Result bundling the updated raw object, the new version, and any
+            stale versions that were replaced.
+        """
         raw_object = self.touch_raw_object(
             definition=definition,
             checked_at=fetched_at,
@@ -282,6 +408,17 @@ class RawObjectLedgerTx:
         version_id: str,
         context: PublicationContext,
     ) -> None:
+        """Idempotently record that a version has been published.
+
+        Uses PostgreSQL ``ON CONFLICT DO NOTHING`` so repeated calls with the
+        same ``(source, dataset, identity, sha256)`` are safe no-ops.
+
+        Args:
+            ref: Composite key of the raw object.
+            sha256: Checksum of the published version.
+            version_id: Internal version UUID.
+            context: Publication scope and run metadata.
+        """
         statement = pg_insert(raw_object_publications).values(
             **raw_object_publication_values(
                 ref=ref,
@@ -307,6 +444,15 @@ class RawObjectLedgerTx:
         ref: RawObjectRef,
         sha256: str,
     ) -> bool:
+        """Check whether a specific version has a publication marker.
+
+        Args:
+            ref: Composite key of the raw object.
+            sha256: Checksum of the version to check.
+
+        Returns:
+            ``True`` when a marker exists.
+        """
         row = self._fetchone(
             select(raw_object_publications.c.id).where(
                 raw_object_publications.c.source_name == ref.source_name,
@@ -323,6 +469,15 @@ class RawObjectLedgerTx:
         group_key: tuple[str, str],
         versions: list[tuple[str, str]],
     ) -> set[tuple[str, str]]:
+        """Return the subset of versions that already have publication markers.
+
+        Args:
+            group_key: ``(source_name, dataset_name)`` tuple.
+            versions: List of ``(identity_hash, sha256)`` tuples to test.
+
+        Returns:
+            Set of tuples that are already published.
+        """
         if not versions:
             return set()
         source_name, dataset_name = group_key
