@@ -33,6 +33,7 @@ from ingest.cache.models import (
     ReadStatus,
     ResolvedFetchPlan,
     RevalidationMetadata,
+    UnresolvedFetchPlan,
     UpdateMode,
 )
 from ingest.cache.paths import (
@@ -148,6 +149,14 @@ class Cache:
         objects use ``ETag`` or ``Last-Modified`` headers to avoid downloading unchanged
         files.
 
+        Resolution dispatch::
+
+            get()
+              ├─ _handle_resolved()                # plan has ledger state
+              │    ├─ _try_local_hit()             # SNAPSHOT + file exists -> HIT
+              │    └─ _fetch_with_revalidation()   # conditional GET -> HIT or STORED
+              └─ _handle_unresolved()              # no ledger state -> STORED
+
         Args:
             cache_object: Description of the source object to fetch.
             plan: Optional pre-resolved fetch plan.  When omitted the plan is
@@ -173,33 +182,57 @@ class Cache:
         """
 
         plan = plan or self._plan(cache_object)
-        current_local_path = _current_local_path(plan, raw_root=self._raw_root)
+        if isinstance(plan, ResolvedFetchPlan):
+            return self._handle_resolved(plan)
+        return self._handle_unresolved(plan)
 
-        # fast path: SNAPSHOT with cached file and known ledger state
-        if (
-            isinstance(plan, ResolvedFetchPlan)
-            and plan.update_mode is UpdateMode.SNAPSHOT
-            and _file_exists(current_local_path)
-        ):
+    def _handle_unresolved(self, plan: UnresolvedFetchPlan) -> CacheResult:
+        """No ledger state; must fetch unconditionally."""
+        read_result = self._read_source(plan, request_headers={})
+        # Defensive guard: some servers return 304 even without conditional
+        # headers (misconfiguration, CDN behaviour, stale cache layers).
+        # Re-read unconditionally to recover.
+        if read_result.status is ReadStatus.NOT_MODIFIED:
+            logger.info(
+                "not-modified response but no ledger state; re-reading source_url=%s",
+                plan.source_url,
+            )
+            read_result = self._read_source(plan, request_headers={})
+        return self._record_store(plan, _ensure_downloaded(read_result))
+
+    def _handle_resolved(self, plan: ResolvedFetchPlan) -> CacheResult:
+        """Try local cache hit, fall back to conditional fetch."""
+        hit = self._try_local_hit(plan)
+        if hit is not None:
+            return hit
+        return self._fetch_with_revalidation(plan)
+
+    def _try_local_hit(self, plan: ResolvedFetchPlan) -> CacheResult | None:
+        """SNAPSHOT with cached file on disk -> HIT, no remote call."""
+        if plan.update_mode is UpdateMode.SNAPSHOT and _file_exists(plan.current_version.local_path):
             return self._record_hit(plan)
+        return None
 
+    def _fetch_with_revalidation(self, plan: ResolvedFetchPlan) -> CacheResult:
+        """Conditional GET; record HIT on 304 or STORED on 200.
+
+        This is the full revalidation path for resolved plans: send conditional
+        headers, then either confirm a cache hit (304) or download and store a
+        new version (200).
+        """
         read_result = self._read_source(
             plan,
             request_headers=_request_headers_for(plan, plan.update_mode),
         )
-
-        # server says not-modified; need to validate local state
         if read_result.status is ReadStatus.NOT_MODIFIED:
-            if isinstance(plan, ResolvedFetchPlan) and _file_exists(current_local_path):
+            if _file_exists(plan.current_version.local_path):
                 return self._record_hit(plan, read_result=read_result)
             logger.info(
                 "not-modified response but local state incomplete; re-reading source_url=%s",
                 plan.source_url,
             )
             read_result = self._read_source(plan, request_headers={})
-
-        modified_result = _ensure_downloaded(read_result)
-        return self._record_store(plan, modified_result)
+        return self._record_store(plan, _ensure_downloaded(read_result))
 
     def _read_source(
         self,
