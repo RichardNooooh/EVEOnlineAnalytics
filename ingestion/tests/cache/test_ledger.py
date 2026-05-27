@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ingest.cache.ledger import RawObjectLedger
+from ingest.cache.ledger import runtime as ledger_runtime
 
 
 class FakeBegin:
@@ -41,7 +42,7 @@ def test_ledger_lifecycle(monkeypatch) -> None:
     engine = FakeEngine(connection)
     bootstrap_calls = 0
 
-    monkeypatch.setattr("ingest.cache.ledger.create_engine", lambda url: engine)
+    monkeypatch.setattr(ledger_runtime, "create_engine", lambda url: engine)
     ledger = RawObjectLedger(ledger_url="postgresql://user:pass@host/db")
 
     def _bootstrap(self) -> None:

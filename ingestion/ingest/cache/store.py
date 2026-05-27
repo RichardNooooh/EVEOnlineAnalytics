@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -17,14 +16,15 @@ from ingest.cache.identity import (
 )
 from ingest.cache.ledger import RawObjectLedger
 from ingest.cache.models import (
+    BaseFetchPlan,
     CacheObject,
     CacheResult,
     CacheResultStatus,
     FetchOutcome,
     FetchResult,
-    IdentityKey,
     RawObjectEntry,
-    RawObjectVersion,
+    RevalidationMetadata,
+    ResolvedFetchPlan,
     UpdateMode,
 )
 from ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
@@ -93,9 +93,9 @@ class Cache:
 
     def get(
         self,
-        object: CacheObject,
+        cache_object: CacheObject,
         *,
-        plan: RawObjectFetchPlan | None = None,
+        plan: ResolvedFetchPlan | None = None,
     ) -> CacheResult:
         """Fetch one raw object and return its current local version.
 
@@ -115,17 +115,31 @@ class Cache:
             ```
         """
 
-        plan = plan or self._plan(object)
+        plan = plan or self._plan(cache_object)
 
-        current_local_path = _current_local_path(plan)
+        current_local_path = _current_local_path(plan, raw_root=self._raw_root)
         if plan.update_mode is UpdateMode.SNAPSHOT and _file_exists(current_local_path):
-            return self._record_hit(plan)
+            if plan.current_version is not None:
+                return self._record_hit(plan)
+            logger.info(
+                "cached file missing ledger state; re-reading source_url=%s",
+                plan.source_url,
+            )
 
-        read_result = self._read_source(plan, request_headers=plan.request_headers)
+        read_result = self._read_source(
+            plan,
+            request_headers=_request_headers_for(plan.raw_object, plan.update_mode),
+        )
         if read_result.outcome is FetchOutcome.NOT_MODIFIED and _file_exists(
             current_local_path
         ):
-            return self._record_hit(plan, read_result=read_result)
+            if plan.current_version is not None:
+                return self._record_hit(plan, read_result=read_result)
+            logger.info(
+                "not-modified response missing ledger state; re-reading source_url=%s",
+                plan.source_url,
+            )
+            read_result = self._read_source(plan, request_headers={})
 
         if read_result.outcome is FetchOutcome.NOT_MODIFIED:
             logger.info(
@@ -140,7 +154,7 @@ class Cache:
 
     def _read_source(
         self,
-        plan: RawObjectFetchPlan,
+        plan: BaseFetchPlan,
         *,
         request_headers: Mapping[str, str],
     ) -> FetchResult:
@@ -158,11 +172,11 @@ class Cache:
         unpublished_only: bool = False,
     ) -> list[CacheResult]:
         object_list = list(objects)
-        plans_by_key = self._plan_many(object_list)
+        plans = self._plan_many(object_list)
 
         results: list[CacheResult] = []
-        for object in object_list:
-            result = self.get(object, plan=plans_by_key[id(object)])
+        for cache_object, plan in zip(object_list, plans, strict=True):
+            result = self.get(cache_object, plan=plan)
             if changed_only and not result.changed:
                 continue
             results.append(result)
@@ -303,10 +317,12 @@ class Cache:
 
     def _record_hit(
         self,
-        plan: RawObjectFetchPlan,
+        plan: ResolvedFetchPlan,
         *,
         read_result: FetchResult | None = None,
     ) -> CacheResult:
+        if plan.current_version is None:
+            raise RuntimeError("hit recording requires current_version")
         checked_at = (
             read_result.fetched_at if read_result is not None else datetime.now(UTC)
         )
@@ -318,10 +334,8 @@ class Cache:
                 identity_hash=plan.identity_hash,
                 update_mode=plan.update_mode,
                 checked_at=checked_at,
-                current_version=plan.current_version,
+                revalidation=_revalidation_for_hit(plan, read_result),
             )
-        if plan.current_version is None:
-            raise RuntimeError("current_version is required for cache hit")
         return CacheResult(
             status=CacheResultStatus.HIT,
             raw_object=raw_object,
@@ -329,7 +343,7 @@ class Cache:
         )
 
     def _record_store(
-        self, plan: RawObjectFetchPlan, read_result: FetchResult
+        self, plan: ResolvedFetchPlan, read_result: FetchResult
     ) -> CacheResult:
         final_path = _build_final_path(
             raw_root=self._raw_root,
@@ -340,22 +354,14 @@ class Cache:
         final_path.parent.mkdir(parents=True, exist_ok=True)
         Path(read_result.temp_path).replace(final_path)
 
-        previous_versions: list[RawObjectVersion] = []
-        version: RawObjectVersion | None = None
         try:
             with self._ledger.transaction() as tx:
-                raw_object = tx.touch_raw_object(
+                stored = tx.replace_current_version(
                     source_name=plan.source_name,
                     dataset_name=plan.dataset_name,
                     identity_key=plan.identity_key,
                     identity_hash=plan.identity_hash,
                     update_mode=plan.update_mode,
-                    checked_at=read_result.fetched_at,
-                    current_version=plan.current_version,
-                )
-                version = RawObjectVersion(
-                    id=uuid4().hex,
-                    raw_object_id=raw_object.id,
                     source_url=plan.source_url,
                     fetched_at=read_result.fetched_at,
                     etag=read_result.etag,
@@ -365,125 +371,56 @@ class Cache:
                     local_path=str(final_path),
                     storage_encoding=_detect_storage_encoding(final_path),
                 )
-                previous_versions = tx.list_versions(raw_object.id)
-                tx.insert_version(version)
-                raw_object = replace(
-                    raw_object,
-                    last_checked_at=read_result.fetched_at,
-                    last_seen_etag=read_result.etag,
-                    last_seen_last_modified=read_result.last_modified,
-                    last_seen_content_length=read_result.content_length,
-                )
         except Exception:
             final_path.unlink(missing_ok=True)
             raise
 
-        if version is None:
-            raise RuntimeError("stored version was not created")
-
-        if previous_versions:
-            with self._ledger.transaction() as tx:
-                tx.delete_versions([stale.id for stale in previous_versions])
-            for stale_version in previous_versions:
-                if stale_version.local_path != version.local_path:
-                    Path(stale_version.local_path).unlink(missing_ok=True)
+        for stale_version in stored.stale_versions:
+            if stale_version.local_path != stored.version.local_path:
+                Path(stale_version.local_path).unlink(missing_ok=True)
 
         return CacheResult(
             status=CacheResultStatus.STORED,
-            raw_object=raw_object,
-            version=version,
+            raw_object=stored.raw_object,
+            version=stored.version,
         )
 
-    def _plan(self, object: CacheObject) -> RawObjectFetchPlan:
-        plan = self._base_plan(object)
+    def _plan(self, cache_object: CacheObject) -> ResolvedFetchPlan:
+        base_plan = self._base_plan(cache_object)
 
         with self._ledger.transaction() as tx:
-            raw_object = tx.load_raw_object(
-                source_name=plan.source_name,
-                dataset_name=plan.dataset_name,
-                identity_hash=plan.identity_hash,
-            )
-            _require_update_mode(raw_object, plan.update_mode)
-            current_version = (
-                tx.load_latest_version(raw_object.id)
-                if raw_object is not None
-                else None
-            )
-
-        return replace(
-            plan,
-            request_headers=_build_request_headers(current_version, plan.update_mode),
-            raw_object=raw_object,
-            current_version=current_version,
-        )
+            return tx.resolve_fetch_plan(base_plan)
 
     def _plan_many(
-        self, objects: Iterable[CacheObject]
-    ) -> dict[int, RawObjectFetchPlan]:
-        base_plans = [self._base_plan(object) for object in objects]
-        grouped_plans: dict[tuple[str, str], list[RawObjectFetchPlan]] = {}
-        for plan in base_plans:
-            grouped_plans.setdefault((plan.source_name, plan.dataset_name), []).append(
-                plan
-            )
-
-        resolved_plans: dict[int, RawObjectFetchPlan] = {}
+        self, cache_objects: Iterable[CacheObject]
+    ) -> list[ResolvedFetchPlan]:
+        base_plans = [self._base_plan(cache_object) for cache_object in cache_objects]
         with self._ledger.transaction() as tx:
-            for (source_name, dataset_name), plans in grouped_plans.items():
-                raw_objects = tx.load_raw_objects(
-                    source_name=source_name,
-                    dataset_name=dataset_name,
-                    identity_hashes=[plan.identity_hash for plan in plans],
-                )
-                current_versions = tx.load_latest_versions(
-                    [raw_object.id for raw_object in raw_objects.values()]
-                )
-                for plan in plans:
-                    raw_object = raw_objects.get(plan.identity_hash)
-                    _require_update_mode(raw_object, plan.update_mode)
-                    current_version = (
-                        current_versions.get(raw_object.id)
-                        if raw_object is not None
-                        else None
-                    )
-                    resolved_plans[plan.object_key] = replace(
-                        plan,
-                        request_headers=_build_request_headers(
-                            current_version, plan.update_mode
-                        ),
-                        raw_object=raw_object,
-                        current_version=current_version,
-                    )
+            return tx.resolve_fetch_plans(base_plans)
 
-        return resolved_plans
-
-    def _base_plan(self, object: CacheObject) -> RawObjectFetchPlan:
+    def _base_plan(self, cache_object: CacheObject) -> BaseFetchPlan:
         source_relative_path = (
-            normalize_source_path(object.source_path)
-            if object.source_path is not None
-            else normalize_source_relative_path(object.source_url)
+            normalize_source_path(cache_object.source_path)
+            if cache_object.source_path is not None
+            else normalize_source_relative_path(cache_object.source_url)
         )
         resolved_identity_key = resolve_identity_key(
-            identity_key=object.identity_key,
+            identity_key=cache_object.identity_key,
             source_relative_path=source_relative_path,
         )
         identity_hash = hash_identity_key(resolved_identity_key)
 
-        return RawObjectFetchPlan(
-            object_key=id(object),
+        return BaseFetchPlan(
             source_name=self._source_name,
             dataset_name=self._dataset_name,
-            source_url=object.source_url,
+            source_url=cache_object.source_url,
             source_relative_path=source_relative_path,
             update_mode=self._update_mode,
             identity_key=resolved_identity_key,
             identity_hash=identity_hash,
-            request_headers={},
             temp_path=str(
                 _build_temp_path(raw_root=self._raw_root, source_name=self._source_name)
             ),
-            raw_object=None,
-            current_version=None,
         )
 
     def _filter_published(self, results: Iterable[CacheResult]) -> set[tuple[str, str]]:
@@ -507,52 +444,42 @@ class Cache:
         return published_versions
 
 
-@dataclass(frozen=True)
-class RawObjectFetchPlan:
-    object_key: int
-    source_name: str
-    dataset_name: str
-    source_url: str
-    source_relative_path: str
-    update_mode: UpdateMode
-    identity_key: IdentityKey
-    identity_hash: str
-    request_headers: Mapping[str, str]
-    temp_path: str
-    raw_object: RawObjectEntry | None
-    current_version: RawObjectVersion | None
-
-
-def _build_request_headers(
-    current_version: RawObjectVersion | None,
-    update_mode: UpdateMode,
-) -> Mapping[str, str]:
-    if update_mode is not UpdateMode.MUTABLE or current_version is None:
-        return {}
-    if current_version.etag:
-        return {"If-None-Match": current_version.etag}
-    if current_version.last_modified:
-        return {"If-Modified-Since": current_version.last_modified}
-    return {}
-
-
-def _require_update_mode(
-    raw_object: RawObjectEntry | None, update_mode: UpdateMode
-) -> None:
-    if raw_object is None or raw_object.update_mode is update_mode:
-        return
-    raise ValueError(
-        "raw object update_mode mismatch: "
-        f"stored={raw_object.update_mode.value} requested={update_mode.value}"
-    )
-
-
-def _current_local_path(plan: RawObjectFetchPlan) -> str | None:
-    return plan.current_version.local_path if plan.current_version else None
+def _current_local_path(plan: ResolvedFetchPlan, *, raw_root: Path) -> str | None:
+    if plan.current_version is not None:
+        return plan.current_version.local_path
+    if plan.update_mode is UpdateMode.SNAPSHOT:
+        return str(_build_snapshot_path(raw_root=raw_root, plan=plan))
+    return None
 
 
 def _file_exists(path: str | None) -> bool:
     return path is not None and Path(path).exists()
+
+
+def _request_headers_for(
+    raw_object: RawObjectEntry | None, update_mode: UpdateMode
+) -> Mapping[str, str]:
+    if update_mode is not UpdateMode.MUTABLE or raw_object is None:
+        return {}
+    return raw_object.revalidation.request_headers()
+
+
+def _revalidation_for_hit(
+    plan: ResolvedFetchPlan, read_result: FetchResult | None
+) -> RevalidationMetadata:
+    if read_result is None:
+        if plan.raw_object is not None:
+            return plan.raw_object.revalidation
+        return RevalidationMetadata(
+            etag=plan.current_version.etag,
+            last_modified=plan.current_version.last_modified,
+            content_length=plan.current_version.content_length,
+        )
+    return RevalidationMetadata(
+        etag=read_result.etag,
+        last_modified=read_result.last_modified,
+        content_length=read_result.content_length,
+    )
 
 
 def _ensure_downloaded(read_result: FetchResult) -> None:
@@ -570,14 +497,15 @@ def _build_temp_path(*, raw_root: Path, source_name: str) -> Path:
 def _build_final_path(
     *,
     raw_root: Path,
-    plan: RawObjectFetchPlan,
+    plan: BaseFetchPlan,
     fetched_at: datetime,
     sha256: str,
 ) -> Path:
+    if plan.update_mode is UpdateMode.SNAPSHOT:
+        return _build_snapshot_path(raw_root=raw_root, plan=plan)
+
     source_name = _validate_path_segment(plan.source_name, field_name="source_name")
     dataset_name = _validate_path_segment(plan.dataset_name, field_name="dataset_name")
-    if plan.update_mode is UpdateMode.SNAPSHOT:
-        return raw_root / source_name / Path(plan.source_relative_path)
 
     basename = Path(plan.source_relative_path).name or f"{dataset_name}.bin"
     timestamp = fetched_at.strftime("%Y%m%dT%H%M%SZ")
@@ -589,6 +517,11 @@ def _build_final_path(
         / plan.identity_hash
         / f"{timestamp}__{sha256[:12]}__{uuid4().hex[:8]}__{basename}"
     )
+
+
+def _build_snapshot_path(*, raw_root: Path, plan: BaseFetchPlan) -> Path:
+    source_name = _validate_path_segment(plan.source_name, field_name="source_name")
+    return raw_root / source_name / Path(plan.source_relative_path)
 
 
 def _detect_storage_encoding(path: Path) -> str:
