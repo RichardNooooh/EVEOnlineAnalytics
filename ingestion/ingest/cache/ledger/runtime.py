@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime
@@ -31,11 +31,13 @@ from ingest.cache.ledger.schema import (
 from ingest.cache.ledger.types import ReplaceCurrentVersionResult
 from ingest.cache.models import (
     BaseFetchPlan,
+    PublicationContext,
+    RawObjectDefinition,
     RawObjectEntry,
+    RawObjectRef,
     RawObjectVersion,
     RevalidationMetadata,
     ResolvedFetchPlan,
-    UpdateMode,
 )
 
 
@@ -79,15 +81,13 @@ class RawObjectLedgerTx:
     def load_raw_object(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_hash: str,
+        ref: RawObjectRef,
     ) -> RawObjectEntry | None:
         row = self._fetchone(
             select(raw_objects).where(
-                raw_objects.c.source_name == source_name,
-                raw_objects.c.dataset_name == dataset_name,
-                raw_objects.c.identity_hash == identity_hash,
+                raw_objects.c.source_name == ref.source_name,
+                raw_objects.c.dataset_name == ref.dataset_name,
+                raw_objects.c.identity_hash == ref.identity_hash,
             )
         )
         if row is None:
@@ -97,12 +97,12 @@ class RawObjectLedgerTx:
     def load_raw_objects(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
+        group_key: tuple[str, str],
         identity_hashes: list[str],
     ) -> dict[str, RawObjectEntry]:
         if not identity_hashes:
             return {}
+        source_name, dataset_name = group_key
         rows = self._fetchall(
             select(raw_objects).where(
                 raw_objects.c.source_name == source_name,
@@ -151,15 +151,12 @@ class RawObjectLedgerTx:
 
         grouped_plans: dict[tuple[str, str], list[BaseFetchPlan]] = {}
         for base_plan in base_plans:
-            grouped_plans.setdefault(
-                (base_plan.source_name, base_plan.dataset_name), []
-            ).append(base_plan)
+            grouped_plans.setdefault(base_plan.ref.group_key, []).append(base_plan)
 
         resolved_by_identity: dict[tuple[str, str, str], ResolvedFetchPlan] = {}
         for (source_name, dataset_name), plans in grouped_plans.items():
             raw_objects = self.load_raw_objects(
-                source_name=source_name,
-                dataset_name=dataset_name,
+                group_key=(source_name, dataset_name),
                 identity_hashes=[plan.identity_hash for plan in plans],
             )
             current_versions = self.load_latest_versions(
@@ -198,28 +195,20 @@ class RawObjectLedgerTx:
     def touch_raw_object(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_key: Mapping[str, Any],
-        identity_hash: str,
-        update_mode: UpdateMode,
+        definition: RawObjectDefinition,
         checked_at: datetime,
         revalidation: RevalidationMetadata | None = None,
     ) -> RawObjectEntry:
-        existing = self.load_raw_object(
-            source_name=source_name,
-            dataset_name=dataset_name,
-            identity_hash=identity_hash,
-        )
+        existing = self.load_raw_object(ref=definition.ref)
         revalidation = revalidation or RevalidationMetadata()
         if existing is None:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
-                source_name=source_name,
-                dataset_name=dataset_name,
-                identity_key=dict(identity_key),
-                identity_hash=identity_hash,
-                update_mode=update_mode,
+                source_name=definition.ref.source_name,
+                dataset_name=definition.ref.dataset_name,
+                identity_key=dict(definition.identity_key),
+                identity_hash=definition.ref.identity_hash,
+                update_mode=definition.update_mode,
                 created_at=checked_at,
                 last_checked_at=checked_at,
                 revalidation=revalidation,
@@ -242,31 +231,16 @@ class RawObjectLedgerTx:
     def replace_current_version(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_key: Mapping[str, Any],
-        identity_hash: str,
-        update_mode: UpdateMode,
+        definition: RawObjectDefinition,
         source_url: str,
         fetched_at: datetime,
-        etag: str | None,
-        last_modified: str | None,
-        content_length: int | None,
+        revalidation: RevalidationMetadata,
         sha256: str,
         local_path: str,
         storage_encoding: str,
     ) -> ReplaceCurrentVersionResult:
-        revalidation = RevalidationMetadata(
-            etag=etag,
-            last_modified=last_modified,
-            content_length=content_length,
-        )
         raw_object = self.touch_raw_object(
-            source_name=source_name,
-            dataset_name=dataset_name,
-            identity_key=identity_key,
-            identity_hash=identity_hash,
-            update_mode=update_mode,
+            definition=definition,
             checked_at=fetched_at,
             revalidation=revalidation,
         )
@@ -276,9 +250,7 @@ class RawObjectLedgerTx:
             raw_object_id=raw_object.id,
             source_url=source_url,
             fetched_at=fetched_at,
-            etag=etag,
-            last_modified=last_modified,
-            content_length=content_length,
+            revalidation=revalidation,
             sha256=sha256,
             local_path=local_path,
             storage_encoding=storage_encoding,
@@ -305,25 +277,17 @@ class RawObjectLedgerTx:
     def mark_published(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_hash: str,
+        ref: RawObjectRef,
         sha256: str,
         version_id: str,
-        published_at: datetime,
-        publication_scope: str | None,
-        publisher_run_id: str | None,
+        context: PublicationContext,
     ) -> None:
         statement = pg_insert(raw_object_publications).values(
             **raw_object_publication_values(
-                source_name=source_name,
-                dataset_name=dataset_name,
-                identity_hash=identity_hash,
+                ref=ref,
                 sha256=sha256,
                 version_id=version_id,
-                published_at=published_at,
-                publication_scope=publication_scope,
-                publisher_run_id=publisher_run_id,
+                context=context,
             )
         )
         self._execute(
@@ -340,16 +304,14 @@ class RawObjectLedgerTx:
     def is_published(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_hash: str,
+        ref: RawObjectRef,
         sha256: str,
     ) -> bool:
         row = self._fetchone(
             select(raw_object_publications.c.id).where(
-                raw_object_publications.c.source_name == source_name,
-                raw_object_publications.c.dataset_name == dataset_name,
-                raw_object_publications.c.identity_hash == identity_hash,
+                raw_object_publications.c.source_name == ref.source_name,
+                raw_object_publications.c.dataset_name == ref.dataset_name,
+                raw_object_publications.c.identity_hash == ref.identity_hash,
                 raw_object_publications.c.sha256 == sha256,
             )
         )
@@ -358,12 +320,12 @@ class RawObjectLedgerTx:
     def filter_published(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
+        group_key: tuple[str, str],
         versions: list[tuple[str, str]],
     ) -> set[tuple[str, str]]:
         if not versions:
             return set()
+        source_name, dataset_name = group_key
         rows = self._fetchall(
             select(
                 raw_object_publications.c.identity_hash,

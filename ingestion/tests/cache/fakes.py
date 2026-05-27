@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime
-from typing import Any
 from uuid import uuid4
 
 from ingest.cache.ledger.types import ReplaceCurrentVersionResult
 from ingest.cache.models import (
     BaseFetchPlan,
+    PublicationContext,
+    RawObjectDefinition,
     RawObjectEntry,
+    RawObjectRef,
     RawObjectVersion,
     RevalidationMetadata,
     ResolvedFetchPlan,
-    UpdateMode,
 )
 
 
@@ -41,12 +42,10 @@ class InMemoryRawObjectLedgerTx:
     def load_raw_object(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_hash: str,
+        ref: RawObjectRef,
     ) -> RawObjectEntry | None:
         return self._ledger._raw_objects_by_key.get(
-            (source_name, dataset_name, identity_hash)
+            ref.group_key + (ref.identity_hash,)
         )
 
     def resolve_fetch_plan(self, base_plan: BaseFetchPlan) -> ResolvedFetchPlan:
@@ -93,25 +92,21 @@ class InMemoryRawObjectLedgerTx:
     def touch_raw_object(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_key: Mapping[str, Any],
-        identity_hash: str,
-        update_mode: UpdateMode,
+        definition: RawObjectDefinition,
         checked_at: datetime,
         revalidation: RevalidationMetadata | None = None,
     ) -> RawObjectEntry:
-        key = (source_name, dataset_name, identity_hash)
+        key = definition.ref.group_key + (definition.ref.identity_hash,)
         existing = self._ledger._raw_objects_by_key.get(key)
         revalidation = revalidation or RevalidationMetadata()
         if existing is None:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
-                source_name=source_name,
-                dataset_name=dataset_name,
-                identity_key=dict(identity_key),
-                identity_hash=identity_hash,
-                update_mode=update_mode,
+                source_name=definition.ref.source_name,
+                dataset_name=definition.ref.dataset_name,
+                identity_key=dict(definition.identity_key),
+                identity_hash=definition.ref.identity_hash,
+                update_mode=definition.update_mode,
                 created_at=checked_at,
                 last_checked_at=checked_at,
                 revalidation=revalidation,
@@ -130,31 +125,16 @@ class InMemoryRawObjectLedgerTx:
     def replace_current_version(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_key: Mapping[str, Any],
-        identity_hash: str,
-        update_mode: UpdateMode,
+        definition: RawObjectDefinition,
         source_url: str,
         fetched_at: datetime,
-        etag: str | None,
-        last_modified: str | None,
-        content_length: int | None,
+        revalidation: RevalidationMetadata,
         sha256: str,
         local_path: str,
         storage_encoding: str,
     ) -> ReplaceCurrentVersionResult:
-        revalidation = RevalidationMetadata(
-            etag=etag,
-            last_modified=last_modified,
-            content_length=content_length,
-        )
         raw_object = self.touch_raw_object(
-            source_name=source_name,
-            dataset_name=dataset_name,
-            identity_key=identity_key,
-            identity_hash=identity_hash,
-            update_mode=update_mode,
+            definition=definition,
             checked_at=fetched_at,
             revalidation=revalidation,
         )
@@ -166,9 +146,7 @@ class InMemoryRawObjectLedgerTx:
             raw_object_id=raw_object.id,
             source_url=source_url,
             fetched_at=fetched_at,
-            etag=etag,
-            last_modified=last_modified,
-            content_length=content_length,
+            revalidation=revalidation,
             sha256=sha256,
             local_path=local_path,
             storage_encoding=storage_encoding,
@@ -192,47 +170,32 @@ class InMemoryRawObjectLedgerTx:
     def mark_published(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_hash: str,
+        ref: RawObjectRef,
         sha256: str,
         version_id: str,
-        published_at: datetime,
-        publication_scope: str | None,
-        publisher_run_id: str | None,
+        context: PublicationContext,
     ) -> None:
-        self._ledger._publications.add(
-            (source_name, dataset_name, identity_hash, sha256)
-        )
+        self._ledger._publications.add((*ref.group_key, ref.identity_hash, sha256))
 
     def is_published(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
-        identity_hash: str,
+        ref: RawObjectRef,
         sha256: str,
     ) -> bool:
-        return (
-            source_name,
-            dataset_name,
-            identity_hash,
-            sha256,
-        ) in self._ledger._publications
+        return (*ref.group_key, ref.identity_hash, sha256) in self._ledger._publications
 
     def filter_published(
         self,
         *,
-        source_name: str,
-        dataset_name: str,
+        group_key: tuple[str, str],
         versions: list[tuple[str, str]],
     ) -> set[tuple[str, str]]:
         self._ledger.filter_published_calls += 1
         return {
             (identity_hash, sha256)
             for identity_hash, sha256 in versions
-            if (source_name, dataset_name, identity_hash, sha256)
-            in self._ledger._publications
+            if (*group_key, identity_hash, sha256) in self._ledger._publications
         }
 
 
