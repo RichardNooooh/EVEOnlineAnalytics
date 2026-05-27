@@ -1,8 +1,33 @@
 """High-level cache for downloading and tracking raw source files.
 
-``Cache`` coordinates HTTP reads, filesystem storage, and ledger bookkeeping
-so that ingestion pipelines can fetch source objects, detect changes, and
-publish only unseen versions.
+``Cache.get()`` resolution path (modules involved):
+
+  Cache.get()
+    ├─ _plan() -> _base_plan()
+    │    └─ identity.py      — normalize_source_path, resolve_identity_key,
+    │                           hash_identity_key
+    │    └─ plans.py          — BaseFetchPlan, FetchPlan union type
+    │    └─ ledger/plans.py   — FetchPlanResolver (ledger lookup)
+    │         └─ ledger/reader.py  — RawObjectReader (SQL reads)
+    │              └─ ledger/types.py — RawObjectRef, RawObjectEntry,
+    │                                    RawObjectVersion
+    │
+    ├─ ResolvedFetchPlan path:
+    │    ├─ _try_snapshot_local_hit()
+    │    │    └─ paths.py   — build_snapshot_path
+    │    └─ _fetch_with_revalidation()
+    │         ├─ client.py  — HttpRawObjectClient (conditional GET)
+    │         │    └─ client_types.py — ReadResult, ModifiedRead, etc.
+    │         └─ _record_store()
+    │              ├─ paths.py        — build_final_path, detect_storage_encoding
+    │              ├─ ledger/writer.py — RawObjectWriter.rotate_version
+    │              │    └─ ledger/types.py — RotateVersionResult
+    │              └─ publishing.py    — PublicationTracker (via Cache.pubtrack)
+    │
+    └─ UnresolvedFetchPlan path:
+         └─ (same as _record_store, no revalidation)
+
+Output: CacheResult with status HIT (local) or STORED (downloaded).
 """
 
 from __future__ import annotations
