@@ -3,21 +3,34 @@ from __future__ import annotations
 from ingest.cache.ledger import RawObjectLedger
 
 
+class FakeBegin:
+    def __init__(self, connection: FakeConnection) -> None:
+        self.connection = connection
+
+    def __enter__(self) -> FakeConnection:
+        return self.connection
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
 class FakeConnection:
     def __init__(self) -> None:
-        self.closed = False
+        self.executed = []
 
-    def close(self) -> None:
-        self.closed = True
+    def execute(self, statement) -> None:
+        self.executed.append(statement)
 
 
 class FakeEngine:
     def __init__(self, connection: FakeConnection) -> None:
         self.connection = connection
         self.disposed = False
+        self.begin_calls = 0
 
-    def connect(self) -> FakeConnection:
-        return self.connection
+    def begin(self) -> FakeBegin:
+        self.begin_calls += 1
+        return FakeBegin(self.connection)
 
     def dispose(self) -> None:
         self.disposed = True
@@ -34,15 +47,17 @@ def test_ledger_lifecycle(monkeypatch) -> None:
     def _bootstrap(self) -> None:
         nonlocal bootstrap_calls
         bootstrap_calls += 1
+        self._bootstrapped = True
 
     monkeypatch.setattr(RawObjectLedger, "_bootstrap", _bootstrap)
 
-    with ledger:
+    with ledger.transaction() as tx:
         assert ledger._engine is engine
-        assert ledger._con is connection
+        assert tx._con is connection
 
     assert bootstrap_calls == 1
-    assert connection.closed is True
-    assert engine.disposed is True
+    assert engine.begin_calls == 1
+    assert engine.disposed is False
     ledger.close()
+    assert engine.disposed is True
     ledger.close()

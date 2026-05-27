@@ -12,7 +12,6 @@ from ingest.cache.models import RawObjectEntry, RawObjectVersion, UpdateMode
 
 class InMemoryRawObjectLedger:
     def __init__(self) -> None:
-        self._is_open = False
         self._raw_objects_by_key: dict[tuple[str, str, str], RawObjectEntry] = {}
         self._versions_by_object_id: dict[str, list[RawObjectVersion]] = {}
         self._publications: set[tuple[str, str, str, str]] = set()
@@ -20,16 +19,17 @@ class InMemoryRawObjectLedger:
         self.load_latest_versions_calls = 0
         self.filter_published_calls = 0
 
-    def open(self) -> None:
-        self._is_open = True
-
     def close(self) -> None:
-        self._is_open = False
+        return None
 
     @contextmanager
-    def transaction(self) -> Iterator[None]:
-        self._require_open()
-        yield
+    def transaction(self) -> Iterator[InMemoryRawObjectLedgerTx]:
+        yield InMemoryRawObjectLedgerTx(self)
+
+
+class InMemoryRawObjectLedgerTx:
+    def __init__(self, ledger: InMemoryRawObjectLedger) -> None:
+        self._ledger = ledger
 
     def load_raw_object(
         self,
@@ -38,8 +38,9 @@ class InMemoryRawObjectLedger:
         dataset_name: str,
         identity_hash: str,
     ) -> RawObjectEntry | None:
-        self._require_open()
-        return self._raw_objects_by_key.get((source_name, dataset_name, identity_hash))
+        return self._ledger._raw_objects_by_key.get(
+            (source_name, dataset_name, identity_hash)
+        )
 
     def load_raw_objects(
         self,
@@ -48,13 +49,12 @@ class InMemoryRawObjectLedger:
         dataset_name: str,
         identity_hashes: list[str],
     ) -> dict[str, RawObjectEntry]:
-        self._require_open()
-        self.load_raw_objects_calls += 1
+        self._ledger.load_raw_objects_calls += 1
         return {
             identity_hash: raw_object
             for identity_hash in identity_hashes
             if (
-                raw_object := self._raw_objects_by_key.get(
+                raw_object := self._ledger._raw_objects_by_key.get(
                     (source_name, dataset_name, identity_hash)
                 )
             )
@@ -62,19 +62,17 @@ class InMemoryRawObjectLedger:
         }
 
     def load_latest_version(self, raw_object_id: str) -> RawObjectVersion | None:
-        self._require_open()
-        versions = self._versions_by_object_id.get(raw_object_id, [])
+        versions = self._ledger._versions_by_object_id.get(raw_object_id, [])
         return versions[0] if versions else None
 
     def load_latest_versions(
         self, raw_object_ids: list[str]
     ) -> dict[str, RawObjectVersion]:
-        self._require_open()
-        self.load_latest_versions_calls += 1
+        self._ledger.load_latest_versions_calls += 1
         return {
             raw_object_id: versions[0]
             for raw_object_id in raw_object_ids
-            if (versions := self._versions_by_object_id.get(raw_object_id))
+            if (versions := self._ledger._versions_by_object_id.get(raw_object_id))
         }
 
     def touch_raw_object(
@@ -88,9 +86,8 @@ class InMemoryRawObjectLedger:
         checked_at: datetime,
         current_version: RawObjectVersion | None,
     ) -> RawObjectEntry:
-        self._require_open()
         key = (source_name, dataset_name, identity_hash)
-        existing = self._raw_objects_by_key.get(key)
+        existing = self._ledger._raw_objects_by_key.get(key)
         if existing is None:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
@@ -109,7 +106,7 @@ class InMemoryRawObjectLedger:
                 if current_version
                 else None,
             )
-            self._raw_objects_by_key[key] = raw_object
+            self._ledger._raw_objects_by_key[key] = raw_object
             return raw_object
 
         updated = replace(
@@ -129,18 +126,19 @@ class InMemoryRawObjectLedger:
                 else existing.last_seen_content_length
             ),
         )
-        self._raw_objects_by_key[key] = updated
+        self._ledger._raw_objects_by_key[key] = updated
         return updated
 
     def insert_version(self, version: RawObjectVersion) -> None:
-        self._require_open()
-        versions = self._versions_by_object_id.setdefault(version.raw_object_id, [])
+        versions = self._ledger._versions_by_object_id.setdefault(
+            version.raw_object_id, []
+        )
         versions.append(version)
         versions.sort(key=lambda item: (item.fetched_at, item.id), reverse=True)
 
-        for key, raw_object in self._raw_objects_by_key.items():
+        for key, raw_object in self._ledger._raw_objects_by_key.items():
             if raw_object.id == version.raw_object_id:
-                self._raw_objects_by_key[key] = replace(
+                self._ledger._raw_objects_by_key[key] = replace(
                     raw_object,
                     last_seen_etag=version.etag,
                     last_seen_last_modified=version.last_modified,
@@ -149,14 +147,12 @@ class InMemoryRawObjectLedger:
                 break
 
     def list_versions(self, raw_object_id: str) -> list[RawObjectVersion]:
-        self._require_open()
-        return list(self._versions_by_object_id.get(raw_object_id, []))
+        return list(self._ledger._versions_by_object_id.get(raw_object_id, []))
 
     def delete_versions(self, version_ids: list[str]) -> None:
-        self._require_open()
         ids = set(version_ids)
-        for raw_object_id, versions in self._versions_by_object_id.items():
-            self._versions_by_object_id[raw_object_id] = [
+        for raw_object_id, versions in self._ledger._versions_by_object_id.items():
+            self._ledger._versions_by_object_id[raw_object_id] = [
                 version for version in versions if version.id not in ids
             ]
 
@@ -172,8 +168,9 @@ class InMemoryRawObjectLedger:
         publication_scope: str | None,
         publisher_run_id: str | None,
     ) -> None:
-        self._require_open()
-        self._publications.add((source_name, dataset_name, identity_hash, sha256))
+        self._ledger._publications.add(
+            (source_name, dataset_name, identity_hash, sha256)
+        )
 
     def is_published(
         self,
@@ -183,8 +180,12 @@ class InMemoryRawObjectLedger:
         identity_hash: str,
         sha256: str,
     ) -> bool:
-        self._require_open()
-        return (source_name, dataset_name, identity_hash, sha256) in self._publications
+        return (
+            source_name,
+            dataset_name,
+            identity_hash,
+            sha256,
+        ) in self._ledger._publications
 
     def filter_published(
         self,
@@ -193,14 +194,10 @@ class InMemoryRawObjectLedger:
         dataset_name: str,
         versions: list[tuple[str, str]],
     ) -> set[tuple[str, str]]:
-        self._require_open()
-        self.filter_published_calls += 1
+        self._ledger.filter_published_calls += 1
         return {
             (identity_hash, sha256)
             for identity_hash, sha256 in versions
-            if (source_name, dataset_name, identity_hash, sha256) in self._publications
+            if (source_name, dataset_name, identity_hash, sha256)
+            in self._ledger._publications
         }
-
-    def _require_open(self) -> None:
-        if not self._is_open:
-            raise RuntimeError("InMemoryRawObjectLedger must be opened before use")
