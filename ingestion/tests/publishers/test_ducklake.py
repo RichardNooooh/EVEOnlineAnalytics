@@ -60,8 +60,8 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     assert "LOAD postgres" in queries
     assert "INSTALL ducklake" in queries
     assert "LOAD ducklake" in queries
-    assert "ATTACH ? AS " in attach_call[0]
-    assert attach_call[1] is not None
+    assert "ATTACH " in attach_call[0] and 'AS "ducklake"' in attach_call[0]
+    assert attach_call[1] is None  # all params inlined
 
 
 def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
@@ -81,12 +81,9 @@ def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
 
     attach_call = con.calls[-1]
 
-    assert 'ATTACH ? AS "custom_raw"' in attach_call[0]
-    assert attach_call[1] == [
-        "ducklake:postgres:dbname=raw host=postgres",
-        "/data/custom/raw",
-        "custom_metadata",
-    ]
+    assert 'ATTACH \'ducklake:postgres:dbname=raw host=postgres\' AS "custom_raw"' in attach_call[0]
+    assert 'DATA_PATH \'/data/custom/raw\'' in attach_call[0]
+    assert 'METADATA_SCHEMA \'custom_metadata\'' in attach_call[0]
 
 
 def test_writer_appends_by_name(monkeypatch) -> None:
