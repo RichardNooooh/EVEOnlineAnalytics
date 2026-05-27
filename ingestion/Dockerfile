@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project --no-editable
 
 COPY README.md ./
-COPY .dlt/config.toml ./.dlt/config.toml
+# COPY .dlt/config.toml ./.dlt/config.toml
 COPY ingest ./ingest
 COPY main.py ./main.py
 
