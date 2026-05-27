@@ -47,9 +47,24 @@ class RawDuckLakeTable(StrEnum):
     MARKET_ORDERS = "raw_market_orders"
 
 
-def _build_default_attach_config() -> DuckLakeAttachConfig:
-    parsed = urlparse(DEFAULT_DUCKLAKE_CATALOG)
-    if parsed.scheme not in {"postgres", "postgresql"}:
+def build_ducklake_attach_config_from_url(
+    postgres_url: str,
+    *,
+    data_path: str | None = None,
+    metadata_schema: str | None = None,
+    alias: str | None = None,
+) -> DuckLakeAttachConfig:
+    """Build a DuckLakeAttachConfig from an arbitrary PostgreSQL URL.
+
+    Args:
+        postgres_url: PostgreSQL URL for the DuckLake catalog.
+        data_path: Override the default raw data path.
+        metadata_schema: Override the default metadata schema.
+        alias: Override the default alias.
+    """
+    parsed = urlparse(postgres_url)
+    scheme = parsed.scheme.split("+")[0]
+    if scheme not in {"postgres", "postgresql"}:
         raise ValueError("ducklake_catalog must be a PostgreSQL URL")
     if not parsed.hostname:
         raise ValueError("ducklake_catalog must include a host")
@@ -69,10 +84,14 @@ def _build_default_attach_config() -> DuckLakeAttachConfig:
 
     return DuckLakeAttachConfig(
         attach_uri="ducklake:postgres:" + " ".join(parts),
-        data_path=DEFAULT_DUCKLAKE_RAW_DATA_PATH,
-        metadata_schema=DEFAULT_DUCKLAKE_METADATA_SCHEMA,
-        alias=DEFAULT_DUCKLAKE_ALIAS,
+        data_path=data_path or DEFAULT_DUCKLAKE_RAW_DATA_PATH,
+        metadata_schema=metadata_schema or DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+        alias=alias or DEFAULT_DUCKLAKE_ALIAS,
     )
+
+
+def _build_default_attach_config() -> DuckLakeAttachConfig:
+    return build_ducklake_attach_config_from_url(DEFAULT_DUCKLAKE_CATALOG)
 
 
 def _quote_identifier(identifier: str) -> str:
@@ -111,6 +130,11 @@ def _temporary_arrow_view(con: duckdb.DuckDBPyConnection, arrow_table: pa.Table)
         con.execute(f"DROP VIEW IF EXISTS {_quote_identifier(source_name)}")
 
 
+def _quote_literal(value: str) -> str:
+    """Quote a string as a SQL literal (single-quoted, escaped)."""
+    return "'" + value.replace("'", "''") + "'"
+
+
 def _attach_ducklake(
     con: duckdb.DuckDBPyConnection,
     *,
@@ -125,17 +149,12 @@ def _attach_ducklake(
     con.execute("LOAD ducklake")
     con.execute(
         f"""
-        ATTACH ? AS {_quote_identifier(config.alias)} (
-            DATA_PATH ?,
-            METADATA_SCHEMA ?,
+        ATTACH {_quote_literal(config.attach_uri)} AS {_quote_identifier(config.alias)} (
+            DATA_PATH {_quote_literal(config.data_path)},
+            METADATA_SCHEMA {_quote_literal(config.metadata_schema)},
             OVERRIDE_DATA_PATH {"TRUE" if config.override_data_path else "FALSE"}
         )
-        """,
-        [
-            config.attach_uri,
-            config.data_path,
-            config.metadata_schema,
-        ],
+        """
     )
 
 
