@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from collections.abc import Mapping
+from types import TracebackType
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -16,28 +16,44 @@ from ingest.cache.models import FetchOutcome, FetchResult
 logger = logging.getLogger("ingest.cache")
 
 
-@dataclass(frozen=True)
 class HttpRawObjectClient:
     """HTTP client for streaming raw source files to temporary paths.
 
     Example:
         ```python
-        client = HttpRawObjectClient(timeout_seconds=60)
-        result = client.read(
-            source_url="https://example.com/file.csv.bz2",
-            request_headers={},
-            temp_path="/data/raw/.tmp/file.download",
-        )
-        client.close()
+        with HttpRawObjectClient(timeout_seconds=60) as client:
+            result = client.read(
+                source_url="https://example.com/file.csv.bz2",
+                request_headers={},
+                temp_path="/data/raw/.tmp/file.download",
+            )
         ```
     """
 
-    timeout_seconds: float = 30.0
-    max_retries: int = 3
-    backoff_factor: float = 0.5
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 3,
+        backoff_factor: float = 0.5,
+        backoff_jitter: float = 0.25,
+    ) -> None:
+        self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+        self.backoff_jitter = backoff_jitter
+        self._session = self._build_session()
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "_session", self._build_session())
+    def __enter__(self) -> HttpRawObjectClient:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
 
     def read(
         self,
@@ -63,69 +79,57 @@ class HttpRawObjectClient:
             ```
         """
 
-        response = None
         temp_file = Path(temp_path)
         try:
-            response = self._session.get(
+            with self._session.get(
                 source_url,
                 headers=dict(request_headers),
                 stream=True,
                 timeout=self.timeout_seconds,
-            )
-            fetched_at = datetime.now(UTC)
+            ) as response:
+                fetched_at = datetime.now(UTC)
 
-            if response.status_code == 304:
+                if response.status_code == 304:
+                    return FetchResult(
+                        outcome=FetchOutcome.NOT_MODIFIED,
+                        fetched_at=fetched_at,
+                        etag=response.headers.get("ETag"),
+                        last_modified=response.headers.get("Last-Modified"),
+                        content_length=_parse_content_length(
+                            response.headers.get("Content-Length")
+                        ),
+                    )
+
+                response.raise_for_status()
+                temp_file.parent.mkdir(parents=True, exist_ok=True)
+
+                content_length, sha256 = self._write_response_body(
+                    response=response,
+                    temp_file=temp_file,
+                )
+
                 return FetchResult(
-                    outcome=FetchOutcome.NOT_MODIFIED,
+                    outcome=FetchOutcome.DOWNLOADED,
                     fetched_at=fetched_at,
                     etag=response.headers.get("ETag"),
                     last_modified=response.headers.get("Last-Modified"),
-                    content_length=_parse_content_length(
-                        response.headers.get("Content-Length")
-                    ),
+                    content_length=content_length,
+                    temp_path=str(temp_file),
+                    sha256=sha256,
                 )
-
-            response.raise_for_status()
-            temp_file.parent.mkdir(parents=True, exist_ok=True)
-
-            digest = hashlib.sha256()
-            content_length = 0
-            with temp_file.open("wb") as stream:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if not chunk:
-                        continue
-                    digest.update(chunk)
-                    stream.write(chunk)
-                    content_length += len(chunk)
-
-            return FetchResult(
-                outcome=FetchOutcome.DOWNLOADED,
-                fetched_at=fetched_at,
-                etag=response.headers.get("ETag"),
-                last_modified=response.headers.get("Last-Modified"),
-                content_length=content_length,
-                temp_path=str(temp_file),
-                sha256=digest.hexdigest(),
-            )
         except Exception:
             logger.exception("raw object read failed source_url=%s", source_url)
             if temp_file.exists():
                 temp_file.unlink()
             raise
-        finally:
-            if response is not None:
-                response.close()
 
     def close(self) -> None:
         """Close the underlying HTTP session.
 
         Example:
             ```python
-            client = HttpRawObjectClient()
-            try:
+            with HttpRawObjectClient() as client:
                 ...
-            finally:
-                client.close()
             ```
         """
 
@@ -138,6 +142,7 @@ class HttpRawObjectClient:
             read=self.max_retries,
             connect=self.max_retries,
             backoff_factor=self.backoff_factor,
+            backoff_jitter=self.backoff_jitter,
             status_forcelist=(429, 500, 502, 503, 504),
             allowed_methods=frozenset({"GET"}),
             raise_on_status=False,
@@ -146,6 +151,23 @@ class HttpRawObjectClient:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
+
+    def _write_response_body(
+        self,
+        *,
+        response: requests.Response,
+        temp_file: Path,
+    ) -> tuple[int, str]:
+        digest = hashlib.sha256()
+        content_length = 0
+        with temp_file.open("wb") as stream:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                digest.update(chunk)
+                stream.write(chunk)
+                content_length += len(chunk)
+        return content_length, digest.hexdigest()
 
 
 def _parse_content_length(value: str | None) -> int | None:

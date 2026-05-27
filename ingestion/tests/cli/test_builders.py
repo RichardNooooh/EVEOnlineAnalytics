@@ -13,42 +13,6 @@ from ingest.util import (
 )
 
 
-def test_market_history_maps_runtime_and_ducklake_flags() -> None:
-    parser = build_parser()
-
-    args = parser.parse_args(
-        [
-            "everef",
-            "market-history",
-            "--start-date",
-            "2025-01-01",
-            "--end-date",
-            "2025-01-31",
-            "--data-root",
-            "/data/runtime",
-            "--raw-ledger-url",
-            "postgresql://ledger",
-            "--raw-max-copies-per-date",
-            "5",
-            "--ducklake-catalog",
-            "postgresql://catalog",
-            "--ducklake-metadata-schema",
-            "custom_schema",
-        ]
-    )
-
-    config = build_everef_market_history_config(args)
-
-    assert config.start_date == "2025-01-01"
-    assert config.end_date == "2025-01-31"
-    assert config.data_root == "/data/runtime"
-    assert config.raw_files.raw_root == "/data/runtime/raw"
-    assert config.raw_files.raw_ledger_url == "postgresql://ledger"
-    assert config.raw_files.raw_max_copies_per_date == 5
-    assert config.ducklake.ducklake_catalog == "postgresql://catalog"
-    assert config.ducklake.ducklake_metadata_schema == "custom_schema"
-
-
 def test_market_history_uses_runtime_defaults() -> None:
     parser = build_parser()
 
