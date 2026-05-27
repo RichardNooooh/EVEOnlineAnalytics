@@ -711,7 +711,7 @@ def test_record_store_skips_unlink_when_stale_path_equals_new_path(tmp_path: Pat
         )
         return ReplaceCurrentVersionResult(raw_object=raw_object, version=version, stale_versions=[stale])
 
-    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectLedgerTx.replace_current_version", fake_replace)
+    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectWriter.replace_current_version", fake_replace)
 
     with _store(tmp_path=tmp_path, client=client) as store:
         store.get(CacheObject(source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2"))
@@ -729,7 +729,7 @@ def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monke
     def fail_replace(*args, **kwargs) -> None:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectLedgerTx.replace_current_version", fail_replace)
+    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectWriter.replace_current_version", fail_replace)
 
     with pytest.raises(RuntimeError, match="boom"):
         with _store(tmp_path=tmp_path, client=client) as store:

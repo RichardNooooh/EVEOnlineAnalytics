@@ -310,7 +310,7 @@ class Cache:
     ) -> CacheResult:
         checked_at = read_result.fetched_at if read_result is not None else datetime.now(UTC)
         with self._ledger.transaction() as tx:
-            raw_object = tx.touch_raw_object(
+            raw_object = tx.writer.touch_raw_object(
                 ref=plan.ref,
                 checked_at=checked_at,
                 revalidation=_revalidation_for_hit(plan, read_result),
@@ -333,7 +333,7 @@ class Cache:
 
         try:
             with self._ledger.transaction() as tx:
-                stored = tx.replace_current_version(
+                stored = tx.writer.replace_current_version(
                     ref=plan.ref,
                     source_url=plan.source_url,
                     fetched_at=read_result.fetched_at,
@@ -360,12 +360,12 @@ class Cache:
         base_plan = self._base_plan(cache_object)
 
         with self._ledger.transaction() as tx:
-            return tx.resolve_fetch_plan(base_plan)
+            return tx.resolver.resolve_fetch_plan(base_plan)
 
     def _plan_many(self, cache_objects: Iterable[CacheObject]) -> list[FetchPlan]:
         base_plans = [self._base_plan(cache_object) for cache_object in cache_objects]
         with self._ledger.transaction() as tx:
-            return tx.resolve_fetch_plans(base_plans)
+            return tx.resolver.resolve_fetch_plans(base_plans)
 
     def _base_plan(self, cache_object: CacheObject) -> BaseFetchPlan:
         source_relative_path = (
