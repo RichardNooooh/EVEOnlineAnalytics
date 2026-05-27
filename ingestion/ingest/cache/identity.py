@@ -12,6 +12,15 @@ _SCALAR_TYPES = (str, int, float, bool, type(None))
 
 
 def normalize_source_relative_path(source_url: str) -> str:
+    """Return safe relative path from an HTTP source URL.
+
+    Example:
+        ```python
+        normalize_source_relative_path("https://data.everef.net/a/file.csv.bz2")
+        # "a/file.csv.bz2"
+        ```
+    """
+
     parsed = urlparse(source_url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("source_url must be an http or https URL with a host")
@@ -21,6 +30,15 @@ def normalize_source_relative_path(source_url: str) -> str:
 
 
 def normalize_source_path(source_path: str, *, field_name: str = "source_path") -> str:
+    """Normalize a caller-provided relative source path.
+
+    Example:
+        ```python
+        normalize_source_path("vendor/../vendor/file.csv")
+        # "vendor/file.csv"
+        ```
+    """
+
     if "\\" in source_path:
         raise ValueError(f"{field_name} must use forward slash path separators")
     if source_path.startswith("/"):
@@ -40,6 +58,15 @@ def resolve_identity_key(
     identity_key: Mapping[str, IdentityScalar] | None,
     source_relative_path: str,
 ) -> dict[str, IdentityScalar]:
+    """Return explicit identity key or default to source path identity.
+
+    Example:
+        ```python
+        resolve_identity_key(identity_key=None, source_relative_path="a/file.csv")
+        # {"source_path": "a/file.csv"}
+        ```
+    """
+
     if identity_key is not None:
         validate_identity_key(identity_key)
         return dict(identity_key)
@@ -47,6 +74,14 @@ def resolve_identity_key(
 
 
 def validate_identity_key(identity_key: Mapping[str, IdentityScalar]) -> None:
+    """Validate identity key shape for stable JSON hashing.
+
+    Example:
+        ```python
+        validate_identity_key({"source_date": "2026-01-01"})
+        ```
+    """
+
     if not identity_key:
         raise ValueError("identity_key must not be empty")
     for key, value in identity_key.items():
@@ -57,10 +92,27 @@ def validate_identity_key(identity_key: Mapping[str, IdentityScalar]) -> None:
 
 
 def canonical_identity_json(identity_key: IdentityKey) -> str:
+    """Return deterministic JSON representation of an identity key.
+
+    Example:
+        ```python
+        canonical_identity_json({"b": 2, "a": 1})
+        # '{"a":1,"b":2}'
+        ```
+    """
+
     return json.dumps(
         identity_key, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     )
 
 
 def hash_identity_key(identity_key: IdentityKey) -> str:
+    """Return SHA-256 hash for a canonical identity key.
+
+    Example:
+        ```python
+        identity_hash = hash_identity_key({"source_date": "2026-01-01"})
+        ```
+    """
+
     return sha256(canonical_identity_json(identity_key).encode("ascii")).hexdigest()
