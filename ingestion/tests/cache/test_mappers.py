@@ -26,10 +26,6 @@ from ingest.cache.primitives import UpdateMode
     ("url", "expected"),
     [
         (
-            "postgresql+psycopg2://user:pass@host/db",
-            "postgresql+psycopg2://user:pass@host/db",
-        ),
-        (
             "postgresql+psycopg://user:pass@host/db",
             "postgresql+psycopg://user:pass@host/db",
         ),
@@ -53,6 +49,7 @@ def test_normalize_ledger_url_passes_through_or_transforms(url: str, expected: s
         "sqlite:///tmp/db.sqlite",
         "mysql://user:pass@host/db",
         "https://example.com/db",
+        "postgresql+psycopg2://user:pass@host/db",
     ],
 )
 def test_normalize_ledger_url_rejects_non_postgres(url: str) -> None:
@@ -181,5 +178,3 @@ class TestEntityToRow:
         result = entity_to_row(entry, RAW_OBJECT_COLUMNS, overrides={"source_name": "override"})
         assert result["source_name"] == "override"
         assert result["id"] == "obj-1"
-
-
