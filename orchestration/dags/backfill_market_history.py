@@ -9,9 +9,7 @@ DATA_ROOT = "/opt/eve-market/data"
 DLT_SCRATCH_ROOT = "/scratch"
 DEFAULT_LOCAL_DATA_HOST_PATH = "/tmp/eve-market-local-data"
 POSTGRES_HOST = os.environ.get("EVE_MARKET_LOCAL_POSTGRES_HOST", "postgres")
-INGESTION_IMAGE = os.environ.get(
-    "EVE_MARKET_INGESTION_IMAGE", "eve-market-ingestion:local"
-)
+INGESTION_IMAGE = os.environ.get("EVE_MARKET_INGESTION_IMAGE", "eve-market-ingestion:local")
 
 
 def local_data_host_path() -> str:
