@@ -9,7 +9,6 @@ from ingest.cache import Cache, CacheObject, UpdateMode
 from ingest.cache.ledger.types import ReplaceCurrentVersionResult
 from ingest.cache.models import (
     CacheResultStatus,
-    RawObjectDefinition,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
@@ -697,7 +696,13 @@ def test_record_store_skips_unlink_when_stale_path_equals_new_path(tmp_path: Pat
         stale = replace(version, id="v-old")
         raw_object = RawObjectEntry(
             id="obj-1",
-            ref=RawObjectRef(source_name="everef", dataset_name="market-orders", identity_hash="hash-1"),
+            ref=RawObjectRef(
+                source_name="everef",
+                dataset_name="market-orders",
+                identity_hash="hash-1",
+                identity_key={"source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"},
+                update_mode=UpdateMode.SNAPSHOT,
+            ),
             identity_key={"source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"},
             update_mode=UpdateMode.SNAPSHOT,
             created_at=datetime.now(UTC),

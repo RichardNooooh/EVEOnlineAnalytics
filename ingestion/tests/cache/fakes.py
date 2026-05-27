@@ -12,7 +12,6 @@ from ingest.cache.models import (
     BaseFetchPlan,
     FetchPlan,
     PublicationContext,
-    RawObjectDefinition,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
@@ -93,19 +92,19 @@ class InMemoryRawObjectLedgerTx:
     def touch_raw_object(
         self,
         *,
-        definition: RawObjectDefinition,
+        ref: RawObjectRef,
         checked_at: datetime,
         revalidation: RevalidationMetadata | None = None,
     ) -> RawObjectEntry:
-        key = definition.ref.group_key + (definition.ref.identity_hash,)
+        key = ref.group_key + (ref.identity_hash,)
         existing = self._ledger._raw_objects_by_key.get(key)
         revalidation = revalidation or RevalidationMetadata()
         if existing is None:
             raw_object = RawObjectEntry(
                 id=uuid4().hex,
-                ref=definition.ref,
-                identity_key=dict(definition.identity_key),
-                update_mode=definition.update_mode,
+                ref=ref,
+                identity_key=dict(ref.identity_key),
+                update_mode=ref.update_mode,
                 created_at=checked_at,
                 last_checked_at=checked_at,
                 revalidation=revalidation,
@@ -124,7 +123,7 @@ class InMemoryRawObjectLedgerTx:
     def replace_current_version(
         self,
         *,
-        definition: RawObjectDefinition,
+        ref: RawObjectRef,
         source_url: str,
         fetched_at: datetime,
         revalidation: RevalidationMetadata,
@@ -133,7 +132,7 @@ class InMemoryRawObjectLedgerTx:
         storage_encoding: str,
     ) -> ReplaceCurrentVersionResult:
         raw_object = self.touch_raw_object(
-            definition=definition,
+            ref=ref,
             checked_at=fetched_at,
             revalidation=revalidation,
         )

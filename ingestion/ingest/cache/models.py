@@ -160,30 +160,20 @@ class RawObjectRef:
     """Stable composite key for one logical raw object.
 
     Combines the source, dataset, and hashed identity into a unique reference
-    used for ledger lookups.
+    used for ledger lookups. Also carries the logical identity key and cache
+    policy so no companion ``RawObjectDefinition`` is needed.
     """
 
     source_name: str
     dataset_name: str
     identity_hash: str
+    identity_key: IdentityKey
+    update_mode: UpdateMode
 
     @property
     def group_key(self) -> tuple[str, str]:
         """Return (source_name, dataset_name) for batching queries."""
         return (self.source_name, self.dataset_name)
-
-
-@dataclass(frozen=True)
-class RawObjectDefinition:
-    """Immutable description of a raw object used during fetch planning.
-
-    Bundles the composite key, logical identity, and cache policy so that the
-    ledger can resolve whether an object exists and which update mode applies.
-    """
-
-    ref: RawObjectRef
-    identity_key: IdentityKey
-    update_mode: UpdateMode
 
 
 @dataclass(frozen=True)
@@ -201,15 +191,6 @@ class RawObjectEntry:
     created_at: datetime
     last_checked_at: datetime | None = None
     revalidation: RevalidationMetadata = RevalidationMetadata()
-
-    @property
-    def definition(self) -> RawObjectDefinition:
-        """Return immutable definition for this raw object."""
-        return RawObjectDefinition(
-            ref=self.ref,
-            identity_key=self.identity_key,
-            update_mode=self.update_mode,
-        )
 
 
 @dataclass(frozen=True)
@@ -267,15 +248,6 @@ class BaseFetchPlan:
     update_mode: UpdateMode
     identity_key: IdentityKey
     temp_path: str
-
-    @property
-    def definition(self) -> RawObjectDefinition:
-        """Return immutable definition for this plan."""
-        return RawObjectDefinition(
-            ref=self.ref,
-            identity_key=self.identity_key,
-            update_mode=self.update_mode,
-        )
 
 
 @dataclass(frozen=True)
