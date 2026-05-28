@@ -26,7 +26,6 @@ def attach_config(pg_url: str, tmp_path: Path) -> DuckLakeAttachConfig:
 def raw_con(attach_config: DuckLakeAttachConfig) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect()
     _attach_ducklake(con, config=attach_config)
-    con.execute(f"CREATE SCHEMA IF NOT EXISTS {_quote_identifier(attach_config.alias)}.raw")
     return con
 
 
@@ -46,14 +45,6 @@ def test_write_without_key_columns_inserts_rows(
     attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
 ) -> None:
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_HISTORY)
-    # Create the table with matching columns, then write via DuckLakeWriter
-    raw_con.execute(
-        f"""
-        CREATE TABLE {_quote_identifier(attach_config.alias)}.raw.raw_market_history (
-            type_id BIGINT, date VARCHAR
-        )
-        """
-    )
 
     table = pa.table({"type_id": [34, 35], "date": ["2026-01-01", "2026-01-02"]})
     with DuckLakeWriter(attach_config) as writer:
@@ -72,13 +63,6 @@ def test_write_with_key_columns_does_insert_if_not_exists(
     attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
 ) -> None:
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_ORDERS)
-    raw_con.execute(
-        f"""
-        CREATE TABLE {_quote_identifier(attach_config.alias)}.raw.raw_market_orders (
-            order_id BIGINT, price DOUBLE
-        )
-        """
-    )
 
     table = pa.table({"order_id": [1, 2], "price": [100.0, 200.0]})
     with DuckLakeWriter(attach_config) as writer:
@@ -100,13 +84,6 @@ def test_write_with_key_columns_does_insert_if_not_exists(
 @pytest.mark.integration
 def test_publish_arrow_table_one_shot(attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection) -> None:
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_HISTORY)
-    raw_con.execute(
-        f"""
-        CREATE TABLE {_quote_identifier(attach_config.alias)}.raw.raw_market_history (
-            type_id BIGINT, date VARCHAR
-        )
-        """
-    )
 
     table = pa.table({"type_id": [42], "date": ["2026-06-01"]})
     with DuckLakeWriter(attach_config) as writer:
@@ -123,13 +100,6 @@ def test_written_data_queryable_through_duckdb(
     attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
 ) -> None:
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_HISTORY)
-    raw_con.execute(
-        f"""
-        CREATE TABLE {_quote_identifier(attach_config.alias)}.raw.raw_market_history (
-            type_id BIGINT, date VARCHAR
-        )
-        """
-    )
 
     table = pa.table({"type_id": [1, 2, 3], "date": ["2026-01-01"] * 3})
     with DuckLakeWriter(attach_config) as writer:
@@ -139,3 +109,21 @@ def test_written_data_queryable_through_duckdb(
         f"SELECT count(*) FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history"
     ).fetchone()[0]
     assert count >= 3
+
+
+@pytest.mark.integration
+def test_write_auto_creates_schema_and_table(
+    attach_config: DuckLakeAttachConfig,
+) -> None:
+    """write() should succeed with no pre-existing schema or table."""
+    table = pa.table({"type_id": [1, 2, 3], "date": ["2026-01-01"] * 3})
+    with DuckLakeWriter(attach_config) as writer:
+        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY)
+
+    con = duckdb.connect()
+    _attach_ducklake(con, config=attach_config)
+    rows = con.execute(
+        f"SELECT * FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history ORDER BY type_id"
+    ).fetchall()
+    assert len(rows) == 3
+    assert rows[0] == (1, "2026-01-01")
