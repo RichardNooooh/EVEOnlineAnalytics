@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.engine import Connection
 
 from ingest.cache.helpers import merge_revalidation
@@ -80,6 +80,7 @@ class RawObjectWriter:
             revalidation=revalidation,
         )
         stale_versions = self._list_versions(raw_object.id)
+        max_version = max((v.version_number for v in stale_versions), default=0)
         version = RawObjectVersion(
             id=uuid4().hex,
             raw_object_id=raw_object.id,
@@ -89,13 +90,9 @@ class RawObjectWriter:
             sha256=sha256,
             local_path=local_path,
             storage_encoding=storage_encoding,
+            version_number=max_version + 1,
         )
         _execute(self._con, raw_object_versions.insert().values(**raw_object_version_values(version)))
-        if stale_versions:
-            _execute(
-                self._con,
-                delete(raw_object_versions).where(raw_object_versions.c.id.in_([stale.id for stale in stale_versions])),
-            )
         return RotateVersionResult(
             raw_object=replace(
                 raw_object,

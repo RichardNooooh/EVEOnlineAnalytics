@@ -1,4 +1,8 @@
-"""Raw object cache package.
+"""Raw object cache package, designed for everef.net bulk archive downloads
+and similar file-object sources.
+
+This module is NOT intended for streaming or REST API pagination-style sources
+(such as ESI endpoints). Those should use dlt-based ingestion instead.
 
 Public API types are re-exported here for convenience:
 

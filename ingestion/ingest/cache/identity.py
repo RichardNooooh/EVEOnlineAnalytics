@@ -58,19 +58,19 @@ def resolve_identity_key(
     identity_key: Mapping[str, IdentityScalar] | None,
     source_relative_path: str,
 ) -> dict[str, IdentityScalar]:
-    """Return explicit identity key or default to source path identity.
+    """Return resolved identity key or raise if not provided.
 
     Example:
         ```python
-        resolve_identity_key(identity_key=None, source_relative_path="a/file.csv")
-        # {"source_path": "a/file.csv"}
+        resolve_identity_key(identity_key={"source": "test"}, source_relative_path="a/file.csv")
+        # {"source": "test"}
         ```
     """
 
-    if identity_key is not None:
-        validate_identity_key(identity_key)
-        return dict(identity_key)
-    return {"source_path": source_relative_path}
+    if identity_key is None:
+        raise ValueError("identity_key is required")
+    validate_identity_key(identity_key)
+    return dict(identity_key)
 
 
 def validate_identity_key(identity_key: Mapping[str, IdentityScalar]) -> None:

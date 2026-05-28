@@ -158,12 +158,12 @@ def test_validate_identity_key_rejects_dict_value() -> None:
 # ── resolve_identity_key ────────────────────────────────────────────
 
 
-def test_resolve_identity_key_defaults_to_source_path() -> None:
-    result = resolve_identity_key(
-        identity_key=None,
-        source_relative_path="a/file.csv",
-    )
-    assert result == {"source_path": "a/file.csv"}
+def test_resolve_identity_key_raises_on_none() -> None:
+    with pytest.raises(ValueError, match="identity_key is required"):
+        resolve_identity_key(
+            identity_key=None,
+            source_relative_path="a/file.csv",
+        )
 
 
 def test_resolve_identity_key_returns_copy_of_explicit_key() -> None:

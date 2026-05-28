@@ -53,7 +53,7 @@ class InMemoryRawObjectReader:
         for oid in raw_object_ids:
             versions = self._ledger._versions_by_object_id.get(oid, [])
             if versions:
-                result[oid] = versions[0]
+                result[oid] = max(versions, key=lambda v: v.version_number)
         return result
 
 
@@ -107,6 +107,7 @@ class InMemoryRawObjectWriter:
             revalidation=revalidation,
         )
         stale_versions = list(self._ledger._versions_by_object_id.get(raw_object.id, []))
+        max_version = max((v.version_number for v in stale_versions), default=0)
         version = RawObjectVersion(
             id=uuid4().hex,
             raw_object_id=raw_object.id,
@@ -116,8 +117,9 @@ class InMemoryRawObjectWriter:
             sha256=sha256,
             local_path=local_path,
             storage_encoding=storage_encoding,
+            version_number=max_version + 1,
         )
-        self._ledger._versions_by_object_id[raw_object.id] = [version]
+        self._ledger._versions_by_object_id.setdefault(raw_object.id, []).append(version)
         updated_raw_object = replace(
             raw_object,
             last_checked_at=fetched_at,
@@ -162,7 +164,8 @@ class InMemoryFetchPlanResolver:
                     temp_path=base_plan.temp_path,
                 )
             else:
-                current_version = self._ledger._versions_by_object_id.get(raw_object.id, [None])[0]
+                versions = self._ledger._versions_by_object_id.get(raw_object.id, [])
+                current_version = max(versions, key=lambda v: v.version_number) if versions else None
                 if current_version is None:
                     raise RuntimeError(f"Ledger corruption: raw_object {raw_object.id} exists but has no versions")
                 resolved = ResolvedFetchPlan(

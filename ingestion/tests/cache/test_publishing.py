@@ -56,6 +56,7 @@ def _result(
             sha256=sha256,
             local_path="/tmp/raw/file.csv.bz2",
             storage_encoding="bz2",
+            version_number=0,
         ),
     )
 

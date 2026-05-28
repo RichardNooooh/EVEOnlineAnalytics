@@ -112,7 +112,9 @@ def _seed_raw_object(con, *, raw_object_id: str, fetched_at: datetime, identity_
     )
 
 
-def _insert_version(con, *, version_id: str, raw_object_id: str, fetched_at: datetime, sha256: str = "abc") -> None:
+def _insert_version(
+    con, *, version_id: str, raw_object_id: str, fetched_at: datetime, sha256: str = "abc", version_number: int = 0
+) -> None:
     con.execute(
         insert(raw_object_versions).values(
             id=version_id,
@@ -125,6 +127,7 @@ def _insert_version(con, *, version_id: str, raw_object_id: str, fetched_at: dat
             sha256=sha256,
             local_path="/tmp/file.csv",
             storage_encoding="csv",
+            version_number=version_number,
         )
     )
 
@@ -134,10 +137,12 @@ def test_load_latest_version_returns_most_recent(monkeypatch) -> None:
     with ledger._engine.begin() as con:
         _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
         _insert_version(
-            con, version_id="v-old", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+            con, version_id="v-old", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
+            version_number=0,
         )
         _insert_version(
-            con, version_id="v-new", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+            con, version_id="v-new", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+            version_number=1,
         )
 
     with ledger.transaction() as tx:
@@ -145,25 +150,28 @@ def test_load_latest_version_returns_most_recent(monkeypatch) -> None:
 
     assert result is not None
     assert result.id == "v-new"
-    assert result.fetched_at.replace(tzinfo=None) == datetime(2026, 1, 1, 12, 0)
+    assert result.version_number == 1
 
 
-def test_load_latest_version_tiebreaks_by_id(monkeypatch) -> None:
+def test_load_latest_version_uses_version_number(monkeypatch) -> None:
     ledger = _make_ledger(monkeypatch)
     with ledger._engine.begin() as con:
         _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
         _insert_version(
-            con, version_id="v-a", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+            con, version_id="v-low", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
+            version_number=0,
         )
         _insert_version(
-            con, version_id="v-b", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+            con, version_id="v-high", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
+            version_number=2,
         )
 
     with ledger.transaction() as tx:
         result = tx.reader.load_latest_version("obj-1")
 
     assert result is not None
-    assert result.id == "v-b"
+    assert result.id == "v-high"
+    assert result.version_number == 2
 
 
 def test_load_latest_versions_returns_most_recent_per_id(monkeypatch) -> None:
@@ -182,6 +190,7 @@ def test_load_latest_versions_returns_most_recent_per_id(monkeypatch) -> None:
             raw_object_id="obj-1",
             fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
             sha256="old1",
+            version_number=0,
         )
         _insert_version(
             con,
@@ -189,6 +198,7 @@ def test_load_latest_versions_returns_most_recent_per_id(monkeypatch) -> None:
             raw_object_id="obj-1",
             fetched_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
             sha256="new1",
+            version_number=1,
         )
         _insert_version(
             con,
@@ -196,6 +206,7 @@ def test_load_latest_versions_returns_most_recent_per_id(monkeypatch) -> None:
             raw_object_id="obj-2",
             fetched_at=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
             sha256="old2",
+            version_number=0,
         )
         _insert_version(
             con,
@@ -203,6 +214,7 @@ def test_load_latest_versions_returns_most_recent_per_id(monkeypatch) -> None:
             raw_object_id="obj-2",
             fetched_at=datetime(2026, 1, 1, 11, 0, tzinfo=UTC),
             sha256="new2",
+            version_number=1,
         )
 
     with ledger.transaction() as tx:
@@ -237,7 +249,7 @@ def test_mark_published_idempotent(monkeypatch) -> None:
         assert tx.publications.is_published(ref=ref, sha256="sha1") is True
 
 
-def test_rotate_version_deletes_stale_versions(monkeypatch) -> None:
+def test_rotate_version_increments_version_number(monkeypatch) -> None:
     ledger = _make_ledger(monkeypatch)
     with ledger._engine.begin() as con:
         _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
@@ -247,6 +259,7 @@ def test_rotate_version_deletes_stale_versions(monkeypatch) -> None:
             raw_object_id="obj-1",
             fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
             sha256="old",
+            version_number=0,
         )
 
     with ledger.transaction() as tx:
@@ -266,15 +279,21 @@ def test_rotate_version_deletes_stale_versions(monkeypatch) -> None:
             storage_encoding="csv",
         )
 
+    assert result.version.version_number == 1
+    assert len(result.stale_versions) == 1
+    assert result.stale_versions[0].id == "v-old"
+
     with ledger._engine.begin() as con:
         rows = ledger_db._fetchall(
             con, select(raw_object_versions).where(raw_object_versions.c.raw_object_id == "obj-1")
         )
-    assert len(rows) == 1
-    assert rows[0]["id"] == result.version.id
+    assert len(rows) == 2
+    ids = {r["id"] for r in rows}
+    assert "v-old" in ids
+    assert result.version.id in ids
 
 
-def test_rotate_version_rolls_back_on_delete_failure(monkeypatch) -> None:
+def test_rotate_version_rolls_back_on_insert_failure(monkeypatch) -> None:
     ledger = _make_ledger(monkeypatch)
     with ledger._engine.begin() as con:
         _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
@@ -284,10 +303,11 @@ def test_rotate_version_rolls_back_on_delete_failure(monkeypatch) -> None:
             raw_object_id="obj-1",
             fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
             sha256="old",
+            version_number=0,
         )
 
     def flaky_execute(con, statement):
-        if "DELETE" in str(statement):
+        if "INSERT" in str(statement):
             raise RuntimeError("boom")
         return ledger_db._execute(con, statement)
 

@@ -66,6 +66,7 @@ raw_object_versions = Table(
     Column("sha256", Text, nullable=False),
     Column("local_path", Text, nullable=False),
     Column("storage_encoding", Text, nullable=False),
+    Column("version_number", Integer, nullable=False),
 )
 
 raw_object_publications = Table(

@@ -1,4 +1,7 @@
-"""High-level cache for downloading and tracking raw source files.
+"""High-level cache for downloading and tracking batch archive/file-object sources.
+
+Designed for everef.net bulk archives and similar file-object sources.
+Not intended for streaming or REST API pagination sources (use dlt for those).
 
 ``Cache.get()`` resolution path (modules involved):
 
@@ -204,6 +207,7 @@ class Cache:
             result = cache.get(
                 CacheObject(
                     source_url="https://data.everef.net/market-orders/history/2026/file.csv.bz2",
+                    identity_key={"source_date": "2026-01-01"},
                 )
             )
             if result.changed:

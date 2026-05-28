@@ -55,7 +55,7 @@ class CacheObject:
     """
 
     source_url: str
-    identity_key: IdentityKey | None = None
+    identity_key: IdentityKey
     source_path: str | None = None
 
 
@@ -65,7 +65,7 @@ class CacheResult:
 
     Example:
         ```python
-        result = cache.get(CacheObject(source_url=url))
+        result = cache.get(CacheObject(source_url=url, identity_key={"source": url}))
         if result.changed:
             print("downloaded", result.path)
         ```
