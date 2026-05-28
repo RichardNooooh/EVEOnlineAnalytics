@@ -18,8 +18,8 @@ def build_everef_config(args: argparse.Namespace) -> EverefCliConfig:
         raise ValueError("start_date must be on or before end_date")
 
     return EverefCliConfig(
-        start_date=args.start_date,
-        end_date=args.end_date,
+        start_date=start_date,
+        end_date=end_date,
         data_root=args.data_root,
         raw_files=build_raw_files_config(args),
         ducklake=build_ducklake_config(args),

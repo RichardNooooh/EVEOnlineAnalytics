@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 
 @dataclass(frozen=True)
@@ -23,8 +24,8 @@ class DuckLakeCliConfig:
 
 @dataclass(frozen=True)
 class EverefCliConfig:
-    start_date: str
-    end_date: str
+    start_date: date
+    end_date: date
     data_root: str
     raw_files: RawFilesCliConfig
     ducklake: DuckLakeCliConfig
