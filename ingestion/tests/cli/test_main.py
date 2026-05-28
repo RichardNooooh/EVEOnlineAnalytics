@@ -16,8 +16,10 @@ from ingest.main import main
                 "2025-01-01",
                 "--end-date",
                 "2025-01-31",
+                "--raw-ledger-url",
+                "",
             ],
-            "Everef market-history command is not implemented yet.",
+            "raw_ledger_url must not be empty",
         ),
         (
             [
