@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from ingest.cache.client_types import RevalidationMetadata
 from ingest.cache.ledger import RawObjectLedger
 from ingest.cache.ledger.types import PublicationContext, RawObjectRef
 from ingest.cache.primitives import UpdateMode
