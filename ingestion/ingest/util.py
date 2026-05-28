@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterable
 from datetime import date, timedelta
 
@@ -14,6 +15,14 @@ def parse_iso_date(value: str, *, field_name: str) -> date:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise ValueError(f"{field_name} must be a valid YYYY-MM-DD date") from exc
+
+
+def file_size(path: str) -> int | None:
+    """Return file size in bytes, or None if the file is inaccessible."""
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return None
 
 
 def iter_dates(start: date, end: date) -> Iterable[date]:
