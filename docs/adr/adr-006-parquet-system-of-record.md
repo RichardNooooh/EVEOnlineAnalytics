@@ -36,7 +36,8 @@ The current contract is:
   PostgreSQL.
 - Published DuckLake table state is the persisted analytical source of truth.
 - Each dataset publication has a **single writer** for the affected publication scope.
-- Writers publish through DuckLake table commits or merge/delete-insert semantics rather
+- Writers publish through DuckLake table commits or merge/delete-insert semantics (refined
+  by ADR-007 amendment: insert-new-by-key is the current practice) rather
   than mutating shared DuckDB database state in place.
 - DuckDB is allowed only as **local or transient compute** for development and
   single-writer batch jobs.
