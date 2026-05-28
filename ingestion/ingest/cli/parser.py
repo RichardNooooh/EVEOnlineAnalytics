@@ -1,7 +1,6 @@
 import argparse
 
 from ingest.cli.builders import (
-    build_everef_config,
     build_everef_market_history_config,
     build_everef_market_orders_config,
 )
