@@ -62,6 +62,9 @@ Every tool has a distinct purpose. Do not add new tools without justification.
 
 Explicit non-goals: Airbyte, Great Expectations, DVC, PowerBI, and Tableau.
 
+> **Note:** dlt is declared but ESI ingestion is not yet implemented.
+> Current custom ingestion handles only everef.net bulk archives.
+
 ## Global Conventions
 
 - Use `mise` to handle tooling.
