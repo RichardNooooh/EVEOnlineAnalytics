@@ -174,4 +174,5 @@ def row_to_raw_object_version(row: RowMapping) -> RawObjectVersion:
         sha256=cast(str, row["sha256"]),
         local_path=cast(str, row["local_path"]),
         storage_encoding=cast(str, row["storage_encoding"]),
+        version_number=cast(int, row["version_number"]),
     )

@@ -54,7 +54,7 @@ class RawObjectReader:
             self._con,
             select(raw_object_versions)
             .where(raw_object_versions.c.raw_object_id == raw_object_id)
-            .order_by(raw_object_versions.c.fetched_at.desc(), raw_object_versions.c.id.desc())
+            .order_by(raw_object_versions.c.version_number.desc())
             .limit(1),
         )
         if row is None:
@@ -71,8 +71,7 @@ class RawObjectReader:
                 .over(
                     partition_by=raw_object_versions.c.raw_object_id,
                     order_by=[
-                        raw_object_versions.c.fetched_at.desc(),
-                        raw_object_versions.c.id.desc(),
+                        raw_object_versions.c.version_number.desc(),
                     ],
                 )
                 .label("rn"),

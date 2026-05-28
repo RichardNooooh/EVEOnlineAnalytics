@@ -44,4 +44,5 @@ RAW_OBJECT_VERSION_COLUMNS: Mapping[str, str] = {
     "sha256": "sha256",
     "local_path": "local_path",
     "storage_encoding": "storage_encoding",
+    "version_number": "version_number",
 }
