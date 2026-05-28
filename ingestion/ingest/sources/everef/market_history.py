@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime
+from datetime import date
 
-import pyarrow as pa
-import pyarrow.csv as pac
-
-from ingest.cache import Cache, CacheObject, CacheResult, GetMode, UpdateMode
+from ingest.cache import Cache, CacheObject, GetMode, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import (
     DuckLakeWriter,
     RawDuckLakeTable,
     build_ducklake_attach_config_from_url,
 )
-from ingest.util import file_size, iter_dates
+from ingest.sources.everef.util import process_result
+from ingest.util import iter_dates
 
 logger = logging.getLogger(__name__)
 
@@ -30,63 +28,6 @@ def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
         )
         for d in iter_dates(start_date, end_date)
     ]
-
-
-def _read_csv_to_arrow(
-    path: str,
-    *,
-    source_date: str,
-    source_url: str,
-    source_local_path: str,
-    sha256: str,
-    fetched_at: datetime,
-    content_length: int | None,
-    last_modified: str | None,
-) -> pa.Table:
-    table = pac.read_csv(path)
-    n = len(table)
-    now = datetime.now(UTC)
-
-    provenance = [
-        ("_source_market_date", pa.array([source_date] * n, type=pa.utf8())),
-        ("_source_url", pa.array([source_url] * n, type=pa.utf8())),
-        ("_source_local_path", pa.array([source_local_path] * n, type=pa.utf8())),
-        ("_source_sha256", pa.array([sha256] * n, type=pa.utf8())),
-        ("_source_content_length", pa.array([content_length] * n, type=pa.int64())),
-        ("_source_last_modified", pa.array([last_modified] * n, type=pa.utf8())),
-        ("_source_downloaded_at", pa.array([fetched_at.isoformat()] * n, type=pa.utf8())),
-        ("_ingested_at", pa.array([now.isoformat()] * n, type=pa.utf8())),
-    ]
-    for name, col in provenance:
-        table = table.append_column(name, col)
-
-    return table
-
-
-def _process_result(result: CacheResult, writer: DuckLakeWriter) -> bool:
-    source_date = str(result.identity_key["source_date"])
-    try:
-        content_length = file_size(result.path)
-        last_modified = result.version.revalidation.last_modified if result.version.revalidation.last_modified else None
-        table = _read_csv_to_arrow(
-            result.path,
-            source_date=source_date,
-            source_url=result.version.source_url,
-            source_local_path=result.path,
-            sha256=result.version.sha256,
-            fetched_at=result.version.fetched_at,
-            content_length=content_length,
-            last_modified=last_modified,
-        )
-        writer.write(
-            table,
-            table=RawDuckLakeTable.MARKET_HISTORY,
-            key_columns=_KEY_COLUMNS,
-        )
-        return True
-    except Exception:
-        logger.exception("Failed to process date %s", source_date)
-        return False
 
 
 def run_pipeline(config: EverefCliConfig) -> int:
@@ -115,7 +56,7 @@ def run_pipeline(config: EverefCliConfig) -> int:
 
         with DuckLakeWriter(attach_config) as writer:
             for result in results:
-                if _process_result(result, writer):
+                if process_result(result, writer, table_key=RawDuckLakeTable.MARKET_HISTORY, key_columns=_KEY_COLUMNS):
                     success += 1
                 else:
                     failed += 1

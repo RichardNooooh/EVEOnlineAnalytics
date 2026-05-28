@@ -15,9 +15,9 @@ from ingest.cache.primitives import UpdateMode
 from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliConfig
 from ingest.sources.everef.market_history import (
     _build_cache_objects,
-    _read_csv_to_arrow,
     run_pipeline,
 )
+from ingest.sources.everef.util import read_csv_to_arrow
 
 _PROVENANCE_COLS = [
     "_source_market_date",
@@ -41,6 +41,42 @@ _ORIGINAL_COLS = [
     "region_id",
     "type_id",
 ]
+
+
+def _make_result(
+    file_path: str,
+    *,
+    content_length: int | None = None,
+    last_modified: str | None = None,
+) -> CacheResult:
+    ref = RawObjectRef(
+        source_name="everef",
+        dataset_name="market-history",
+        identity_hash="abc",
+        identity_key={"source_date": "2026-01-01"},
+        update_mode=UpdateMode.SNAPSHOT,
+    )
+    raw_object = RawObjectEntry(
+        id="obj-1",
+        ref=ref,
+        created_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
+    )
+    version = RawObjectVersion(
+        id="ver-1",
+        raw_object_id="obj-1",
+        source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
+        fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
+        revalidation=RevalidationMetadata(content_length=content_length, last_modified=last_modified),
+        sha256="abc123",
+        local_path=file_path,
+        storage_encoding="bz2",
+        version_number=1,
+    )
+    return CacheResult(
+        status=CacheResultStatus.STORED,
+        raw_object=raw_object,
+        version=version,
+    )
 
 
 class TestBuildCacheObjects:
@@ -90,17 +126,12 @@ class TestReadCsvToArrow:
         return path
 
     def test_adds_provenance(self, csv_path: pathlib.Path) -> None:
-        fetched_at = datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC)
-        table = _read_csv_to_arrow(
+        result = _make_result(
             str(csv_path),
-            source_date="2026-01-01",
-            source_url=("https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2"),
-            source_local_path=str(csv_path),
-            sha256="abc123",
-            fetched_at=fetched_at,
-            content_length=123,
+            content_length=csv_path.stat().st_size,
             last_modified="2026-01-02T11:01:55Z",
         )
+        table = read_csv_to_arrow(result)
 
         for col in _ORIGINAL_COLS + _PROVENANCE_COLS:
             assert col in table.column_names, f"missing column: {col}"
@@ -112,31 +143,24 @@ class TestReadCsvToArrow:
             "https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2"
         )
         assert table.column("_source_sha256")[0].as_py() == "abc123"
-        assert table.column("_source_downloaded_at")[0].as_py() == "2026-01-02T11:01:55+00:00"
-        assert table.column("_source_content_length")[0].as_py() == 123
+        assert table.column("_source_downloaded_at")[0].as_py() == datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC)
+        assert table.column("_source_content_length")[0].as_py() == csv_path.stat().st_size
         assert table.column("_source_last_modified")[0].as_py() == "2026-01-02T11:01:55Z"
         assert table.column("_ingested_at")[0].as_py() is not None
+        assert isinstance(table.column("_source_downloaded_at")[0].as_py(), datetime)
+        assert isinstance(table.column("_ingested_at")[0].as_py(), datetime)
         assert table.column("average")[0].as_py() == 9.99
         assert table.column("region_id")[0].as_py() == 10000001
         assert table.column("type_id")[0].as_py() == 19
 
-    def test_handles_missing_provenance(self, csv_path: pathlib.Path) -> None:
-        fetched_at = datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC)
-        table = _read_csv_to_arrow(
-            str(csv_path),
-            source_date="2026-01-01",
-            source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
-            source_local_path=str(csv_path),
-            sha256="abc123",
-            fetched_at=fetched_at,
-            content_length=None,
-            last_modified=None,
-        )
+    def test_handles_missing_last_modified(self, csv_path: pathlib.Path) -> None:
+        result = _make_result(str(csv_path), last_modified=None)
+        table = read_csv_to_arrow(result)
 
-        assert "_source_content_length" in table.column_names
         assert "_source_last_modified" in table.column_names
-        assert table.column("_source_content_length")[0].as_py() is None
+        assert "_source_content_length" in table.column_names
         assert table.column("_source_last_modified")[0].as_py() is None
+        assert table.column("_source_content_length")[0].as_py() == csv_path.stat().st_size
 
 
 class FakeRelation:
