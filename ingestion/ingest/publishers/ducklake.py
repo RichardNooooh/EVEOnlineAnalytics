@@ -202,6 +202,8 @@ class DuckLakeWriter:
     def __enter__(self) -> DuckLakeWriter:
         self._con = duckdb.connect()
         _attach_ducklake(self._con, config=self._attach)
+        schema_name = f"{_quote_identifier(self._attach.alias)}.{_quote_identifier(DEFAULT_RAW_SCHEMA)}"
+        self._con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -244,6 +246,12 @@ class DuckLakeWriter:
         quoted_target = _quote_table_target(self._attach.alias, _target_for(table))
         with _temporary_arrow_view(con, arrow_table) as source_name:
             quoted_source = _quote_identifier(source_name)
+            con.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {quoted_target} AS
+                SELECT * FROM {quoted_source} WHERE FALSE
+                """
+            )
             if key_columns:
                 non_key_cols = [col for col in arrow_table.column_names if col not in key_columns]
                 if non_key_cols:

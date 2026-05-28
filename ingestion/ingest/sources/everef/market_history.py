@@ -124,4 +124,4 @@ def run_pipeline(config: EverefCliConfig) -> int:
             cache.pubtrack.mark_published_many(results)
 
     logger.info("Processed %d/%d days (%d failed)", success, total, failed)
-    return 0
+    return 1 if failed else 0
