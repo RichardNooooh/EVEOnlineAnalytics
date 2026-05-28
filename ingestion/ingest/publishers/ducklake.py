@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -16,6 +17,8 @@ from ingest.util import (
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
     DEFAULT_DUCKLAKE_RAW_DATA_PATH,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DUCKLAKE_ALIAS = "ducklake"
 DEFAULT_RAW_SCHEMA = "raw"
@@ -110,10 +113,10 @@ def _quote_table_target(alias: str, target: DuckLakeTableTarget) -> str:
     )
 
 
-def _build_merge_keys_clause(merge_keys: Sequence[str]) -> str:
-    if not merge_keys:
-        raise ValueError("merge_keys must not be empty when merge behavior is requested")
-    return ", ".join(_quote_identifier(key) for key in merge_keys)
+def _build_key_columns_clause(key_columns: Sequence[str]) -> str:
+    if not key_columns:
+        raise ValueError("key_columns must not be empty when merge behavior is requested")
+    return ", ".join(_quote_identifier(key) for key in key_columns)
 
 
 def _target_for(table: RawDuckLakeTable) -> DuckLakeTableTarget:
@@ -179,7 +182,7 @@ class DuckLakeWriter:
             metadata_schema="eve_market",
         )
         with DuckLakeWriter(config) as writer:
-            writer.write(rows, table=RawDuckLakeTable.MARKET_ORDERS, merge_keys=["order_id"])
+            writer.write(rows, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["order_id"])
         ```
     """
 
@@ -212,11 +215,11 @@ class DuckLakeWriter:
         arrow_table: pa.Table,
         *,
         table: RawDuckLakeTable,
-        merge_keys: Sequence[str] = (),
+        key_columns: Sequence[str] = (),
     ) -> None:
         """Write rows to a raw DuckLake table.
 
-        Without `merge_keys`, rows append by column name. With `merge_keys`, rows are
+        Without `key_columns`, rows append by column name. With `key_columns`, rows are
         inserted only when no target row already matches those keys.
 
         Example:
@@ -225,7 +228,7 @@ class DuckLakeWriter:
             writer.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_ORDERS,
-                merge_keys=["order_id"],
+                key_columns=["order_id"],
             )
             ```
         """
@@ -234,23 +237,55 @@ class DuckLakeWriter:
         if con is None:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
 
-        missing_merge_keys = [key for key in merge_keys if key not in arrow_table.column_names]
-        if missing_merge_keys:
-            raise ValueError("merge_keys must exist in arrow_table columns: " + ", ".join(missing_merge_keys))
+        missing_key_columns = [key for key in key_columns if key not in arrow_table.column_names]
+        if missing_key_columns:
+            raise ValueError("key_columns must exist in arrow_table columns: " + ", ".join(missing_key_columns))
 
         quoted_target = _quote_table_target(self._attach.alias, _target_for(table))
         with _temporary_arrow_view(con, arrow_table) as source_name:
             quoted_source = _quote_identifier(source_name)
-            if merge_keys:
+            if key_columns:
+                non_key_cols = [col for col in arrow_table.column_names if col not in key_columns]
+                if non_key_cols:
+                    key_clause = ", ".join(_quote_identifier(k) for k in key_columns)
+                    subquery_cols = ", ".join(f"source.{_quote_identifier(k)}" for k in key_columns)
+                    subquery = f"SELECT {subquery_cols} FROM {quoted_source}"
+                    match_query = f"SELECT target.* FROM {quoted_target} AS target WHERE ({key_clause}) IN ({subquery})"
+                    try:
+                        matched_rows = con.execute(match_query).fetchall()
+                        target_col_names = [desc[0] for desc in con.description]
+                        if matched_rows:
+                            source_rows = arrow_table.to_pylist()
+                            for target_row in matched_rows:
+                                target_dict = dict(zip(target_col_names, target_row))
+                                key_values = {k: target_dict[k] for k in key_columns}
+                                for src_row in source_rows:
+                                    if all(src_row.get(k) == target_dict[k] for k in key_columns):
+                                        diffs = {}
+                                        for col in non_key_cols:
+                                            if col in target_dict and col in src_row:
+                                                if src_row[col] != target_dict[col]:
+                                                    diffs[col] = (target_dict[col], src_row[col])
+                                        if diffs:
+                                            logger.warning(
+                                                "Matched key %s has differing values; inserting new row "
+                                                "(latest everef is always right). Diffs: %s",
+                                                key_values,
+                                                {c: {"old": o, "new": n} for c, (o, n) in diffs.items()},
+                                            )
+                                        break
+                    except Exception:
+                        logger.warning("Could not query target for key validation", exc_info=True)
+
                 # DuckDB MERGE USING (columns) is an equi-join shorthand replacing ON.
-                # Insert-only semantics are intentional: matched rows carry identical
-                # data (Everef sources), so WHEN MATCHED THEN UPDATE would be a no-op
-                # write.
+                # Insert-only semantics are intentional (key_columns replaces merge_keys):
+                # matched rows carry identical data (Everef sources), so WHEN MATCHED
+                # THEN UPDATE would be a no-op write.
                 con.execute(
                     f"""
                     MERGE INTO {quoted_target} AS target
                     USING {quoted_source} AS source
-                    USING ({_build_merge_keys_clause(merge_keys)})
+                    USING ({_build_key_columns_clause(key_columns)})
                     WHEN NOT MATCHED THEN INSERT BY NAME
                     """
                 )
@@ -269,7 +304,7 @@ def publish_arrow_table(
     *,
     arrow_table: pa.Table,
     table: RawDuckLakeTable,
-    merge_keys: Sequence[str] = (),
+    key_columns: Sequence[str] = (),
 ) -> None:
     """Write Arrow rows to the default raw DuckLake target.
 
@@ -284,10 +319,10 @@ def publish_arrow_table(
         publish_arrow_table(
             arrow_table=orders,
             table=RawDuckLakeTable.MARKET_ORDERS,
-            merge_keys=["order_id"],
+            key_columns=["order_id"],
         )
         ```
     """
 
     with DuckLakeWriter() as writer:
-        writer.write(arrow_table, table=table, merge_keys=merge_keys)
+        writer.write(arrow_table, table=table, key_columns=key_columns)
