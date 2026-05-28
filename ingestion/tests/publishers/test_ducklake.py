@@ -44,6 +44,13 @@ def _queries(con: FakeConnection) -> list[str]:
     return [query for query, _ in con.calls]
 
 
+def _attach_call(con: FakeConnection) -> tuple[str, list[str] | None]:
+    for call in con.calls:
+        if "ATTACH " in call[0]:
+            return call
+    raise AssertionError("no ATTACH call found")
+
+
 def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     con = FakeConnection()
 
@@ -52,7 +59,7 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     with DuckLakeWriter() as writer:
         assert writer._con is con
 
-    attach_call = con.calls[-1]
+    attach_call = _attach_call(con)
     queries = _queries(con)
 
     assert con.closed is True
@@ -79,7 +86,7 @@ def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
     ):
         pass
 
-    attach_call = con.calls[-1]
+    attach_call = _attach_call(con)
 
     assert "ATTACH 'ducklake:postgres:dbname=raw host=postgres' AS \"custom_raw\"" in attach_call[0]
     assert "DATA_PATH '/data/custom/raw'" in attach_call[0]
