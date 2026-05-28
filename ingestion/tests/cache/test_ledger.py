@@ -137,11 +137,17 @@ def test_load_latest_version_returns_most_recent(monkeypatch) -> None:
     with ledger._engine.begin() as con:
         _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
         _insert_version(
-            con, version_id="v-old", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
+            con,
+            version_id="v-old",
+            raw_object_id="obj-1",
+            fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
             version_number=0,
         )
         _insert_version(
-            con, version_id="v-new", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+            con,
+            version_id="v-new",
+            raw_object_id="obj-1",
+            fetched_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
             version_number=1,
         )
 
@@ -158,11 +164,17 @@ def test_load_latest_version_uses_version_number(monkeypatch) -> None:
     with ledger._engine.begin() as con:
         _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
         _insert_version(
-            con, version_id="v-low", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
+            con,
+            version_id="v-low",
+            raw_object_id="obj-1",
+            fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
             version_number=0,
         )
         _insert_version(
-            con, version_id="v-high", raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
+            con,
+            version_id="v-high",
+            raw_object_id="obj-1",
+            fetched_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
             version_number=2,
         )
 
