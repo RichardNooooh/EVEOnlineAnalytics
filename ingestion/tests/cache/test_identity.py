@@ -253,9 +253,7 @@ def test_hash_identity_key_returns_hex_string() -> None:
 def test_hash_identity_key_known_input() -> None:
     # {"a":1} canonical json is '{"a":1}', sha256 of that is known
     result = hash_identity_key({"a": 1})
-    expected = "4f53cda18c2baa0c0354bb5f9a3ecbe8ed2ab0b1d8f4e0c3b9f0f0f0f0f0f0f0"
-    # We just verify it's a consistent sha256 hex digest — compute expected
     import hashlib
 
-    expected_known = hashlib.sha256(b'{"a":1}').hexdigest()
-    assert result == expected_known
+    expected = hashlib.sha256(b'{"a":1}').hexdigest()
+    assert result == expected
