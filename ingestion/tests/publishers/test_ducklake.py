@@ -114,7 +114,7 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
         writer.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_ORDERS,
-            merge_keys=["id"],
+            key_columns=["id"],
         )
 
     queries = _queries(con)
@@ -127,7 +127,7 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
-    ("merge_keys", "arrow_table", "error_message"),
+    ("key_columns", "arrow_table", "error_message"),
     [
         (
             ["item id"],
@@ -137,13 +137,13 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
         (
             ["id"],
             pa.table({"value": [10]}),
-            "merge_keys must exist in arrow_table columns",
+            "key_columns must exist in arrow_table columns",
         ),
     ],
 )
 def test_writer_rejects_invalid_inputs(
     monkeypatch,
-    merge_keys: list[str],
+    key_columns: list[str],
     arrow_table: pa.Table,
     error_message: str,
 ) -> None:
@@ -156,7 +156,7 @@ def test_writer_rejects_invalid_inputs(
             writer.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_HISTORY,
-                merge_keys=merge_keys,
+                key_columns=key_columns,
             )
 
 

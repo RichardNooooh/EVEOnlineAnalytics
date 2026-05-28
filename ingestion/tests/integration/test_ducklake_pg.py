@@ -42,7 +42,7 @@ def test_ducklake_writer_attaches_to_postgres(attach_config: DuckLakeAttachConfi
 
 
 @pytest.mark.integration
-def test_write_without_merge_keys_inserts_rows(
+def test_write_without_key_columns_inserts_rows(
     attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
 ) -> None:
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_HISTORY)
@@ -68,7 +68,7 @@ def test_write_without_merge_keys_inserts_rows(
 
 
 @pytest.mark.integration
-def test_write_with_merge_keys_does_insert_if_not_exists(
+def test_write_with_key_columns_does_insert_if_not_exists(
     attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
 ) -> None:
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_ORDERS)
@@ -82,12 +82,12 @@ def test_write_with_merge_keys_does_insert_if_not_exists(
 
     table = pa.table({"order_id": [1, 2], "price": [100.0, 200.0]})
     with DuckLakeWriter(attach_config) as writer:
-        writer.write(table, table=RawDuckLakeTable.MARKET_ORDERS, merge_keys=["order_id"])
+        writer.write(table, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["order_id"])
 
     # Insert same order_ids again with different prices — should be no-ops
     duplicate = pa.table({"order_id": [1, 2], "price": [999.0, 999.0]})
     with DuckLakeWriter(attach_config) as writer:
-        writer.write(duplicate, table=RawDuckLakeTable.MARKET_ORDERS, merge_keys=["order_id"])
+        writer.write(duplicate, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["order_id"])
 
     rows = raw_con.execute(
         f"SELECT * FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_orders ORDER BY order_id"
@@ -110,7 +110,7 @@ def test_publish_arrow_table_one_shot(attach_config: DuckLakeAttachConfig, raw_c
 
     table = pa.table({"type_id": [42], "date": ["2026-06-01"]})
     with DuckLakeWriter(attach_config) as writer:
-        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, merge_keys=["type_id"])
+        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, key_columns=["type_id"])
 
     rows = raw_con.execute(
         f"SELECT * FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history WHERE type_id = 42"
