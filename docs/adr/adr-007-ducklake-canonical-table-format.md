@@ -6,7 +6,8 @@ tags:
   - storage
   - ducklake
   - dlt
-amended: []
+amended:
+  - 2026-05-27
 ---
 
 # ADR-007 - DuckLake as the Canonical Lakehouse Table Format
@@ -45,9 +46,10 @@ The refined storage contract is:
 - DuckLake tables are the canonical analytical table storage contract.
 - Parquet remains the physical data file format underneath the table format.
 - Plain filesystem Parquet alone is not the long-term canonical table storage format.
-- dlt loads Everef market-history data into DuckLake using merge/delete-insert
+- dlt loads Everef market-history data into DuckLake using insert-new-by-key
   semantics.
-- Existing CSV `date` is the replacement unit for revised Everef daily files.
+- Existing CSV `date`, `region_id`, and `type_id` are the key columns for
+  insert-new-by-key.
 - Market-history loads use a composite primary key of `date`, `region_id`, and
   `type_id` where applicable.
 - Iceberg remains a possible future cloud or resume extension, not the initial
@@ -71,6 +73,20 @@ and transaction semantics over data files.
 - dbt integration should be validated separately from dlt's DuckLake destination;
   dbt-duckdb may read raw DuckLake tables from local/transient DuckDB compute and
   materialize final curated DuckLake tables directly.
+
+## Amendment (2026-05-27)
+
+This ADR originally described delete-insert merge semantics for handling revised
+Everef daily files. Experience with the actual ESI and Everef data sources showed
+this was unnecessary:
+
+- ESI endpoints *likely* do not remove or modify historical market data after
+  initial publication.
+- Everef's in-place updates are *mostly* for low-traffic region-type pairs where
+  transactions were discovered in less-commonly-scraped regions.
+- The current implementation uses insert-new-by-key semantics instead of
+  delete-insert, which avoids unnecessary table churn while correctly handling the
+  rare case where Everef publishes a revised file for the same key.
 
 ## Consequences
 
