@@ -2,6 +2,7 @@ import argparse
 
 from ingest.cli.builders import (
     build_everef_config,
+    build_everef_market_history_config,
 )
 from ingest.util import (
     DEFAULT_DATA_ROOT,
@@ -32,6 +33,23 @@ def _command_not_implemented(
     parser.error(args.not_implemented_message)
 
 
+def _run_market_history_pipeline(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> int:
+    from ingest.sources.everef.market_history import run_pipeline
+
+    config_builder = getattr(args, "config_builder", None)
+    if config_builder is None:
+        parser.error("config_builder not set")
+    try:
+        config = config_builder(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    return run_pipeline(config)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run EVE market ingestion jobs.")
     subparsers = parser.add_subparsers(dest="command")
@@ -57,9 +75,8 @@ def build_parser() -> argparse.ArgumentParser:
         ],
     )
     everef_market_history_parser.set_defaults(
-        handler=_command_not_implemented,
-        config_builder=build_everef_config,
-        not_implemented_message="Everef market-history command is not implemented yet.",
+        handler=_run_market_history_pipeline,
+        config_builder=build_everef_market_history_config,
     )
 
     everef_market_orders_parser = everef_subparsers.add_parser(
