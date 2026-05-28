@@ -38,6 +38,6 @@ sources:
           - name: _source_last_modified
             description: Source last-modified timestamp string when available.
           - name: _source_downloaded_at
-            description: Download timestamp string for cached source files when available.
+            description: Download timestamp for cached source files when available.
           - name: _ingested_at
-            description: Ingestion timestamp string recorded when the file was loaded.
+            description: Ingestion timestamp recorded when the file was loaded.

@@ -9,8 +9,8 @@ with source as (
         cast(_source_sha256 as varchar) as source_sha256,
         cast(_source_content_length as bigint) as source_content_length,
         cast(_source_last_modified as varchar) as source_last_modified,
-        cast(_source_downloaded_at as varchar) as source_downloaded_at,
-        cast(_ingested_at as varchar) as ingested_at
+        cast(_source_downloaded_at as timestamp) as source_downloaded_at,
+        cast(_ingested_at as timestamp) as ingested_at
     from {{ source('everef', 'raw_market_history') }}
 )
 
