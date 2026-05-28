@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from ingest.cache.primitives import IdentityKey, IdentityScalar, UpdateMode
+from ingest.cache.primitives import IdentityKey, UpdateMode
 from ingest.cache.ledger.types import RawObjectEntry, RawObjectVersion
 
 
