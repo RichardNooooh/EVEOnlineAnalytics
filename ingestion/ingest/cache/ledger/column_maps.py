@@ -10,7 +10,6 @@ See ``mappers.entity_to_row``.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
 
 RAW_OBJECT_COLUMNS: Mapping[str, str] = {
     "id": "id",

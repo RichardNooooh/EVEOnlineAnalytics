@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Mapping, TypeAlias
 
 from ingest.cache.client_types import RevalidationMetadata
 from ingest.cache.primitives import IdentityKey, UpdateMode
