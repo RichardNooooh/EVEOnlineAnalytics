@@ -116,6 +116,11 @@ def test_write_auto_creates_schema_and_table(
     attach_config: DuckLakeAttachConfig,
 ) -> None:
     """write() should succeed with no pre-existing schema or table."""
+    con = duckdb.connect()
+    _attach_ducklake(con, config=attach_config)
+    _drop_table(con, attach_config, RawDuckLakeTable.MARKET_HISTORY)
+    con.close()
+
     table = pa.table({"type_id": [1, 2, 3], "date": ["2026-01-01"] * 3})
     with DuckLakeWriter(attach_config) as writer:
         writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY)
