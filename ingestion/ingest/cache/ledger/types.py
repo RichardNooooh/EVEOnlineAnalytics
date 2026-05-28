@@ -61,6 +61,7 @@ class RawObjectVersion:
     sha256: str
     local_path: str
     storage_encoding: str
+    version_number: int
 
 
 @dataclass(frozen=True)

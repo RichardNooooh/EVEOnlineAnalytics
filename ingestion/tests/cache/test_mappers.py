@@ -87,6 +87,7 @@ def _version() -> RawObjectVersion:
         sha256="sha-abc",
         local_path="/tmp/file.csv",
         storage_encoding="csv",
+        version_number=0,
     )
 
 
@@ -131,6 +132,7 @@ class TestEntityToRow:
             "sha256": "sha-abc",
             "local_path": "/tmp/file.csv",
             "storage_encoding": "csv",
+            "version_number": 0,
         }
 
     def test_raw_object_publication(self) -> None:

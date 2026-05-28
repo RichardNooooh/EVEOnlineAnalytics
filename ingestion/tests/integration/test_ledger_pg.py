@@ -108,7 +108,7 @@ def test_rotate_version_inserts_version_and_returns_stale(pg_url: str) -> None:
 
 
 @pytest.mark.integration
-def test_rotate_version_deletes_stale_on_second_rotation(pg_url: str) -> None:
+def test_rotate_version_keeps_stale_and_increments_version_number(pg_url: str) -> None:
     ref = RawObjectRef(
         source_name="test",
         dataset_name="test_ds",
@@ -130,8 +130,9 @@ def test_rotate_version_deletes_stale_on_second_rotation(pg_url: str) -> None:
             storage_encoding="csv",
         )
         assert len(r1.stale_versions) == 0
+        assert r1.version.version_number == 1
 
-        # Second rotation: v1 becomes stale
+        # Second rotation: v1 becomes stale but stays in DB
         r2 = tx.writer.rotate_version(
             ref=ref,
             source_url="https://example.com/v2",
@@ -143,13 +144,15 @@ def test_rotate_version_deletes_stale_on_second_rotation(pg_url: str) -> None:
         )
         assert len(r2.stale_versions) == 1
         assert r2.stale_versions[0].sha256 == "a" * 64
+        assert r2.version.version_number == 2
 
-        # Only latest version should exist
+        # Latest version is still correctly resolved
         raw_object = tx.reader.load_raw_object(ref=ref)
         assert raw_object is not None
         latest = tx.reader.load_latest_version(raw_object.id)
         assert latest is not None
         assert latest.sha256 == "b" * 64
+        assert latest.version_number == 2
     ledger.close()
 
 
