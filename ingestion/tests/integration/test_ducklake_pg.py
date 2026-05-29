@@ -68,8 +68,8 @@ def test_write_with_key_columns_does_insert_if_not_exists(
     with DuckLakeWriter(attach_config) as writer:
         writer.write(table, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["order_id"])
 
-    # Insert same order_ids again with different prices — should be no-ops
-    duplicate = pa.table({"order_id": [1, 2], "price": [999.0, 999.0]})
+    # Insert same order_ids again with identical prices — should be no-ops
+    duplicate = pa.table({"order_id": [1, 2], "price": [100.0, 200.0]})
     with DuckLakeWriter(attach_config) as writer:
         writer.write(duplicate, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["order_id"])
 

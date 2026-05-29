@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -8,10 +9,9 @@ from enum import StrEnum
 from urllib.parse import parse_qsl, unquote, urlparse
 from uuid import uuid4
 
-import logging
-
 import duckdb
 import pyarrow as pa
+
 from ingest.util import (
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
@@ -166,7 +166,7 @@ def _attach_ducklake(
     )
 
 
-def _log_key_column_diffs(
+def _assert_matched_key_rows_identical(
     con: duckdb.DuckDBPyConnection,
     arrow_table: pa.Table,
     *,
@@ -174,12 +174,12 @@ def _log_key_column_diffs(
     quoted_source: str,
     key_columns: Sequence[str],
 ) -> None:
-    """Log warnings for rows where the target already has matching keys but differing non-key columns.
+    """Raise when matched keys have differing non-key values.
 
     Uses a SQL JOIN with IS DISTINCT FROM to detect differences efficiently
     without materialising full tables in Python.
     """
-    non_key_cols = [col for col in arrow_table.column_names if col not in key_columns]
+    non_key_cols = [col for col in arrow_table.column_names if col not in key_columns and not col.startswith("_")]
     if not non_key_cols:
         return
 
@@ -196,14 +196,59 @@ def _log_key_column_diffs(
     """
     try:
         differing = con.execute(query).fetchall()
-        for row in differing:
-            key_values = {k: v for k, v in zip(key_columns, row)}
-            logger.warning(
-                "Matched key %s has differing values; inserting new row (latest everef is always right)",
-                key_values,
-            )
     except Exception:
         logger.warning("Could not query target for key validation", exc_info=True)
+        return
+
+    if differing:
+        examples = ", ".join(
+            ", ".join(f"{key}={value!r}" for key, value in zip(key_columns, row)) for row in differing[:10]
+        )
+        raise ValueError(f"Matched key rows have differing values: {examples}")
+
+
+def _assert_target_rows_missing_from_source(
+    con: duckdb.DuckDBPyConnection,
+    arrow_table: pa.Table,
+    *,
+    quoted_target: str,
+    quoted_source: str,
+    key_columns: Sequence[str],
+) -> None:
+    source_date_col = "_source_market_date"
+    if source_date_col not in arrow_table.column_names:
+        return
+
+    key_join = " AND ".join(f"s.{_quote_identifier(k)} = t.{_quote_identifier(k)}" for k in key_columns)
+    key_list = ", ".join(f"t.{_quote_identifier(k)}" for k in key_columns)
+
+    query = f"""
+        WITH source_dates AS (
+            SELECT DISTINCT {quoted_source}.{_quote_identifier(source_date_col)} AS source_date
+            FROM {quoted_source}
+        )
+        SELECT t.{_quote_identifier(source_date_col)} AS source_date, {key_list}
+        FROM {quoted_target} t
+        JOIN source_dates sd
+            ON t.{_quote_identifier(source_date_col)} = sd.source_date
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM {quoted_source} s
+            WHERE s.{_quote_identifier(source_date_col)} = t.{_quote_identifier(source_date_col)}
+                AND {key_join}
+        )
+    """
+
+    try:
+        missing = con.execute(query).fetchall()
+    except Exception as exc:
+        raise ValueError("Could not query target for source-date coverage check") from exc
+
+    if missing:
+        examples = ", ".join(
+            f"source_date={row[0]!r}, keys={dict(zip(key_columns, row[1:]))!r}" for row in missing[:10]
+        )
+        raise ValueError(f"Target has rows for source_date(s) absent from the newly downloaded source file: {examples}")
 
 
 class DuckLakeWriter:
@@ -314,7 +359,14 @@ class DuckLakeWriter:
                 """
             )
             if key_columns:
-                _log_key_column_diffs(
+                _assert_matched_key_rows_identical(
+                    con,
+                    arrow_table,
+                    quoted_target=quoted_target,
+                    quoted_source=quoted_source,
+                    key_columns=key_columns,
+                )
+                _assert_target_rows_missing_from_source(
                     con,
                     arrow_table,
                     quoted_target=quoted_target,
@@ -355,31 +407,3 @@ class DuckLakeWriter:
                 len(arrow_table),
                 list(key_columns),
             )
-
-
-def publish_arrow_table(
-    *,
-    arrow_table: pa.Table,
-    table: RawDuckLakeTable,
-    key_columns: Sequence[str] = (),
-) -> None:
-    """Write Arrow rows to the default raw DuckLake target.
-
-    This is the one-shot helper for callers that do not need to reuse a writer.
-
-    Example:
-        ```python
-        publish_arrow_table(
-            arrow_table=rows,
-            table=RawDuckLakeTable.MARKET_HISTORY,
-        )
-        publish_arrow_table(
-            arrow_table=orders,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            key_columns=["order_id"],
-        )
-        ```
-    """
-
-    with DuckLakeWriter() as writer:
-        writer.write(arrow_table, table=table, key_columns=key_columns)
