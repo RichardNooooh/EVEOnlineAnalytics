@@ -19,7 +19,7 @@ from ingest.util import iter_dates
 
 EVEREF_BASE = "https://data.everef.net"
 
-_SNAPSHOT_RE = re.compile(r'href="(market-orders-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.v3\.csv\.bz2)"')
+_SNAPSHOT_RE = re.compile(r'href="[^"]*(market-orders-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.v3\.csv\.bz2)"')
 
 _KEY_COLUMNS = ["order_id", "snapshot_time"]
 

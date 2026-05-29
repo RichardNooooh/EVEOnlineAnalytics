@@ -33,6 +33,12 @@ def snapshot_html() -> str:
     )
 
 
+@pytest.fixture
+def real_listing_html() -> str:
+    path = pathlib.Path(__file__).parent.parent.parent / "fixtures" / "everef" / "market-orders-listing-2025-01-01.html"
+    return path.read_text()
+
+
 class TestListSnapshots:
     def test_extracts_filenames(self, snapshot_html: str) -> None:
         with patch.object(requests, "get", return_value=MagicMock(text=snapshot_html, raise_for_status=lambda: None)):
@@ -87,6 +93,93 @@ class TestBuildCacheObjects:
             _build_cache_objects(date(2026, 1, 1), date(2026, 1, 2))
         logger.removeHandler(caplog.handler)
         assert "Built cache objects date_count=2 total_snapshots=2" in caplog.text
+
+
+class TestListSnapshotsWithRealFixture:
+    fixture_date = date(2025, 1, 1)
+
+    # Hardcoded from the real everef listing for 2025-01-01.
+    # Regenerate by running the extraction against the fixture HTML.
+    EXPECTED_FILENAMES = [
+        "market-orders-2025-01-01_00-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_00-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_01-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_01-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_02-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_02-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_03-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_03-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_04-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_04-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_05-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_05-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_06-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_06-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_07-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_07-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_08-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_08-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_09-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_09-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_10-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_10-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_11-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_12-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_12-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_13-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_13-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_14-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_14-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_15-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_15-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_16-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_16-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_17-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_17-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_18-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_18-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_19-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_19-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_20-15-05.v3.csv.bz2",
+        "market-orders-2025-01-01_20-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_21-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_21-45-05.v3.csv.bz2",
+        "market-orders-2025-01-01_22-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_22-45-06.v3.csv.bz2",
+        "market-orders-2025-01-01_23-15-06.v3.csv.bz2",
+        "market-orders-2025-01-01_23-45-06.v3.csv.bz2",
+    ]
+
+    def test_extracts_all_snapshots(self, real_listing_html: str) -> None:
+        with patch.object(
+            requests, "get", return_value=MagicMock(text=real_listing_html, raise_for_status=lambda: None)
+        ):
+            filenames = _list_snapshots(self.fixture_date)
+        assert filenames == self.EXPECTED_FILENAMES
+
+
+class TestBuildCacheObjectsWithRealFixture:
+    fixture_date = date(2025, 1, 1)
+    EXPECTED_FILENAMES = TestListSnapshotsWithRealFixture.EXPECTED_FILENAMES
+
+    def test_builds_cache_objects_from_real_listing(self, real_listing_html: str) -> None:
+        with patch.object(
+            requests, "get", return_value=MagicMock(text=real_listing_html, raise_for_status=lambda: None)
+        ):
+            objects = _build_cache_objects(self.fixture_date, self.fixture_date)
+        assert len(objects) == len(self.EXPECTED_FILENAMES)
+
+        first_id = self.EXPECTED_FILENAMES[0].replace("market-orders-", "").replace(".v3.csv.bz2", "")
+        assert objects[0].identity_key == {"source_date": "2025-01-01", "snapshot_time": first_id}
+        assert objects[0].source_url == (
+            f"https://data.everef.net/market-orders/history/2025/2025-01-01/{self.EXPECTED_FILENAMES[0]}"
+        )
+
+        last_id = self.EXPECTED_FILENAMES[-1].replace("market-orders-", "").replace(".v3.csv.bz2", "")
+        assert objects[-1].identity_key == {"source_date": "2025-01-01", "snapshot_time": last_id}
+        assert objects[-1].source_url == (
+            f"https://data.everef.net/market-orders/history/2025/2025-01-01/{self.EXPECTED_FILENAMES[-1]}"
+        )
 
 
 def _make_result(
