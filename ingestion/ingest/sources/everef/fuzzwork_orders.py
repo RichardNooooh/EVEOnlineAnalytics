@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 
@@ -9,9 +10,10 @@ import pyarrow.csv as pac
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
-from ingest.sources.everef.logger import logger
 from ingest.sources.everef.util import build_snapshot_cache_objects, read_csv_to_arrow
 from ingest.sources.pipeline import run_pipeline as _run_pipeline
+
+logger = logging.getLogger("ingest.sources.everef")
 
 _FUZZWORK_RE = re.compile(r'href="[^"]*(fuzzwork-orderset-\d+-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.csv\.gz)"')
 _KEY_COLUMNS = ["order_id", "order_set_id", "snapshot_time"]

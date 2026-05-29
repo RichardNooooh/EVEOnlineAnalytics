@@ -7,7 +7,10 @@ import tarfile
 import tempfile
 from types import TracebackType
 
-from .logger import logger
+import logging
+
+
+logger = logging.getLogger("ingest.archive")
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pyarrow as pa
 
@@ -8,9 +9,10 @@ from ingest.archive.tarball import ExtractedTarball
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefReferencesCliConfig
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
-from ingest.sources.everef.logger import logger
 from ingest.sources.everef.util import EVEREF_BASE, add_provenance
 from ingest.sources.pipeline import run_pipeline as _run_pipeline
+
+logger = logging.getLogger("ingest.sources.everef")
 
 _REFERENCE_TABLES: dict[str, tuple[RawDuckLakeTable, str]] = {
     "types": (RawDuckLakeTable.REFERENCE_TYPES, "type_id"),
