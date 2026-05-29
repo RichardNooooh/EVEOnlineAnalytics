@@ -3,6 +3,7 @@ import argparse
 from ingest.cli.builders import (
     build_everef_market_history_config,
     build_everef_market_orders_config,
+    build_everef_references_config,
 )
 from ingest.util import (
     DEFAULT_DATA_ROOT,
@@ -67,6 +68,23 @@ def _run_market_history_pipeline(
     return run_pipeline(config)
 
 
+def _run_references_pipeline(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> int:
+    from ingest.sources.everef.references import run_pipeline
+
+    config_builder = getattr(args, "config_builder", None)
+    if config_builder is None:
+        parser.error("config_builder not set")
+    try:
+        config = config_builder(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    return run_pipeline(config)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run EVE market ingestion jobs.")
     subparsers = parser.add_subparsers(dest="command")
@@ -108,6 +126,19 @@ def build_parser() -> argparse.ArgumentParser:
     everef_market_orders_parser.set_defaults(
         handler=_run_market_orders_pipeline,
         config_builder=build_everef_market_orders_config,
+    )
+
+    everef_references_parser = everef_subparsers.add_parser(
+        "references",
+        help="Ingest latest EVE reference data tarball.",
+        parents=[
+            shared_parents["runtime"],
+            shared_parents["ducklake"],
+        ],
+    )
+    everef_references_parser.set_defaults(
+        handler=_run_references_pipeline,
+        config_builder=build_everef_references_config,
     )
 
     esi_parser = subparsers.add_parser(

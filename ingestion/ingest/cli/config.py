@@ -29,3 +29,10 @@ class EverefCliConfig:
     data_root: str
     raw_files: RawFilesCliConfig
     ducklake: DuckLakeCliConfig
+
+
+@dataclass(frozen=True)
+class EverefReferencesCliConfig:
+    data_root: str
+    raw_files: RawFilesCliConfig
+    ducklake: DuckLakeCliConfig
