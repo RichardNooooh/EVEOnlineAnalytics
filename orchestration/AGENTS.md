@@ -26,6 +26,17 @@ task dependencies.
 - Keep publication scopes single-writer.
 - Respect ESI rate limits and `Expires` headers in scheduled ingestion.
 
+## Backfill DAG Structure
+
+Backfill DAGs use a shared factory pattern to eliminate duplication:
+
+- `include/dag_utils.py` — shared constants, helpers (`local_data_host_path()`, `raw_ledger_url()`, etc.), and `build_backfill_dag()` factory.
+- `dags/backfill_dags.py` — single file that registers all backfill DAGs via a config list + `globals()` loop.
+- `dags/.airflowignore` — excludes `include/` from DAG bag parsing.
+
+To add a new backfill DAG, append a config dict to `_DAG_CONFIGS` in `dags/backfill_dags.py`.
+Set `has_date_range: False` for sources that don't accept `--start-date`/`--end-date` args (e.g., references).
+
 ## Deployment Notes
 
 - Airflow metadata uses an external PostgreSQL service managed by the platform repo.
