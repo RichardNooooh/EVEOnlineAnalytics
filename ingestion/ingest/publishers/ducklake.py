@@ -46,6 +46,10 @@ class DuckLakeTableTarget:
 class RawDuckLakeTable(StrEnum):
     MARKET_HISTORY = "raw_market_history"
     MARKET_ORDERS = "raw_market_orders"
+    REFERENCE_CATEGORIES = "raw_reference_categories"
+    REFERENCE_GROUPS = "raw_reference_groups"
+    REFERENCE_REGIONS = "raw_reference_regions"
+    REFERENCE_TYPES = "raw_reference_types"
 
 
 def build_ducklake_attach_config_from_url(
