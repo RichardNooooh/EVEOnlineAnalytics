@@ -5,8 +5,14 @@ from datetime import date, timedelta
 DEFAULT_DATA_ROOT = "/opt/eve-market/data"
 DEFAULT_RAW_ROOT = f"{DEFAULT_DATA_ROOT}/raw"
 DEFAULT_DUCKLAKE_RAW_DATA_PATH = f"{DEFAULT_DATA_ROOT}/datasets/ducklake/raw"
-DEFAULT_DUCKLAKE_CATALOG = "postgresql://airflow:airflow-local-only@postgres:5432/airflow"
-DEFAULT_RAW_LEDGER_URL = "postgresql://raw_files:password@postgres:5432/raw_files"
+DEFAULT_DUCKLAKE_CATALOG = os.environ.get(
+    "EVE_DUCKLAKE_CATALOG",
+    "postgresql://airflow:airflow-local-only@postgres:5432/airflow",
+)
+DEFAULT_RAW_LEDGER_URL = os.environ.get(
+    "EVE_RAW_LEDGER_URL",
+    "postgresql://raw_files:password@postgres:5432/raw_files",
+)
 DEFAULT_DUCKLAKE_METADATA_SCHEMA = "eve_market"
 
 
