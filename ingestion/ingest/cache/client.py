@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 
+import logging
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -24,7 +26,8 @@ from ingest.cache.client_types import (
     NotModifiedRead,
     RevalidationMetadata,
 )
-from ingest.cache.logger import logger
+
+logger = logging.getLogger("ingest.cache")
 
 
 class HttpRawObjectClient:

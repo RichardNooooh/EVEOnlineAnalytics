@@ -40,8 +40,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 
+import logging
+
 from ingest.cache.client import HttpRawObjectClient
-from ingest.cache.logger import logger
 from ingest.cache.identity import (
     hash_identity_key,
     normalize_source_path,
@@ -78,6 +79,8 @@ from ingest.cache.paths import (
 )
 from ingest.cache.publishing import PublicationTracker
 from ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
+
+logger = logging.getLogger("ingest.cache")
 
 
 class Cache:

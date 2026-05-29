@@ -18,10 +18,11 @@ from ingest.sources.everef.fuzzwork_orders import (
     _build_cache_objects,
     run_pipeline,
 )
-from ingest.sources.everef.logger import logger
 from ingest.sources.everef.util import list_snapshots, read_csv_to_arrow
 
 from tests.sources.everef.conftest import FakeConnection, make_cache_result
+
+logger = logging.getLogger("ingest.sources.everef")
 
 import pyarrow.csv as pac  # noqa: E402
 
