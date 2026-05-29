@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import pytest
 import pyarrow as pa
-
+import pytest
 from ingest.publishers.ducklake import (
     DuckLakeAttachConfig,
     DuckLakeWriter,
     RawDuckLakeTable,
-    publish_arrow_table,
 )
 
 
@@ -231,15 +229,3 @@ def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
     assert any(f'"{RawDuckLakeTable.MARKET_HISTORY.value}"' in query for query in queries)
     assert any(f'"{RawDuckLakeTable.MARKET_ORDERS.value}"' in query for query in queries)
     assert con.closed is True
-
-
-def test_publish_arrow_table_one_shot(monkeypatch) -> None:
-    con = FakeConnection()
-    arrow_table = pa.table({"id": [1]})
-
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-
-    publish_arrow_table(arrow_table=arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
-
-    assert con.closed is True
-    assert any(query.lstrip().startswith("INSERT INTO ") for query in _queries(con))

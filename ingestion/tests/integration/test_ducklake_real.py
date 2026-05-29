@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 import duckdb
 import pyarrow as pa
 import pytest
@@ -62,7 +60,7 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
     with DuckLakeWriter(_ATTACH) as writer:
         writer.write(table_a, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["id"])
 
-    table_b = pa.table({"id": [2, 3], "value": [99, 30]})
+    table_b = pa.table({"id": [2, 3], "value": [20, 30]})
     with DuckLakeWriter(_ATTACH) as writer:
         writer.write(table_b, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["id"])
 
@@ -123,24 +121,35 @@ def test_append_without_key_columns(shared_con):
 
 @pytest.mark.integration
 @pytest.mark.real_duckdb
-def test_merge_logs_warning_for_matching_key_with_different_values(shared_con, caplog):
-    caplog.set_level(logging.WARNING, logger="ingest.publishers")
-
-    first = pa.table({"id": [1], "value": [10]})
+def test_merge_raises_for_matching_key_with_different_values(shared_con):
+    first = pa.table({"id": [1], "value": [10], "_source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH) as writer:
         writer.write(first, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["id"])
 
-    caplog.clear()
-
-    second = pa.table({"id": [1], "value": [99]})
+    second = pa.table({"id": [1], "value": [99], "_source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH) as writer:
-        writer.write(second, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["id"])
-
-    assert len(caplog.records) == 1
-    assert caplog.records[0].levelname == "WARNING"
-    assert "Matched key" in caplog.text
+        with pytest.raises(ValueError, match="differing values"):
+            writer.write(second, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["id"])
 
     rows = shared_con.execute(
         f'SELECT id, value FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY id'
     ).fetchall()
     assert rows == [(1, 10)]
+
+
+@pytest.mark.integration
+@pytest.mark.real_duckdb
+def test_merge_raises_when_target_has_source_date_rows_missing_from_source(shared_con):
+    first = pa.table({"id": [1], "value": [10], "_source_market_date": ["2026-01-01"]})
+    with DuckLakeWriter(_ATTACH) as writer:
+        writer.write(first, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["id"])
+
+    second = pa.table({"id": [2], "value": [20], "_source_market_date": ["2026-01-01"]})
+    with DuckLakeWriter(_ATTACH) as writer:
+        with pytest.raises(ValueError, match="source_date"):
+            writer.write(second, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["id"])
+
+    rows = shared_con.execute(
+        f'SELECT id, value, "_source_market_date" FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY id'
+    ).fetchall()
+    assert rows == [(1, 10, "2026-01-01")]
