@@ -7,10 +7,10 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests
 
 from ingest.cache import CacheObject, CacheResult
 from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliConfig
+from ingest.sources.everef.client import EverefSnapshotClient
 
 from ingest.sources.everef.market_orders import (
     _SNAPSHOT_RE,
@@ -18,6 +18,7 @@ from ingest.sources.everef.market_orders import (
     run_pipeline,
 )
 from ingest.sources.everef.util import list_snapshots, read_csv_to_arrow
+from ingest.sources.everef import util as everef_util
 
 from tests.sources.everef.conftest import FakeConnection, make_cache_result
 
@@ -40,7 +41,9 @@ def real_listing_html() -> str:
 
 class TestListSnapshots:
     def test_extracts_filenames(self, snapshot_html: str) -> None:
-        with patch.object(requests, "get", return_value=MagicMock(text=snapshot_html, raise_for_status=lambda: None)):
+        client = EverefSnapshotClient()
+        client._session.get = MagicMock(return_value=MagicMock(text=snapshot_html, raise_for_status=lambda: None))
+        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
             filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE)
         assert filenames == [
             "market-orders-2026-01-01_00-00-00.v3.csv.bz2",
@@ -49,7 +52,9 @@ class TestListSnapshots:
 
     def test_empty_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
-        with patch.object(requests, "get", return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None)):
+        client = EverefSnapshotClient()
+        client._session.get = MagicMock(return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None))
+        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
             filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE)
         logger.removeHandler(caplog.handler)
         assert filenames == []
@@ -58,9 +63,9 @@ class TestListSnapshots:
 
     def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
-        with patch.object(
-            requests, "get", return_value=MagicMock(text="<html>bad</html>", raise_for_status=lambda: None)
-        ):
+        client = EverefSnapshotClient()
+        client._session.get = MagicMock(return_value=MagicMock(text="<html>bad</html>", raise_for_status=lambda: None))
+        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
             filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE)
         logger.removeHandler(caplog.handler)
         assert filenames == []
@@ -74,7 +79,9 @@ class TestBuildCacheObjects:
             '<html><body><a href="market-orders-2026-01-01_00-00-00.v3.csv.bz2">link1</a>'
             '<a href="market-orders-2026-01-01_12-00-00.v3.csv.bz2">link2</a></body></html>'
         )
-        with patch.object(requests, "get", return_value=MagicMock(text=html, raise_for_status=lambda: None)):
+        client = EverefSnapshotClient()
+        client._session.get = MagicMock(return_value=MagicMock(text=html, raise_for_status=lambda: None))
+        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
             objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
 
         assert len(objects) == 2
@@ -82,7 +89,9 @@ class TestBuildCacheObjects:
         assert objects[1].identity_key == {"source_date": "2026-01-01", "snapshot_time": "2026-01-01_12-00-00"}
 
     def test_skips_dates_with_no_snapshots(self) -> None:
-        with patch.object(requests, "get", return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None)):
+        client = EverefSnapshotClient()
+        client._session.get = MagicMock(return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None))
+        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
             objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
         assert objects == []
 
@@ -143,9 +152,9 @@ class TestListSnapshotsWithRealFixture:
     ]
 
     def test_extracts_all_snapshots(self, real_listing_html: str) -> None:
-        with patch.object(
-            requests, "get", return_value=MagicMock(text=real_listing_html, raise_for_status=lambda: None)
-        ):
+        client = EverefSnapshotClient()
+        client._session.get = MagicMock(return_value=MagicMock(text=real_listing_html, raise_for_status=lambda: None))
+        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
             filenames = list_snapshots("market-orders/history", self.fixture_date, _SNAPSHOT_RE)
         assert filenames == self.EXPECTED_FILENAMES
 
@@ -155,9 +164,9 @@ class TestBuildCacheObjectsWithRealFixture:
     EXPECTED_FILENAMES = TestListSnapshotsWithRealFixture.EXPECTED_FILENAMES
 
     def test_builds_cache_objects_from_real_listing(self, real_listing_html: str) -> None:
-        with patch.object(
-            requests, "get", return_value=MagicMock(text=real_listing_html, raise_for_status=lambda: None)
-        ):
+        client = EverefSnapshotClient()
+        client._session.get = MagicMock(return_value=MagicMock(text=real_listing_html, raise_for_status=lambda: None))
+        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
             objects = _build_cache_objects(self.fixture_date, self.fixture_date)
         assert len(objects) == len(self.EXPECTED_FILENAMES)
 
