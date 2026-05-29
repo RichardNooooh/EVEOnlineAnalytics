@@ -15,6 +15,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "integration: tests requiring Docker containers")
+    config.addinivalue_line("markers", "real_duckdb: tests validating SQL against a real in-memory DuckDB")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
