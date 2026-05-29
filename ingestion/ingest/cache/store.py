@@ -3,32 +3,15 @@
 Designed for everef.net bulk archives and similar file-object sources.
 Not intended for streaming or REST API pagination sources (use dlt for those).
 
-``Cache.get()`` resolution path (modules involved):
+``Cache.get()`` resolution path::
 
-  Cache.get()
-    ├─ _plan() -> _base_plan()
-    │    └─ identity.py      — normalize_source_path, resolve_identity_key,
-    │                           hash_identity_key
-    │    └─ plans.py          — BaseFetchPlan, FetchPlan union type
-    │    └─ ledger/plans.py   — FetchPlanResolver (ledger lookup)
-    │         └─ ledger/reader.py  — RawObjectReader (SQL reads)
-    │              └─ ledger/types.py — RawObjectRef, RawObjectEntry,
-    │                                    RawObjectVersion
-    │
-    ├─ ResolvedFetchPlan path:
-    │    ├─ _try_snapshot_local_hit()
-    │    │    └─ paths.py   — build_snapshot_path
-    │    └─ _fetch_with_revalidation()
-    │         ├─ client.py  — HttpRawObjectClient (conditional GET)
-    │         │    └─ client_types.py — ReadResult, ModifiedRead, etc.
-    │         └─ _record_store()
-    │              ├─ paths.py        — build_final_path, detect_storage_encoding
-    │              ├─ ledger/writer.py — RawObjectWriter.rotate_version
-    │              │    └─ ledger/types.py — RotateVersionResult
-    │              └─ publishing.py    — PublicationTracker (via Cache.pubtrack)
-    │
-    └─ UnresolvedFetchPlan path:
-         └─ (same as _record_store, no revalidation)
+  get()
+    ├─ _build_plan()           → FetchPlan (no ledger call)
+    ├─ _load_current_state()   → CurrentRawObjectState | None
+    └─ _get_from_plan()
+         ├─ state is None        → _fetch_new()          → STORED
+         ├─ snapshot + file OK   → _record_hit()          → HIT
+         └─ mutable / no hit     → _revalidate_or_store() → HIT or STORED
 
 Output: CacheResult with status HIT (local) or STORED (downloaded).
 """
@@ -56,7 +39,7 @@ from ingest.cache.client_types import (
     ReadStatus,
     RevalidationMetadata,
 )
-from ingest.cache.ledger.types import RawObjectRef
+from ingest.cache.ledger.types import CurrentRawObjectState, RawObjectEntry, RawObjectRef
 from ingest.cache.models import (
     CacheObject,
     CacheResult,
@@ -64,15 +47,9 @@ from ingest.cache.models import (
     GetMode,
 )
 from ingest.cache.primitives import UpdateMode
-from ingest.cache.plans import (
-    BaseFetchPlan,
-    FetchPlan,
-    ResolvedFetchPlan,
-    UnresolvedFetchPlan,
-)
+from ingest.cache.plans import FetchPlan
 from ingest.cache.paths import (
     build_final_path,
-    build_snapshot_path,
     build_temp_path,
     detect_storage_encoding,
     validate_path_segment,
@@ -171,37 +148,20 @@ class Cache:
             raise RuntimeError("Cache must be entered before accessing pubtrack")
         return self._pubtrack
 
-    def get(
-        self,
-        cache_object: CacheObject,
-        *,
-        plan: FetchPlan | None = None,
-    ) -> CacheResult:
+    # ── public API ──────────────────────────────────────────────────────────
+
+    def get(self, cache_object: CacheObject) -> CacheResult:
         """Fetch one raw object and return its current local version.
 
         Snapshot objects are reused from disk without remote reads once cached. Mutable
         objects use ``ETag`` or ``Last-Modified`` headers to avoid downloading unchanged
         files.
 
-        Resolution dispatch::
-
-            get()
-              ├─ _handle_resolved()                # plan has ledger state
-               │    ├─ _try_snapshot_local_hit()    # SNAPSHOT + file exists -> HIT
-              │    └─ _fetch_with_revalidation()   # conditional GET -> HIT or STORED
-              └─ _handle_unresolved()              # no ledger state -> STORED
-
         Args:
             cache_object: Description of the source object to fetch.
-            plan: Optional pre-resolved fetch plan.  When omitted the plan is
-                resolved from the ledger automatically.
 
         Returns:
             ``CacheResult`` with status ``HIT`` or ``STORED``.
-
-        Raises:
-            RuntimeError: If the client returns ``NOT_MODIFIED`` but the local
-                file is missing and cannot be recovered.
 
         Example:
             ```python
@@ -215,71 +175,9 @@ class Cache:
                 print("new file", result.path)
             ```
         """
-
-        plan = plan or self._plan(cache_object)
-        if isinstance(plan, ResolvedFetchPlan):
-            return self._handle_resolved(plan)
-        return self._handle_unresolved(plan)
-
-    def _handle_unresolved(self, plan: UnresolvedFetchPlan) -> CacheResult:
-        """No ledger state; must fetch unconditionally."""
-        read_result = self._read_source(plan, request_headers={})
-        # Some origin servers return 304 even for unconditional requests
-        # (misconfigured CDN, stale cache layers). When there's no ledger
-        # state, a 304 is meaningless — re-fetch unconditionally.
-        if read_result.status is ReadStatus.NOT_MODIFIED:
-            logger.info(
-                "not-modified response but no ledger state; re-reading source_url=%s",
-                plan.source_url,
-            )
-            read_result = self._read_source(plan, request_headers={})
-        return self._record_store(plan, _ensure_downloaded(read_result))
-
-    def _handle_resolved(self, plan: ResolvedFetchPlan) -> CacheResult:
-        """Try local cache hit, fall back to conditional fetch."""
-        hit = self._try_snapshot_local_hit(plan)
-        if hit is not None:
-            return hit
-        return self._fetch_with_revalidation(plan)
-
-    def _try_snapshot_local_hit(self, plan: ResolvedFetchPlan) -> CacheResult | None:
-        """SNAPSHOT with cached file on disk -> HIT, no remote call."""
-        if plan.update_mode is UpdateMode.SNAPSHOT and _file_exists(plan.current_version.local_path):
-            return self._record_hit(plan)
-        return None
-
-    def _fetch_with_revalidation(self, plan: ResolvedFetchPlan) -> CacheResult:
-        """Conditional GET; record HIT on 304 or STORED on 200.
-
-        This is the full revalidation path for resolved plans: send conditional
-        headers, then either confirm a cache hit (304) or download and store a
-        new version (200).
-        """
-        read_result = self._read_source(
-            plan,
-            request_headers=_request_headers_for(plan, plan.update_mode),
-        )
-        if read_result.status is ReadStatus.NOT_MODIFIED:
-            if _file_exists(plan.current_version.local_path):
-                return self._record_hit(plan, read_result=read_result)
-            logger.info(
-                "not-modified response but local state incomplete; re-reading source_url=%s",
-                plan.source_url,
-            )
-            read_result = self._read_source(plan, request_headers={})
-        return self._record_store(plan, _ensure_downloaded(read_result))
-
-    def _read_source(
-        self,
-        plan: BaseFetchPlan,
-        *,
-        request_headers: Mapping[str, str],
-    ) -> ReadResult:
-        return self._client.read(
-            source_url=plan.source_url,
-            request_headers=dict(request_headers),
-            temp_path=plan.temp_path,
-        )
+        plan = self._build_plan(cache_object)
+        state = self._load_current_state(plan.ref)
+        return self._get_from_plan(plan, state)
 
     def get_many(
         self,
@@ -306,11 +204,13 @@ class Cache:
             ```
         """
         object_list = list(objects)
-        plans = self._plan_many(object_list)
+        plans = [self._build_plan(obj) for obj in object_list]
+        states_by_hash = self._load_current_states([plan.ref for plan in plans])
 
         results: list[CacheResult] = []
-        for cache_object, plan in zip(object_list, plans, strict=True):
-            result = self.get(cache_object, plan=plan)
+        for plan in plans:
+            state = states_by_hash.get(plan.ref.identity_hash)
+            result = self._get_from_plan(plan, state)
             if mode is GetMode.CHANGED and not result.changed:
                 continue
             results.append(result)
@@ -350,9 +250,95 @@ class Cache:
         )
         return results
 
+    # ── ledger state loading ────────────────────────────────────────────────
+
+    def _load_current_state(self, ref: RawObjectRef) -> CurrentRawObjectState | None:
+        with self._ledger.transaction() as tx:
+            return tx.reader.load_current_states(refs=[ref]).get(ref.identity_hash)
+
+    def _load_current_states(self, refs: list[RawObjectRef]) -> dict[str, CurrentRawObjectState | None]:
+        if not refs:
+            return {}
+        with self._ledger.transaction() as tx:
+            return tx.reader.load_current_states(refs=refs)
+
+    # ── workflow ────────────────────────────────────────────────────────────
+
+    def _get_from_plan(
+        self,
+        plan: FetchPlan,
+        state: CurrentRawObjectState | None,
+    ) -> CacheResult:
+        if state is None:
+            return self._fetch_new(plan)
+
+        self._require_update_mode_match(state.raw_object)
+        if self._can_use_snapshot_local_hit(plan, state):
+            return self._record_hit(plan, state)
+
+        return self._revalidate_or_store(plan, state)
+
+    def _require_update_mode_match(self, raw_object_entry: RawObjectEntry) -> None:
+        if raw_object_entry.ref.update_mode is not self._update_mode:
+            raise ValueError(
+                "raw object update_mode mismatch: "
+                f"stored={raw_object_entry.ref.update_mode.value} requested={self._update_mode.value}"
+            )
+
+    def _fetch_new(self, plan: FetchPlan) -> CacheResult:
+        read_result = self._read_source(plan, request_headers={})
+        if read_result.status is ReadStatus.NOT_MODIFIED:
+            logger.info(
+                "not-modified response but no ledger state; re-reading source_url=%s",
+                plan.source_url,
+            )
+            read_result = self._read_source(plan, request_headers={})
+        return self._record_store(plan, _ensure_downloaded(read_result))
+
+    def _can_use_snapshot_local_hit(
+        self,
+        plan: FetchPlan,
+        state: CurrentRawObjectState,
+    ) -> bool:
+        return plan.ref.update_mode is UpdateMode.SNAPSHOT and _file_exists(state.current_version.local_path)
+
+    def _revalidate_or_store(
+        self,
+        plan: FetchPlan,
+        state: CurrentRawObjectState,
+    ) -> CacheResult:
+        read_result = self._read_source(
+            plan,
+            request_headers=_request_headers_for(state, plan.ref.update_mode),
+        )
+        if read_result.status is ReadStatus.NOT_MODIFIED:
+            if _file_exists(state.current_version.local_path):
+                return self._record_hit(plan, state, read_result=read_result)
+            logger.info(
+                "not-modified response but local state incomplete; re-reading source_url=%s",
+                plan.source_url,
+            )
+            read_result = self._read_source(plan, request_headers={})
+        return self._record_store(plan, _ensure_downloaded(read_result))
+
+    def _read_source(
+        self,
+        plan: FetchPlan,
+        *,
+        request_headers: Mapping[str, str],
+    ) -> ReadResult:
+        return self._client.read(
+            source_url=plan.source_url,
+            request_headers=dict(request_headers),
+            temp_path=plan.temp_path,
+        )
+
+    # ── record helpers ──────────────────────────────────────────────────────
+
     def _record_hit(
         self,
-        plan: ResolvedFetchPlan,
+        plan: FetchPlan,
+        state: CurrentRawObjectState,
         *,
         read_result: ReadResult | None = None,
     ) -> CacheResult:
@@ -361,22 +347,22 @@ class Cache:
             "Cache hit dataset=%s identity_hash=%s version=%d path=%s",
             plan.ref.dataset_name,
             plan.ref.identity_hash,
-            plan.current_version.version_number if plan.current_version else None,
-            plan.current_version.local_path if plan.current_version else None,
+            state.current_version.version_number,
+            state.current_version.local_path,
         )
         with self._ledger.transaction() as tx:
             raw_object = tx.writer.touch_raw_object(
                 ref=plan.ref,
                 checked_at=checked_at,
-                revalidation=_revalidation_for_hit(plan, read_result),
+                revalidation=_revalidation_for_hit(state, read_result),
             )
         return CacheResult(
             status=CacheResultStatus.HIT,
             raw_object=raw_object,
-            version=plan.current_version,
+            version=state.current_version,
         )
 
-    def _record_store(self, plan: BaseFetchPlan, read_result: ModifiedRead) -> CacheResult:
+    def _record_store(self, plan: FetchPlan, read_result: ModifiedRead) -> CacheResult:
         final_path = build_final_path(
             raw_root=self._raw_root,
             plan=plan,
@@ -421,18 +407,9 @@ class Cache:
             version=stored.version,
         )
 
-    def _plan(self, cache_object: CacheObject) -> FetchPlan:
-        base_plan = self._base_plan(cache_object)
+    # ── plan construction ───────────────────────────────────────────────────
 
-        with self._ledger.transaction() as tx:
-            return tx.resolver.resolve_fetch_plan(base_plan)
-
-    def _plan_many(self, cache_objects: Iterable[CacheObject]) -> list[FetchPlan]:
-        base_plans = [self._base_plan(cache_object) for cache_object in cache_objects]
-        with self._ledger.transaction() as tx:
-            return tx.resolver.resolve_fetch_plans(base_plans)
-
-    def _base_plan(self, cache_object: CacheObject) -> BaseFetchPlan:
+    def _build_plan(self, cache_object: CacheObject) -> FetchPlan:
         source_relative_path = (
             normalize_source_path(cache_object.source_path)
             if cache_object.source_path is not None
@@ -451,37 +428,30 @@ class Cache:
             identity_key=resolved_identity_key,
             update_mode=self._update_mode,
         )
-        return BaseFetchPlan(
+        return FetchPlan(
             ref=ref,
             source_url=cache_object.source_url,
             source_relative_path=source_relative_path,
-            update_mode=self._update_mode,
-            identity_key=resolved_identity_key,
             temp_path=str(build_temp_path(raw_root=self._raw_root, ref=ref)),
         )
 
 
-def _current_local_path(plan: FetchPlan, *, raw_root: Path) -> str | None:
-    if isinstance(plan, ResolvedFetchPlan):
-        return plan.current_version.local_path
-    if plan.update_mode is UpdateMode.SNAPSHOT:
-        return str(build_snapshot_path(raw_root=raw_root, plan=plan))
-    return None
+# ── module-level helpers ───────────────────────────────────────────────
 
 
 def _file_exists(path: str | None) -> bool:
     return path is not None and Path(path).exists()
 
 
-def _request_headers_for(plan: FetchPlan, update_mode: UpdateMode) -> Mapping[str, str]:
-    if update_mode is not UpdateMode.MUTABLE or not isinstance(plan, ResolvedFetchPlan):
+def _request_headers_for(state: CurrentRawObjectState, update_mode: UpdateMode) -> Mapping[str, str]:
+    if update_mode is not UpdateMode.MUTABLE:
         return {}
-    return plan.raw_object.revalidation.request_headers()
+    return state.raw_object.revalidation.request_headers()
 
 
-def _revalidation_for_hit(plan: ResolvedFetchPlan, read_result: ReadResult | None) -> RevalidationMetadata:
+def _revalidation_for_hit(state: CurrentRawObjectState, read_result: ReadResult | None) -> RevalidationMetadata:
     if read_result is None:
-        return plan.raw_object.revalidation
+        return state.raw_object.revalidation
     return read_result.revalidation
 
 
