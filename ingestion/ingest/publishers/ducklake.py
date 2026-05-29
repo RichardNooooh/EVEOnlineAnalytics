@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -12,13 +11,12 @@ from uuid import uuid4
 import duckdb
 import pyarrow as pa
 
+from ingest.publishers.logger import logger
 from ingest.util import (
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
     DEFAULT_DUCKLAKE_RAW_DATA_PATH,
 )
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_DUCKLAKE_ALIAS = "ducklake"
 DEFAULT_RAW_SCHEMA = "raw"
@@ -204,6 +202,13 @@ class DuckLakeWriter:
         _attach_ducklake(self._con, config=self._attach)
         schema_name = f"{_quote_identifier(self._attach.alias)}.{_quote_identifier(DEFAULT_RAW_SCHEMA)}"
         self._con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+        logger.info(
+            "DuckLake writer attached alias=%s metadata_schema=%s data_path=%s raw_schema=%s",
+            self._attach.alias,
+            self._attach.metadata_schema,
+            self._attach.data_path,
+            DEFAULT_RAW_SCHEMA,
+        )
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -242,6 +247,15 @@ class DuckLakeWriter:
         missing_key_columns = [key for key in key_columns if key not in arrow_table.column_names]
         if missing_key_columns:
             raise ValueError("key_columns must exist in arrow_table columns: " + ", ".join(missing_key_columns))
+
+        logger.debug(
+            "Writing to DuckLake table=%s rows=%d columns=%d key_columns=%s mode=%s",
+            table.value,
+            len(arrow_table),
+            len(arrow_table.column_names),
+            list(key_columns),
+            "merge" if key_columns else "append",
+        )
 
         quoted_target = _quote_table_target(self._attach.alias, _target_for(table))
         with _temporary_arrow_view(con, arrow_table) as source_name:
@@ -297,6 +311,12 @@ class DuckLakeWriter:
                     WHEN NOT MATCHED THEN INSERT BY NAME
                     """
                 )
+                logger.debug(
+                    "DuckLake write complete table=%s attempted_rows=%d key_columns=%s",
+                    table.value,
+                    len(arrow_table),
+                    list(key_columns),
+                )
                 return
 
             con.execute(
@@ -305,6 +325,12 @@ class DuckLakeWriter:
                 SELECT *
                 FROM {quoted_source}
                 """
+            )
+            logger.debug(
+                "DuckLake write complete table=%s attempted_rows=%d key_columns=%s",
+                table.value,
+                len(arrow_table),
+                list(key_columns),
             )
 
 

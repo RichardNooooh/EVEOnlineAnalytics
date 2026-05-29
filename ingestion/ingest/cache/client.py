@@ -8,7 +8,6 @@ new content or detect unchanged mutable objects.
 from __future__ import annotations
 
 import hashlib
-import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,8 +24,7 @@ from ingest.cache.client_types import (
     NotModifiedRead,
     RevalidationMetadata,
 )
-
-logger = logging.getLogger("ingest.cache")
+from ingest.cache.logger import logger
 
 
 class HttpRawObjectClient:

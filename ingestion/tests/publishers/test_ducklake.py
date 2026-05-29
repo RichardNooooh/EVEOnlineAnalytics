@@ -9,6 +9,9 @@ from ingest.publishers.ducklake import (
     RawDuckLakeTable,
     publish_arrow_table,
 )
+import logging
+
+from ingest.publishers.logger import logger
 
 
 class FakeRelation:
@@ -235,3 +238,33 @@ def test_publish_arrow_table_one_shot(monkeypatch) -> None:
 
     assert con.closed is True
     assert any('INSERT INTO "ducklake"."raw"."raw_market_history" BY NAME' in query for query in _queries(con))
+
+
+def test_writer_logs_attach_info(monkeypatch, caplog: pytest.LogCaptureFixture) -> None:
+    logger.addHandler(caplog.handler)
+    caplog.set_level(logging.INFO, logger="ingest.publishers")
+    con = FakeConnection()
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        assert writer._con is con
+
+    logger.removeHandler(caplog.handler)
+    assert "DuckLake writer attached" in caplog.text
+    assert "alias=ducklake" in caplog.text
+
+
+def test_writer_logs_write_debug(monkeypatch, caplog: pytest.LogCaptureFixture) -> None:
+    logger.addHandler(caplog.handler)
+    caplog.set_level(logging.DEBUG, logger="ingest.publishers")
+    con = FakeConnection()
+    arrow_table = pa.table({"id": [1]})
+
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        writer.write(arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
+
+    logger.removeHandler(caplog.handler)
+    assert "Writing to DuckLake" in caplog.text
+    assert "DuckLake write complete" in caplog.text

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 from datetime import date
 
@@ -14,10 +13,9 @@ from ingest.publishers.ducklake import (
     RawDuckLakeTable,
     build_ducklake_attach_config_from_url,
 )
+from ingest.sources.everef.logger import logger
 from ingest.sources.everef.util import read_csv_to_arrow
 from ingest.util import iter_dates
-
-logger = logging.getLogger(__name__)
 
 EVEREF_BASE = "https://data.everef.net"
 
@@ -28,14 +26,32 @@ _KEY_COLUMNS = ["order_id", "snapshot_time"]
 
 def _list_snapshots(d: date) -> list[str]:
     url = f"{EVEREF_BASE}/market-orders/history/{d.year}/{d.isoformat()}/"
+    logger.debug("Fetching snapshot listing source_date=%s url=%s", d.isoformat(), url)
     resp = requests.get(url, timeout=30)
     resp.raise_for_status()
-    return _SNAPSHOT_RE.findall(resp.text)
+    filenames = _SNAPSHOT_RE.findall(resp.text)
+    if filenames:
+        logger.info(
+            "Discovered snapshots source_date=%s count=%d first=%s last=%s",
+            d.isoformat(),
+            len(filenames),
+            filenames[0],
+            filenames[-1],
+        )
+    else:
+        logger.warning(
+            "No market order snapshots discovered source_date=%s listing_url=%s",
+            d.isoformat(),
+            url,
+        )
+    return filenames
 
 
 def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
     objects: list[CacheObject] = []
+    date_count = 0
     for d in iter_dates(start_date, end_date):
+        date_count += 1
         filenames = _list_snapshots(d)
         for filename in filenames:
             snapshot_id = filename.replace("market-orders-", "").replace(".v3.csv.bz2", "")
@@ -45,6 +61,11 @@ def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
                     identity_key={"source_date": d.isoformat(), "snapshot_time": snapshot_id},
                 )
             )
+    logger.info(
+        "Built cache objects date_count=%d total_snapshots=%d",
+        date_count,
+        len(objects),
+    )
     return objects
 
 
@@ -77,6 +98,15 @@ def run_pipeline(config: EverefCliConfig) -> int:
     success = 0
     failed = 0
 
+    logger.info(
+        "Starting pipeline dataset=%s start_date=%s end_date=%s data_root=%s metadata_schema=%s",
+        "market-orders",
+        config.start_date,
+        config.end_date,
+        config.data_root,
+        config.ducklake.ducklake_metadata_schema,
+    )
+
     with Cache(
         dataset_name="market-orders",
         update_mode=UpdateMode.SNAPSHOT,
@@ -86,17 +116,36 @@ def run_pipeline(config: EverefCliConfig) -> int:
         results = cache.get_many(objects, mode=GetMode.UNPUBLISHED)
 
         if not results:
+            logger.info(
+                "No unpublished raw objects to process dataset=%s discovered=%d",
+                "market-orders",
+                total,
+            )
             return 0
 
+        successful_results: list[CacheResult] = []
         with DuckLakeWriter(attach_config) as writer:
             for result in results:
                 if _process_result(result, writer):
                     success += 1
+                    successful_results.append(result)
                 else:
                     failed += 1
 
-        if success:
-            cache.pubtrack.mark_published_many(results)
+        if successful_results:
+            cache.pubtrack.mark_published_many(successful_results)
 
-    logger.info("Processed %d/%d snapshots (%d failed)", success, total, failed)
+        if success and failed:
+            logger.warning(
+                "Partial publication dataset=%s success=%d failed=%d total=%d marked_published=%d",
+                "market-orders",
+                success,
+                failed,
+                total,
+                len(successful_results),
+            )
+
+    logger.info(
+        "Processed %d/%d snapshots (%d failed, %d marked_published)", success, total, failed, len(successful_results)
+    )
     return 1 if failed else 0
