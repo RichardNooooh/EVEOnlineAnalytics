@@ -6,6 +6,7 @@ from pathlib import Path
 from ingest.cli.config import (
     DuckLakeCliConfig,
     EverefCliConfig,
+    EverefReferencesCliConfig,
     RawFilesCliConfig,
 )
 from ingest.util import parse_iso_date
@@ -42,6 +43,14 @@ def build_raw_files_config(args: argparse.Namespace) -> RawFilesCliConfig:
     return RawFilesCliConfig(
         raw_root=str(Path(args.data_root) / "raw"),
         raw_ledger_url=args.raw_ledger_url,
+    )
+
+
+def build_everef_references_config(args: argparse.Namespace) -> EverefReferencesCliConfig:
+    return EverefReferencesCliConfig(
+        data_root=args.data_root,
+        raw_files=build_raw_files_config(args),
+        ducklake=build_ducklake_config(args),
     )
 
 
