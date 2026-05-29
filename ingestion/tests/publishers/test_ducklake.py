@@ -4,6 +4,8 @@ import pytest
 import pyarrow as pa
 
 from ingest.publishers.ducklake import (
+    DEFAULT_DUCKLAKE_ALIAS,
+    DEFAULT_RAW_SCHEMA,
     DuckLakeAttachConfig,
     DuckLakeWriter,
     RawDuckLakeTable,
@@ -70,7 +72,7 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     assert "LOAD postgres" in queries
     assert "INSTALL ducklake" in queries
     assert "LOAD ducklake" in queries
-    assert "ATTACH " in attach_call[0] and 'AS "ducklake"' in attach_call[0]
+    assert "ATTACH " in attach_call[0] and f'AS "{DEFAULT_DUCKLAKE_ALIAS}"' in attach_call[0]
     assert attach_call[1] is None  # all params inlined
 
 
@@ -109,7 +111,11 @@ def test_writer_appends_by_name(monkeypatch) -> None:
 
     assert con.arrow_tables == [arrow_table]
     assert len(con.relation.view_names) == 1
-    assert any('INSERT INTO "ducklake"."raw"."raw_market_history" BY NAME' in query for query in queries)
+    assert any(
+        f'INSERT INTO "{DEFAULT_DUCKLAKE_ALIAS}"."{DEFAULT_RAW_SCHEMA}"."{RawDuckLakeTable.MARKET_HISTORY.value}" BY NAME'
+        in query
+        for query in queries
+    )
     assert any("DROP VIEW IF EXISTS" in query for query in queries)
     assert con.closed is True
 
@@ -131,7 +137,10 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
     merge_queries = [query for query in queries if "MERGE INTO" in query]
 
     assert len(merge_queries) == 1
-    assert 'MERGE INTO "ducklake"."raw"."raw_market_orders" AS target' in merge_queries[0]
+    assert (
+        f'MERGE INTO "{DEFAULT_DUCKLAKE_ALIAS}"."{DEFAULT_RAW_SCHEMA}"."{RawDuckLakeTable.MARKET_ORDERS.value}" AS target'
+        in merge_queries[0]
+    )
     assert 'USING ("id")' in merge_queries[0]
     assert "WHEN NOT MATCHED THEN INSERT BY NAME" in merge_queries[0]
 
@@ -207,7 +216,11 @@ def test_writer_handles_empty_arrow_table(monkeypatch) -> None:
         writer.write(arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
 
     assert con.arrow_tables == [arrow_table]
-    assert any('INSERT INTO "ducklake"."raw"."raw_market_history" BY NAME' in query for query in _queries(con))
+    assert any(
+        f'INSERT INTO "{DEFAULT_DUCKLAKE_ALIAS}"."{DEFAULT_RAW_SCHEMA}"."{RawDuckLakeTable.MARKET_HISTORY.value}" BY NAME'
+        in query
+        for query in _queries(con)
+    )
 
 
 def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
@@ -223,8 +236,8 @@ def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
 
     assert con.arrow_tables == [table_a, table_b]
     queries = _queries(con)
-    assert any('"raw_market_history"' in query for query in queries)
-    assert any('"raw_market_orders"' in query for query in queries)
+    assert any(f'"{RawDuckLakeTable.MARKET_HISTORY.value}"' in query for query in queries)
+    assert any(f'"{RawDuckLakeTable.MARKET_ORDERS.value}"' in query for query in queries)
     assert con.closed is True
 
 
@@ -237,7 +250,11 @@ def test_publish_arrow_table_one_shot(monkeypatch) -> None:
     publish_arrow_table(arrow_table=arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
 
     assert con.closed is True
-    assert any('INSERT INTO "ducklake"."raw"."raw_market_history" BY NAME' in query for query in _queries(con))
+    assert any(
+        f'INSERT INTO "{DEFAULT_DUCKLAKE_ALIAS}"."{DEFAULT_RAW_SCHEMA}"."{RawDuckLakeTable.MARKET_HISTORY.value}" BY NAME'
+        in query
+        for query in _queries(con)
+    )
 
 
 def test_writer_logs_attach_info(monkeypatch, caplog: pytest.LogCaptureFixture) -> None:
@@ -251,7 +268,7 @@ def test_writer_logs_attach_info(monkeypatch, caplog: pytest.LogCaptureFixture) 
 
     logger.removeHandler(caplog.handler)
     assert "DuckLake writer attached" in caplog.text
-    assert "alias=ducklake" in caplog.text
+    assert f"alias={DEFAULT_DUCKLAKE_ALIAS}" in caplog.text
 
 
 def test_writer_logs_write_debug(monkeypatch, caplog: pytest.LogCaptureFixture) -> None:
