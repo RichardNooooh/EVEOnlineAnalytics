@@ -4,63 +4,31 @@ import re
 from datetime import date
 
 import pyarrow as pa
-import requests
 
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
 from ingest.sources.everef.logger import logger
-from ingest.sources.everef.util import EVEREF_BASE, read_csv_to_arrow
+from ingest.sources.everef.util import build_snapshot_cache_objects, read_csv_to_arrow
 from ingest.sources.pipeline import run_pipeline as _run_pipeline
-from ingest.util import iter_dates
 
 _SNAPSHOT_RE = re.compile(r'href="[^"]*(market-orders-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.v3\.csv\.bz2)"')
 _KEY_COLUMNS = ["order_id", "snapshot_time"]
 
 
-def _list_snapshots(d: date) -> list[str]:
-    url = f"{EVEREF_BASE}/market-orders/history/{d.year}/{d.isoformat()}/"
-    logger.debug("Fetching snapshot listing source_date=%s url=%s", d.isoformat(), url)
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    filenames = _SNAPSHOT_RE.findall(resp.text)
-    if filenames:
-        logger.info(
-            "Discovered snapshots source_date=%s count=%d first=%s last=%s",
-            d.isoformat(),
-            len(filenames),
-            filenames[0],
-            filenames[-1],
-        )
-    else:
-        logger.warning(
-            "No market order snapshots discovered source_date=%s listing_url=%s",
-            d.isoformat(),
-            url,
-        )
-    return filenames
-
-
 def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
-    objects: list[CacheObject] = []
-    date_count = 0
-    for d in iter_dates(start_date, end_date):
-        date_count += 1
-        filenames = _list_snapshots(d)
-        for filename in filenames:
-            snapshot_id = filename.replace("market-orders-", "").replace(".v3.csv.bz2", "")
-            objects.append(
-                CacheObject(
-                    source_url=f"{EVEREF_BASE}/market-orders/history/{d.year}/{d.isoformat()}/{filename}",
-                    identity_key={"source_date": d.isoformat(), "snapshot_time": snapshot_id},
-                )
-            )
-    logger.info(
-        "Built cache objects date_count=%d total_snapshots=%d",
-        date_count,
-        len(objects),
+    def identity_key(filename: str, d: date) -> dict[str, str]:
+        snapshot_id = filename.replace("market-orders-", "").replace(".v3.csv.bz2", "")
+        return {"source_date": d.isoformat(), "snapshot_time": snapshot_id}
+
+    return build_snapshot_cache_objects(
+        "market-orders/history",
+        start_date,
+        end_date,
+        _SNAPSHOT_RE,
+        identity_key,
+        source_label="market-orders",
     )
-    return objects
 
 
 def _process_result(result: CacheResult, writer: DuckLakeWriter) -> bool:
