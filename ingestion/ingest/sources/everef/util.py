@@ -7,15 +7,17 @@ from datetime import UTC, date, datetime
 
 import pyarrow as pa
 import pyarrow.csv as pac
-import requests
 
 from ingest.cache import CacheObject, CacheResult
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
+from ingest.sources.everef.client import EverefSnapshotClient
 from ingest.util import file_size, iter_dates
 
 logger = logging.getLogger("ingest.sources.everef")
 
 EVEREF_BASE = "https://data.everef.net"
+
+_DEFAULT_CLIENT = EverefSnapshotClient()
 
 
 def list_snapshots(
@@ -25,9 +27,8 @@ def list_snapshots(
 ) -> list[str]:
     url = f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/"
     logger.debug("Fetching snapshot listing source_date=%s url=%s", d.isoformat(), url)
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    filenames = pattern.findall(resp.text)
+    html = _DEFAULT_CLIENT.fetch_text(url)
+    filenames = pattern.findall(html)
     if filenames:
         logger.info(
             "Discovered snapshots source_date=%s count=%d first=%s last=%s prefix=%s",
