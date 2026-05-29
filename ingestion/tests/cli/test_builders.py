@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ingest.cli.builders import build_everef_market_history_config
+from ingest.cli.builders import build_everef_config
 from ingest.cli.parser import build_parser
 from ingest.util import (
     DEFAULT_DATA_ROOT,
@@ -27,7 +27,7 @@ def test_market_history_uses_runtime_defaults() -> None:
         ]
     )
 
-    config = build_everef_market_history_config(args)
+    config = build_everef_config(args)
 
     assert config.data_root == DEFAULT_DATA_ROOT
     assert config.raw_files.raw_root == DEFAULT_RAW_ROOT
@@ -81,4 +81,4 @@ def test_market_history_validation_errors(argv: list[str], error_message: str) -
     args = parser.parse_args(argv)
 
     with pytest.raises(ValueError, match=error_message):
-        build_everef_market_history_config(args)
+        build_everef_config(args)
