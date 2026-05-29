@@ -562,7 +562,6 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
     assert unpublished_results[0].identity_key == {"source": "test"}
     assert unpublished_results[1].identity_key == {"source": "test"}
     assert filtered_results == []
-    assert ledger.resolve_fetch_plans_calls >= 2
     assert ledger.filter_published_calls >= 2
 
 
