@@ -81,3 +81,9 @@ class RotateVersionResult:
     raw_object: RawObjectEntry
     version: RawObjectVersion
     stale_versions: list[RawObjectVersion]
+
+
+@dataclass(frozen=True)
+class CurrentRawObjectState:
+    raw_object: RawObjectEntry
+    current_version: RawObjectVersion
