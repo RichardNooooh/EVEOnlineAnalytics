@@ -40,9 +40,7 @@ def snapshot_html() -> str:
 class TestListSnapshots:
     def test_extracts_filenames(self, snapshot_html: str) -> None:
         with patch.object(requests, "get", return_value=MagicMock(text=snapshot_html, raise_for_status=lambda: None)):
-            filenames = list_snapshots(
-                "fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, source_label="fuzzwork-orders"
-            )
+            filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE)
         assert filenames == [
             "fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
             "fuzzwork-orderset-42-2026-01-01_00-00-00.csv.gz",
@@ -51,26 +49,22 @@ class TestListSnapshots:
     def test_empty_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
         with patch.object(requests, "get", return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None)):
-            filenames = list_snapshots(
-                "fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, source_label="fuzzwork-orders"
-            )
+            filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE)
         logger.removeHandler(caplog.handler)
         assert filenames == []
         assert "No snapshots discovered" in caplog.text
-        assert "label=fuzzwork-orders" in caplog.text
+        assert "prefix=fuzzwork/ordersets" in caplog.text
 
     def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
         with patch.object(
             requests, "get", return_value=MagicMock(text="<html>bad</html>", raise_for_status=lambda: None)
         ):
-            filenames = list_snapshots(
-                "fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, source_label="fuzzwork-orders"
-            )
+            filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE)
         logger.removeHandler(caplog.handler)
         assert filenames == []
         assert "No snapshots discovered" in caplog.text
-        assert "label=fuzzwork-orders" in caplog.text
+        assert "prefix=fuzzwork/ordersets" in caplog.text
 
 
 class TestBuildCacheObjects:

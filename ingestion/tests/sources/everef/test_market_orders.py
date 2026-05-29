@@ -41,9 +41,7 @@ def real_listing_html() -> str:
 class TestListSnapshots:
     def test_extracts_filenames(self, snapshot_html: str) -> None:
         with patch.object(requests, "get", return_value=MagicMock(text=snapshot_html, raise_for_status=lambda: None)):
-            filenames = list_snapshots(
-                "market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, source_label="market-orders"
-            )
+            filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE)
         assert filenames == [
             "market-orders-2026-01-01_00-00-00.v3.csv.bz2",
             "market-orders-2026-01-01_12-00-00.v3.csv.bz2",
@@ -52,26 +50,22 @@ class TestListSnapshots:
     def test_empty_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
         with patch.object(requests, "get", return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None)):
-            filenames = list_snapshots(
-                "market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, source_label="market-orders"
-            )
+            filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE)
         logger.removeHandler(caplog.handler)
         assert filenames == []
         assert "No snapshots discovered" in caplog.text
-        assert "label=market-orders" in caplog.text
+        assert "prefix=market-orders/history" in caplog.text
 
     def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
         with patch.object(
             requests, "get", return_value=MagicMock(text="<html>bad</html>", raise_for_status=lambda: None)
         ):
-            filenames = list_snapshots(
-                "market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, source_label="market-orders"
-            )
+            filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE)
         logger.removeHandler(caplog.handler)
         assert filenames == []
         assert "No snapshots discovered" in caplog.text
-        assert "label=market-orders" in caplog.text
+        assert "prefix=market-orders/history" in caplog.text
 
 
 class TestBuildCacheObjects:
@@ -152,9 +146,7 @@ class TestListSnapshotsWithRealFixture:
         with patch.object(
             requests, "get", return_value=MagicMock(text=real_listing_html, raise_for_status=lambda: None)
         ):
-            filenames = list_snapshots(
-                "market-orders/history", self.fixture_date, _SNAPSHOT_RE, source_label="market-orders"
-            )
+            filenames = list_snapshots("market-orders/history", self.fixture_date, _SNAPSHOT_RE)
         assert filenames == self.EXPECTED_FILENAMES
 
 
