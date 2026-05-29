@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from ingest.cli.builders import build_everef_config
 from ingest.cli.parser import build_parser
+from ingest.logging import configure_logging
+from ingest.main import main
 from ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,
@@ -82,3 +86,60 @@ def test_market_history_validation_errors(argv: list[str], error_message: str) -
 
     with pytest.raises(ValueError, match=error_message):
         build_everef_config(args)
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_message"),
+    [
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-01-01",
+                "--end-date",
+                "2025-01-31",
+                "--raw-ledger-url",
+                "",
+            ],
+            "raw_ledger_url must not be empty",
+        ),
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-02-01",
+                "--end-date",
+                "2025-01-31",
+            ],
+            "start_date must be on or before end_date",
+        ),
+    ],
+)
+def test_main_surfaces_parser_and_validation_errors(
+    monkeypatch,
+    capsys,
+    argv: list[str],
+    expected_message: str,
+) -> None:
+    monkeypatch.setenv("INGEST_LOG_LEVEL", "CRITICAL")
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(argv)
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert expected_message in captured.err
+
+
+def test_configure_logging_warns_on_invalid_env_level(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("INGEST_LOG_LEVEL", "banana")
+
+    configure_logging(force=True)
+
+    logging.getLogger("ingest.test").info("info still logs")
+
+    captured = capsys.readouterr()
+    assert "Invalid INGEST_LOG_LEVEL='BANANA'; falling back to INFO" in captured.err
+    assert "info still logs" in captured.err
