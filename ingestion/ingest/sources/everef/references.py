@@ -1,23 +1,17 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 
 import pyarrow as pa
 
 from ingest.archive.tarball import ExtractedTarball
-from ingest.cache import Cache, CacheObject, CacheResult, GetMode, UpdateMode
-from ingest.publishers.ducklake import (
-    DuckLakeWriter,
-    RawDuckLakeTable,
-    build_ducklake_attach_config_from_url,
-)
+from ingest.cache import CacheObject, CacheResult, UpdateMode
+from ingest.cli.config import EverefReferencesCliConfig
+from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
 from ingest.sources.everef.logger import logger
-from ingest.util import file_size
+from ingest.sources.everef.util import EVEREF_BASE, add_provenance
+from ingest.sources.pipeline import run_pipeline as _run_pipeline
 
-EVEREF_BASE = "https://data.everef.net"
-
-# Map JSON filename (without .json) to (RawDuckLakeTable, key_column)
 _REFERENCE_TABLES: dict[str, tuple[RawDuckLakeTable, str]] = {
     "types": (RawDuckLakeTable.REFERENCE_TYPES, "type_id"),
     "regions": (RawDuckLakeTable.REFERENCE_REGIONS, "region_id"),
@@ -26,7 +20,7 @@ _REFERENCE_TABLES: dict[str, tuple[RawDuckLakeTable, str]] = {
 }
 
 
-def _build_cache_object() -> list[CacheObject]:
+def _build_cache_objects() -> list[CacheObject]:
     return [
         CacheObject(
             source_url=f"{EVEREF_BASE}/reference-data/reference-data-latest.tar.xz",
@@ -44,24 +38,13 @@ def _parse_json_to_table(member_path: str, result: CacheResult, archive_name: st
         return pa.Table.from_pydict({})
 
     table = pa.Table.from_pylist(data)
-    n = len(table)
-    content_length = file_size(result.path)
-    now = datetime.now(UTC)
-
-    provenance = [
-        ("_source_url", pa.array([result.version.source_url] * n, type=pa.utf8())),
-        ("_source_local_path", pa.array([result.path] * n, type=pa.utf8())),
-        ("_source_sha256", pa.array([result.version.sha256] * n, type=pa.utf8())),
-        ("_source_content_length", pa.array([content_length] * n, type=pa.int64())),
-        ("_source_last_modified", pa.array([result.version.revalidation.last_modified] * n, type=pa.utf8())),
-        ("_source_downloaded_at", pa.array([result.version.fetched_at] * n, type=pa.timestamp("us", tz="UTC"))),
-        ("_source_archive_member", pa.array([archive_name] * n, type=pa.utf8())),
-        ("_ingested_at", pa.array([now] * n, type=pa.timestamp("us", tz="UTC"))),
-    ]
-    for name, col in provenance:
-        table = table.append_column(name, col)
-
-    return table
+    return add_provenance(
+        table,
+        result,
+        extra_columns={
+            "_source_archive_member": pa.array([archive_name] * len(table), type=pa.utf8()),
+        },
+    )
 
 
 def _process_member(member_path: str, archive_name: str, result: CacheResult, writer: DuckLakeWriter) -> bool:
@@ -71,7 +54,7 @@ def _process_member(member_path: str, archive_name: str, result: CacheResult, wr
 
     table_info = _REFERENCE_TABLES.get(filename)
     if table_info is None:
-        logger.debug("Skipping unknown reference file archive_member=%s", archive_name)
+        logger.warning("Skipping unknown reference file archive_member=%s", archive_name)
         return True
 
     table_key, key_column = table_info
@@ -96,72 +79,43 @@ def _process_member(member_path: str, archive_name: str, result: CacheResult, wr
         return False
 
 
-def run_pipeline(config) -> int:
-    objects = _build_cache_object()
-
-    attach_config = build_ducklake_attach_config_from_url(
-        config.ducklake.ducklake_catalog,
-        data_path=f"{config.data_root}/datasets/ducklake/raw",
-        metadata_schema=config.ducklake.ducklake_metadata_schema,
-    )
-
-    logger.info(
-        "Starting pipeline dataset=%s data_root=%s metadata_schema=%s",
-        "reference-data",
-        config.data_root,
-        config.ducklake.ducklake_metadata_schema,
-    )
-
-    with Cache(
-        dataset_name="reference-data",
-        update_mode=UpdateMode.SNAPSHOT,
-        raw_root=f"{config.data_root}/raw",
-        ledger_url=config.raw_files.raw_ledger_url,
-    ) as cache:
-        results = cache.get_many(objects, mode=GetMode.UNPUBLISHED)
-
-        if not results:
-            logger.info("No unpublished raw objects to process dataset=reference-data")
-            return 0
-
-        (result,) = results
-        successful = False
-
-        with DuckLakeWriter(attach_config) as writer, ExtractedTarball(result.path) as archive:
-            json_members = list(archive.iter_json_files())
-            if not json_members:
-                logger.warning(
-                    "No JSON files found in archive identity_key=%s path=%s",
-                    result.identity_key,
-                    result.path,
-                )
-
-            member_success = 0
-            member_failed = 0
-            for member in json_members:
-                if _process_member(str(member.path), member.archive_name, result, writer):
-                    member_success += 1
-                else:
-                    member_failed += 1
-
-            if member_failed == 0 and member_success > 0:
-                successful = True
-                cache.pubtrack.mark_published_many([result])
-            elif member_success == 0:
-                logger.error("No reference files were successfully processed")
-
-        if successful:
-            logger.info(
-                "Successfully published reference data archive=%s files_processed=%d",
-                result.path,
-                member_success,
-            )
-        else:
+def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> bool:
+    with ExtractedTarball(result.path) as archive:
+        json_members = list(archive.iter_json_files())
+        if not json_members:
             logger.warning(
-                "Partial or failed publication archive=%s success=%d failed=%d",
+                "No JSON files found in archive identity_key=%s path=%s",
+                result.identity_key,
                 result.path,
+            )
+            return False
+
+        member_success = 0
+        member_failed = 0
+        for member in json_members:
+            if _process_member(str(member.path), member.archive_name, result, writer):
+                member_success += 1
+            else:
+                member_failed += 1
+
+        if member_failed > 0:
+            logger.warning(
+                "Partial or failed processing success=%d failed=%d",
                 member_success,
                 member_failed,
             )
+            return False
+        if member_success == 0:
+            logger.error("No reference files were successfully processed")
+            return False
+        return True
 
-    return 0 if successful else 1
+
+def run_pipeline(config: EverefReferencesCliConfig) -> int:
+    return _run_pipeline(
+        dataset_name="reference-data",
+        update_mode=UpdateMode.SNAPSHOT,
+        objects=_build_cache_objects(),
+        config=config,
+        process_one=_process_references_result,
+    )

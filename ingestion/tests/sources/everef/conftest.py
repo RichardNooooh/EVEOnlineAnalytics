@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any
+
+import pyarrow as pa
+
+from ingest.cache import CacheResult, CacheResultStatus
+from ingest.cache.client_types import RevalidationMetadata
+from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
+from ingest.cache.primitives import UpdateMode
+
+
+class FakeRelation:
+    def __init__(self) -> None:
+        self.view_names: list[str] = []
+
+    def create_view(self, view_name: str) -> None:
+        self.view_names.append(view_name)
+
+
+class FakeConnection:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[str] | None]] = []
+        self.relation = FakeRelation()
+        self.arrow_tables: list[pa.Table] = []
+        self.closed = False
+
+    def execute(self, query: str, params: list[str] | None = None) -> None:
+        self.calls.append((query, params))
+
+    def from_arrow(self, arrow_table: pa.Table) -> FakeRelation:
+        self.arrow_tables.append(arrow_table)
+        return self.relation
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def make_cache_result(
+    file_path: str,
+    *,
+    dataset_name: str = "market-history",
+    identity_key: dict[str, Any] | None = None,
+    source_url: str | None = None,
+    content_length: int | None = None,
+    last_modified: str | None = None,
+    update_mode: UpdateMode = UpdateMode.SNAPSHOT,
+) -> CacheResult:
+    identity_key = identity_key or {"source_date": "2026-01-01"}
+    source_url = source_url or f"https://example.com/{dataset_name}/test.csv.bz2"
+
+    ref = RawObjectRef(
+        source_name="everef",
+        dataset_name=dataset_name,
+        identity_hash="abc",
+        identity_key=identity_key,
+        update_mode=update_mode,
+    )
+    raw_object = RawObjectEntry(
+        id="obj-1",
+        ref=ref,
+        created_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
+    )
+    version = RawObjectVersion(
+        id="ver-1",
+        raw_object_id="obj-1",
+        source_url=source_url,
+        fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
+        revalidation=RevalidationMetadata(content_length=content_length, last_modified=last_modified),
+        sha256="abc123",
+        local_path=file_path,
+        storage_encoding="bz2",
+        version_number=1,
+    )
+    return CacheResult(
+        status=CacheResultStatus.STORED,
+        raw_object=raw_object,
+        version=version,
+    )

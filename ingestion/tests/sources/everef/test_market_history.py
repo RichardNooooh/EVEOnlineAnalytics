@@ -5,13 +5,9 @@ import pathlib
 from datetime import UTC, date, datetime
 from unittest.mock import MagicMock
 
-import pyarrow as pa
 import pytest
 
-from ingest.cache import CacheObject, CacheResult, CacheResultStatus
-from ingest.cache.client_types import RevalidationMetadata
-from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
-from ingest.cache.primitives import UpdateMode
+from ingest.cache import CacheObject, CacheResult
 from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliConfig
 import logging
 
@@ -21,6 +17,7 @@ from ingest.sources.everef.market_history import (
     run_pipeline,
 )
 from ingest.sources.everef.util import read_csv_to_arrow
+from tests.sources.everef.conftest import FakeConnection, make_cache_result
 
 _PROVENANCE_COLS = [
     "_source_market_date",
@@ -44,42 +41,6 @@ _ORIGINAL_COLS = [
     "region_id",
     "type_id",
 ]
-
-
-def _make_result(
-    file_path: str,
-    *,
-    content_length: int | None = None,
-    last_modified: str | None = None,
-) -> CacheResult:
-    ref = RawObjectRef(
-        source_name="everef",
-        dataset_name="market-history",
-        identity_hash="abc",
-        identity_key={"source_date": "2026-01-01"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    raw_object = RawObjectEntry(
-        id="obj-1",
-        ref=ref,
-        created_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-    )
-    version = RawObjectVersion(
-        id="ver-1",
-        raw_object_id="obj-1",
-        source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
-        fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-        revalidation=RevalidationMetadata(content_length=content_length, last_modified=last_modified),
-        sha256="abc123",
-        local_path=file_path,
-        storage_encoding="bz2",
-        version_number=1,
-    )
-    return CacheResult(
-        status=CacheResultStatus.STORED,
-        raw_object=raw_object,
-        version=version,
-    )
 
 
 class TestBuildCacheObjects:
@@ -129,10 +90,11 @@ class TestReadCsvToArrow:
         return path
 
     def test_adds_provenance(self, csv_path: pathlib.Path) -> None:
-        result = _make_result(
+        result = make_cache_result(
             str(csv_path),
             content_length=csv_path.stat().st_size,
             last_modified="2026-01-02T11:01:55Z",
+            source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
         )
         table = read_csv_to_arrow(result)
 
@@ -157,70 +119,17 @@ class TestReadCsvToArrow:
         assert table.column("type_id")[0].as_py() == 19
 
     def test_handles_missing_last_modified(self, csv_path: pathlib.Path) -> None:
-        result = _make_result(str(csv_path), last_modified=None)
+        result = make_cache_result(
+            str(csv_path),
+            last_modified=None,
+            source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
+        )
         table = read_csv_to_arrow(result)
 
         assert "_source_last_modified" in table.column_names
         assert "_source_content_length" in table.column_names
         assert table.column("_source_last_modified")[0].as_py() is None
         assert table.column("_source_content_length")[0].as_py() == csv_path.stat().st_size
-
-
-class FakeRelation:
-    def __init__(self) -> None:
-        self.view_names: list[str] = []
-
-    def create_view(self, view_name: str) -> None:
-        self.view_names.append(view_name)
-
-
-class FakeConnection:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, list[str] | None]] = []
-        self.relation = FakeRelation()
-        self.arrow_tables: list[pa.Table] = []
-        self.closed = False
-
-    def execute(self, query: str, params: list[str] | None = None) -> None:
-        self.calls.append((query, params))
-
-    def from_arrow(self, arrow_table: pa.Table) -> FakeRelation:
-        self.arrow_tables.append(arrow_table)
-        return self.relation
-
-    def close(self) -> None:
-        self.closed = True
-
-
-def _fake_cache_result(file_path: str) -> CacheResult:
-    ref = RawObjectRef(
-        source_name="everef",
-        dataset_name="market-history",
-        identity_hash="abc",
-        identity_key={"source_date": "2026-01-01"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    raw_object = RawObjectEntry(
-        id="obj-1",
-        ref=ref,
-        created_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-    )
-    version = RawObjectVersion(
-        id="ver-1",
-        raw_object_id="obj-1",
-        source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
-        fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-        revalidation=RevalidationMetadata(),
-        sha256="abc123",
-        local_path=file_path,
-        storage_encoding="bz2",
-        version_number=1,
-    )
-    return CacheResult(
-        status=CacheResultStatus.STORED,
-        raw_object=raw_object,
-        version=version,
-    )
 
 
 @pytest.mark.integration
@@ -235,7 +144,7 @@ def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     with bz2.open(file_path, "wt") as f:
         f.write(csv_content)
 
-    fake_result = _fake_cache_result(str(file_path))
+    fake_result = make_cache_result(str(file_path))
     mock_pubtrack = MagicMock()
 
     class FakeCache:
@@ -262,7 +171,7 @@ def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.market_history.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
     monkeypatch.setattr(
         "ingest.sources.everef.market_history._build_cache_objects",
         lambda start, end: [
@@ -299,7 +208,7 @@ def test_run_pipeline_only_marks_successful(monkeypatch: pytest.MonkeyPatch, tmp
     with bz2.open(bad_path, "wt") as f:
         f.write("not,a,csv\n")
 
-    bad_result = _fake_cache_result(str(bad_path))
+    bad_result = make_cache_result(str(bad_path))
     mock_pubtrack = MagicMock()
 
     class FakeCache:
@@ -321,7 +230,7 @@ def test_run_pipeline_only_marks_successful(monkeypatch: pytest.MonkeyPatch, tmp
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.market_history.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
     monkeypatch.setattr(
         "ingest.sources.everef.market_history._build_cache_objects",
         lambda start, end: [
@@ -360,7 +269,7 @@ def test_run_pipeline_partial_success_warns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     logger.addHandler(caplog.handler)
-    caplog.set_level(logging.WARNING, logger="ingest.sources.everef")
+    caplog.set_level(logging.WARNING, logger=logger.name)
 
     csv_content = (
         "average,date,highest,lowest,order_count,volume,"
@@ -376,8 +285,8 @@ def test_run_pipeline_partial_success_warns(
     with bz2.open(bad_path, "wt") as f:
         f.write("not,a,csv\n")
 
-    good_result = _fake_cache_result(str(good_path))
-    bad_result = _fake_cache_result(str(bad_path))
+    good_result = make_cache_result(str(good_path))
+    bad_result = make_cache_result(str(bad_path))
 
     call_count = 0
     original_process = __import__("ingest.sources.everef.market_history", fromlist=["process_result"]).process_result
@@ -410,7 +319,7 @@ def test_run_pipeline_partial_success_warns(
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.market_history.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
     monkeypatch.setattr(
         "ingest.sources.everef.market_history._build_cache_objects",
         lambda start, end: [
