@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ingest.cache.plans import BaseFetchPlan
+from ingest.cache.plans import FetchPlan
 from ingest.cache.ledger.types import RawObjectRef
 from ingest.cache.primitives import UpdateMode
 from ingest.cache.paths import (
@@ -24,9 +24,9 @@ def _plan(
     identity_hash: str = "abc123",
     source_relative_path: str = "market-orders/history/2026/2026-01-01/file.csv.bz2",
     update_mode: UpdateMode = UpdateMode.SNAPSHOT,
-) -> BaseFetchPlan:
+) -> FetchPlan:
     identity_key: dict[str, str] = {"source_path": source_relative_path}
-    return BaseFetchPlan(
+    return FetchPlan(
         ref=RawObjectRef(
             source_name=source_name,
             dataset_name=dataset_name,
@@ -36,8 +36,6 @@ def _plan(
         ),
         source_url=f"https://data.everef.net/{source_relative_path}",
         source_relative_path=source_relative_path,
-        update_mode=update_mode,
-        identity_key=identity_key,
         temp_path="/tmp/dummy",
     )
 

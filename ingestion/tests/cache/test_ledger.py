@@ -8,7 +8,6 @@ from sqlalchemy import insert, select
 from ingest.cache.ledger import RawObjectLedger
 from ingest.cache.ledger import _db as ledger_db
 from ingest.cache.ledger import runtime as ledger_runtime
-from ingest.cache.ledger.plans import FetchPlanResolver
 from ingest.cache.ledger.publishing_tx import PublicationTrackerTx
 from ingest.cache.ledger.reader import RawObjectReader
 from ingest.cache.ledger.runtime import LedgerTx
@@ -72,7 +71,6 @@ def test_ledger_lifecycle(monkeypatch) -> None:
         assert isinstance(tx, LedgerTx)
         assert isinstance(tx.reader, RawObjectReader)
         assert isinstance(tx.writer, RawObjectWriter)
-        assert isinstance(tx.resolver, FetchPlanResolver)
         assert isinstance(tx.publications, PublicationTrackerTx)
 
     assert bootstrap_calls == 1
