@@ -5,7 +5,7 @@ Types that are internal implementation details live in separate modules:
 
 - ``client_types.py`` — HTTP read result types (``ReadStatus``, ``ReadResult``, etc.)
 - ``ledger/types.py`` — ledger record types (``RawObjectEntry``, ``RawObjectVersion``, etc.)
-- ``plans.py`` — fetch plan types (``BaseFetchPlan``, ``ResolvedFetchPlan``, etc.)
+- ``plans.py`` — fetch plan type (``FetchPlan``)
 """
 
 from __future__ import annotations

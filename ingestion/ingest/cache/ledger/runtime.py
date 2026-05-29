@@ -14,7 +14,6 @@ from types import TracebackType
 from sqlalchemy import create_engine
 
 from ingest.cache.ledger.mappers import normalize_ledger_url
-from ingest.cache.ledger.plans import FetchPlanResolver
 from ingest.cache.ledger.publishing_tx import PublicationTrackerTx
 from ingest.cache.ledger.reader import RawObjectReader
 from ingest.cache.ledger.schema import _METADATA
@@ -28,7 +27,6 @@ from ingest.cache.ledger.writer import RawObjectWriter
 class LedgerTx:
     reader: RawObjectReader
     writer: RawObjectWriter
-    resolver: FetchPlanResolver
     publications: PublicationTrackerTx
 
 
@@ -84,7 +82,6 @@ class RawObjectLedger:
             yield LedgerTx(
                 reader=reader,
                 writer=RawObjectWriter(con),
-                resolver=FetchPlanResolver(con, reader=reader),
                 publications=PublicationTrackerTx(con),
             )
 
