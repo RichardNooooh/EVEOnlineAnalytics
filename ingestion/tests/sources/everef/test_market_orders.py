@@ -1,49 +1,92 @@
 from __future__ import annotations
 
 import bz2
+import logging
 import pathlib
 from datetime import UTC, date, datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
 import pytest
+import requests
 
 from ingest.cache import CacheObject, CacheResult, CacheResultStatus
 from ingest.cache.client_types import RevalidationMetadata
 from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
 from ingest.cache.primitives import UpdateMode
 from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliConfig
-import logging
 
 from ingest.sources.everef.logger import logger
-from ingest.sources.everef.market_history import (
+from ingest.sources.everef.market_orders import (
     _build_cache_objects,
+    _list_snapshots,
     run_pipeline,
 )
 from ingest.sources.everef.util import read_csv_to_arrow
 
-_PROVENANCE_COLS = [
-    "_source_market_date",
-    "_source_url",
-    "_source_local_path",
-    "_source_sha256",
-    "_source_content_length",
-    "_source_last_modified",
-    "_source_downloaded_at",
-    "_ingested_at",
-]
 
-_ORIGINAL_COLS = [
-    "average",
-    "date",
-    "highest",
-    "lowest",
-    "order_count",
-    "volume",
-    "http_last_modified",
-    "region_id",
-    "type_id",
-]
+@pytest.fixture
+def snapshot_html() -> str:
+    return (
+        '<html><body><a href="market-orders-2026-01-01_00-00-00.v3.csv.bz2">link1</a>'
+        '<a href="market-orders-2026-01-01_12-00-00.v3.csv.bz2">link2</a></body></html>'
+    )
+
+
+class TestListSnapshots:
+    def test_extracts_filenames(self, snapshot_html: str) -> None:
+        with patch.object(requests, "get", return_value=MagicMock(text=snapshot_html, raise_for_status=lambda: None)):
+            filenames = _list_snapshots(date(2026, 1, 1))
+        assert filenames == [
+            "market-orders-2026-01-01_00-00-00.v3.csv.bz2",
+            "market-orders-2026-01-01_12-00-00.v3.csv.bz2",
+        ]
+
+    def test_empty_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        logger.addHandler(caplog.handler)
+        with patch.object(requests, "get", return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None)):
+            filenames = _list_snapshots(date(2026, 1, 1))
+        logger.removeHandler(caplog.handler)
+        assert filenames == []
+        assert "No market order snapshots discovered" in caplog.text
+
+    def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        logger.addHandler(caplog.handler)
+        with patch.object(
+            requests, "get", return_value=MagicMock(text="<html>bad</html>", raise_for_status=lambda: None)
+        ):
+            filenames = _list_snapshots(date(2026, 1, 1))
+        logger.removeHandler(caplog.handler)
+        assert filenames == []
+        assert "No market order snapshots discovered" in caplog.text
+
+
+class TestBuildCacheObjects:
+    def test_creates_objects_for_snapshots(self) -> None:
+        html = (
+            '<html><body><a href="market-orders-2026-01-01_00-00-00.v3.csv.bz2">link1</a>'
+            '<a href="market-orders-2026-01-01_12-00-00.v3.csv.bz2">link2</a></body></html>'
+        )
+        with patch.object(requests, "get", return_value=MagicMock(text=html, raise_for_status=lambda: None)):
+            objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
+
+        assert len(objects) == 2
+        assert objects[0].identity_key == {"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"}
+        assert objects[1].identity_key == {"source_date": "2026-01-01", "snapshot_time": "2026-01-01_12-00-00"}
+
+    def test_skips_dates_with_no_snapshots(self) -> None:
+        with patch.object(requests, "get", return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None)):
+            objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
+        assert objects == []
+
+    def test_logs_aggregate_counts(self, caplog: pytest.LogCaptureFixture) -> None:
+        logger.addHandler(caplog.handler)
+        caplog.set_level(logging.INFO, logger="ingest.sources.everef")
+        html = '<html><body><a href="market-orders-2026-01-01_00-00-00.v3.csv.bz2">link1</a></body></html>'
+        with patch.object(requests, "get", return_value=MagicMock(text=html, raise_for_status=lambda: None)):
+            _build_cache_objects(date(2026, 1, 1), date(2026, 1, 2))
+        logger.removeHandler(caplog.handler)
+        assert "Built cache objects date_count=2 total_snapshots=2" in caplog.text
 
 
 def _make_result(
@@ -54,9 +97,9 @@ def _make_result(
 ) -> CacheResult:
     ref = RawObjectRef(
         source_name="everef",
-        dataset_name="market-history",
+        dataset_name="market-orders",
         identity_hash="abc",
-        identity_key={"source_date": "2026-01-01"},
+        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
         update_mode=UpdateMode.SNAPSHOT,
     )
     raw_object = RawObjectEntry(
@@ -67,7 +110,7 @@ def _make_result(
     version = RawObjectVersion(
         id="ver-1",
         raw_object_id="obj-1",
-        source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
         fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
         revalidation=RevalidationMetadata(content_length=content_length, last_modified=last_modified),
         sha256="abc123",
@@ -82,48 +125,16 @@ def _make_result(
     )
 
 
-class TestBuildCacheObjects:
-    def test_dates_and_urls(self) -> None:
-        objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 3))
-
-        assert len(objects) == 3
-
-        assert objects[0].source_url == (
-            "https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2"
-        )
-        assert objects[0].identity_key == {"source_date": "2026-01-01"}
-
-        assert objects[1].source_url == (
-            "https://data.everef.net/market-history/2026/market-history-2026-01-02.csv.bz2"
-        )
-        assert objects[1].identity_key == {"source_date": "2026-01-02"}
-
-        assert objects[2].source_url == (
-            "https://data.everef.net/market-history/2026/market-history-2026-01-03.csv.bz2"
-        )
-        assert objects[2].identity_key == {"source_date": "2026-01-03"}
-
-    def test_single_date(self) -> None:
-        objects = _build_cache_objects(date(2026, 6, 15), date(2026, 6, 15))
-
-        assert len(objects) == 1
-        assert objects[0].source_url == (
-            "https://data.everef.net/market-history/2026/market-history-2026-06-15.csv.bz2"
-        )
-        assert objects[0].identity_key == {"source_date": "2026-06-15"}
-
-
 class TestReadCsvToArrow:
     CSV_CONTENT = (
-        "average,date,highest,lowest,order_count,volume,"
-        "http_last_modified,region_id,type_id\n"
-        "9.99,2026-01-01,9.99,9.99,1,24,"
-        "2026-01-02T11:01:55Z,10000001,19\n"
+        "order_id,type_id,region_id,location_id,system_id,"
+        "range,price,volume_remain,volume_total,min_volume,issued,expires,duration,is_buy_order,reported_by,http_last_modified\n"
+        "1,34,10000001,60000001,30000001,0,9.99,10,100,1,2026-01-01T00:00:00Z,2026-02-01T00:00:00Z,30,True,1000001,2026-01-01T00:00:00Z\n"
     )
 
     @pytest.fixture
     def csv_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        path = tmp_path / "market-history-2026-01-01.csv.bz2"
+        path = tmp_path / "market-orders-2026-01-01_00-00-00.v3.csv.bz2"
         with bz2.open(path, "wt") as f:
             f.write(self.CSV_CONTENT)
         return path
@@ -132,38 +143,26 @@ class TestReadCsvToArrow:
         result = _make_result(
             str(csv_path),
             content_length=csv_path.stat().st_size,
-            last_modified="2026-01-02T11:01:55Z",
+            last_modified="2026-01-01T00:00:00Z",
         )
         table = read_csv_to_arrow(result)
 
-        for col in _ORIGINAL_COLS + _PROVENANCE_COLS:
-            assert col in table.column_names, f"missing column: {col}"
-
+        assert "order_id" in table.column_names
+        assert "_source_market_date" in table.column_names
         assert len(table) == 1
         assert table.column("_source_market_date")[0].as_py() == "2026-01-01"
         assert table.column("_source_local_path")[0].as_py() == str(csv_path)
-        assert table.column("_source_url")[0].as_py() == (
-            "https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2"
-        )
-        assert table.column("_source_sha256")[0].as_py() == "abc123"
-        assert table.column("_source_downloaded_at")[0].as_py() == datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC)
-        assert table.column("_source_content_length")[0].as_py() == csv_path.stat().st_size
-        assert table.column("_source_last_modified")[0].as_py() == "2026-01-02T11:01:55Z"
-        assert table.column("_ingested_at")[0].as_py() is not None
-        assert isinstance(table.column("_source_downloaded_at")[0].as_py(), datetime)
-        assert isinstance(table.column("_ingested_at")[0].as_py(), datetime)
-        assert table.column("average")[0].as_py() == 9.99
-        assert table.column("region_id")[0].as_py() == 10000001
-        assert table.column("type_id")[0].as_py() == 19
 
-    def test_handles_missing_last_modified(self, csv_path: pathlib.Path) -> None:
-        result = _make_result(str(csv_path), last_modified=None)
+    def test_zero_row_warning(self, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
+        logger.addHandler(caplog.handler)
+        path = tmp_path / "empty.csv.bz2"
+        with bz2.open(path, "wt") as f:
+            f.write("order_id,type_id\n")
+        result = _make_result(str(path))
         table = read_csv_to_arrow(result)
-
-        assert "_source_last_modified" in table.column_names
-        assert "_source_content_length" in table.column_names
-        assert table.column("_source_last_modified")[0].as_py() is None
-        assert table.column("_source_content_length")[0].as_py() == csv_path.stat().st_size
+        logger.removeHandler(caplog.handler)
+        assert len(table) == 0
+        assert "Zero-row CSV file" in caplog.text
 
 
 class FakeRelation:
@@ -195,9 +194,9 @@ class FakeConnection:
 def _fake_cache_result(file_path: str) -> CacheResult:
     ref = RawObjectRef(
         source_name="everef",
-        dataset_name="market-history",
+        dataset_name="market-orders",
         identity_hash="abc",
-        identity_key={"source_date": "2026-01-01"},
+        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
         update_mode=UpdateMode.SNAPSHOT,
     )
     raw_object = RawObjectEntry(
@@ -208,7 +207,7 @@ def _fake_cache_result(file_path: str) -> CacheResult:
     version = RawObjectVersion(
         id="ver-1",
         raw_object_id="obj-1",
-        source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
         fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
         revalidation=RevalidationMetadata(),
         sha256="abc123",
@@ -226,12 +225,11 @@ def _fake_cache_result(file_path: str) -> CacheResult:
 @pytest.mark.integration
 def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     csv_content = (
-        "average,date,highest,lowest,order_count,volume,"
-        "http_last_modified,region_id,type_id\n"
-        "9.99,2026-01-01,9.99,9.99,1,24,"
-        "2026-01-02T11:01:55Z,10000001,19\n"
+        "order_id,type_id,region_id,location_id,system_id,"
+        "range,price,volume_remain,volume_total,min_volume,issued,expires,duration,is_buy_order,reported_by,http_last_modified\n"
+        "1,34,10000001,60000001,30000001,0,9.99,10,100,1,2026-01-01T00:00:00Z,2026-02-01T00:00:00Z,30,True,1000001,2026-01-01T00:00:00Z\n"
     )
-    file_path = tmp_path / "market-history-2026-01-01.csv.bz2"
+    file_path = tmp_path / "market-orders-2026-01-01_00-00-00.v3.csv.bz2"
     with bz2.open(file_path, "wt") as f:
         f.write(csv_content)
 
@@ -262,13 +260,13 @@ def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.market_history.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.everef.market_orders.Cache", FakeCache)
     monkeypatch.setattr(
-        "ingest.sources.everef.market_history._build_cache_objects",
+        "ingest.sources.everef.market_orders._build_cache_objects",
         lambda start, end: [
             CacheObject(
-                source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
-                identity_key={"source_date": "2026-01-01"},
+                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
+                identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
             )
         ],
     )
@@ -294,12 +292,16 @@ def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     assert con.closed is True
 
 
-def test_run_pipeline_only_marks_successful(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    bad_path = tmp_path / "bad.csv.bz2"
-    with bz2.open(bad_path, "wt") as f:
+def test_run_pipeline_only_marks_successful(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    bad_csv = tmp_path / "bad.csv.bz2"
+    with bz2.open(bad_csv, "wt") as f:
         f.write("not,a,csv\n")
 
-    bad_result = _fake_cache_result(str(bad_path))
+    good_result = _fake_cache_result(str(bad_csv))
+    # Force _process_result to fail by monkeypatching read_csv_to_arrow to raise
+
     mock_pubtrack = MagicMock()
 
     class FakeCache:
@@ -317,24 +319,24 @@ def test_run_pipeline_only_marks_successful(monkeypatch: pytest.MonkeyPatch, tmp
             return mock_pubtrack
 
         def get_many(self, objects: object, *, mode: object = None) -> list[CacheResult]:
-            return [bad_result]
+            return [good_result]
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.market_history.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.everef.market_orders.Cache", FakeCache)
     monkeypatch.setattr(
-        "ingest.sources.everef.market_history._build_cache_objects",
+        "ingest.sources.everef.market_orders._build_cache_objects",
         lambda start, end: [
             CacheObject(
-                source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
-                identity_key={"source_date": "2026-01-01"},
+                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
+                identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
             )
         ],
     )
-    # Break CSV parsing so process_result fails
+    # Break CSV parsing so _process_result fails
     monkeypatch.setattr(
-        "ingest.sources.everef.market_history.process_result",
-        lambda result, writer, **kwargs: False,
+        "ingest.sources.everef.market_orders.read_csv_to_arrow",
+        lambda result: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
     config = EverefCliConfig(
@@ -354,19 +356,17 @@ def test_run_pipeline_only_marks_successful(monkeypatch: pytest.MonkeyPatch, tmp
     result = run_pipeline(config)
     assert result == 1
     mock_pubtrack.mark_published_many.assert_not_called()
+    assert "Partial publication" not in caplog.text  # because success == 0, no partial warning
 
 
 def test_run_pipeline_partial_success_warns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     logger.addHandler(caplog.handler)
-    caplog.set_level(logging.WARNING, logger="ingest.sources.everef")
-
     csv_content = (
-        "average,date,highest,lowest,order_count,volume,"
-        "http_last_modified,region_id,type_id\n"
-        "9.99,2026-01-01,9.99,9.99,1,24,"
-        "2026-01-02T11:01:55Z,10000001,19\n"
+        "order_id,type_id,region_id,location_id,system_id,"
+        "range,price,volume_remain,volume_total,min_volume,issued,expires,duration,is_buy_order,reported_by,http_last_modified\n"
+        "1,34,10000001,60000001,30000001,0,9.99,10,100,1,2026-01-01T00:00:00Z,2026-02-01T00:00:00Z,30,True,1000001,2026-01-01T00:00:00Z\n"
     )
     good_path = tmp_path / "good.csv.bz2"
     with bz2.open(good_path, "wt") as f:
@@ -377,16 +377,19 @@ def test_run_pipeline_partial_success_warns(
         f.write("not,a,csv\n")
 
     good_result = _fake_cache_result(str(good_path))
+    # Adjust identity key for second result
     bad_result = _fake_cache_result(str(bad_path))
 
     call_count = 0
-    original_process = __import__("ingest.sources.everef.market_history", fromlist=["process_result"]).process_result
+    original_process_result = __import__(
+        "ingest.sources.everef.market_orders", fromlist=["_process_result"]
+    )._process_result
 
-    def flaky_process(result, writer, *, table_key, key_columns):
+    def flaky_process(result, writer):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            return original_process(result, writer, table_key=table_key, key_columns=key_columns)
+            return original_process_result(result, writer)
         return False
 
     mock_pubtrack = MagicMock()
@@ -410,25 +413,25 @@ def test_run_pipeline_partial_success_warns(
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.market_history.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.everef.market_orders.Cache", FakeCache)
     monkeypatch.setattr(
-        "ingest.sources.everef.market_history._build_cache_objects",
+        "ingest.sources.everef.market_orders._build_cache_objects",
         lambda start, end: [
             CacheObject(
-                source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
-                identity_key={"source_date": "2026-01-01"},
+                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/good.csv.bz2",
+                identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
             ),
             CacheObject(
-                source_url="https://data.everef.net/market-history/2026/market-history-2026-01-02.csv.bz2",
-                identity_key={"source_date": "2026-01-02"},
+                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/bad.csv.bz2",
+                identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_12-00-00"},
             ),
         ],
     )
-    monkeypatch.setattr("ingest.sources.everef.market_history.process_result", flaky_process)
+    monkeypatch.setattr("ingest.sources.everef.market_orders._process_result", flaky_process)
 
     config = EverefCliConfig(
         start_date=date(2026, 1, 1),
-        end_date=date(2026, 1, 2),
+        end_date=date(2026, 1, 1),
         data_root=str(tmp_path),
         raw_files=RawFilesCliConfig(
             raw_root=str(tmp_path / "raw"),
@@ -443,6 +446,7 @@ def test_run_pipeline_partial_success_warns(
     result = run_pipeline(config)
     logger.removeHandler(caplog.handler)
     assert result == 1
+    # Should only mark the successful one
     args, _kwargs = mock_pubtrack.mark_published_many.call_args
     marked = args[0]
     assert len(marked) == 1

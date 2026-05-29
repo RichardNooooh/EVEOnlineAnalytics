@@ -20,6 +20,9 @@ from ingest.cache.ledger.types import (
     RawObjectVersion,
     RotateVersionResult,
 )
+import logging
+
+from ingest.cache.logger import logger
 from ingest.cache.models import CacheResultStatus
 from tests.cache.fakes import InMemoryRawObjectLedger
 
@@ -751,3 +754,101 @@ def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monke
 
     final_path = tmp_path / "raw" / "everef" / "market-orders" / "history" / "2026" / "2026-01-01" / "file.csv.bz2"
     assert not final_path.exists()
+
+
+def test_get_many_logs_aggregate_counts(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    logger.addHandler(caplog.handler)
+    caplog.set_level(logging.INFO, logger="ingest.cache")
+    client = FakeClient(
+        [
+            _response(
+                tmp_path=tmp_path,
+                status=ReadStatus.MODIFIED,
+                name="log-first",
+                sha256="sha-first",
+            ),
+            _response(
+                tmp_path=tmp_path,
+                status=ReadStatus.MODIFIED,
+                name="log-second",
+                sha256="sha-second",
+            ),
+        ]
+    )
+    first_object = CacheObject(
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file-a.csv.bz2",
+        identity_key={"source": "first"},
+    )
+    second_object = CacheObject(
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file-b.csv.bz2",
+        identity_key={"source": "second"},
+    )
+
+    with _store(tmp_path=tmp_path, client=client) as store:
+        store.get(first_object)
+        store.get_many([first_object, second_object], mode=GetMode.ALL)
+
+    logger.removeHandler(caplog.handler)
+    assert "Cache get_many" in caplog.text
+    assert "result_count=2" in caplog.text
+    assert "hit_count=1" in caplog.text
+    assert "stored_count=1" in caplog.text
+
+
+def test_record_store_logs_info(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    logger.addHandler(caplog.handler)
+    caplog.set_level(logging.INFO, logger="ingest.cache")
+    client = FakeClient(
+        [
+            _response(
+                tmp_path=tmp_path,
+                status=ReadStatus.MODIFIED,
+                name="store-log",
+                sha256="abc123def456",
+            ),
+        ]
+    )
+
+    with _store(tmp_path=tmp_path, client=client) as store:
+        store.get(
+            CacheObject(
+                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
+                identity_key={"source": "test"},
+            )
+        )
+
+    logger.removeHandler(caplog.handler)
+    assert "Stored raw object" in caplog.text
+    assert "sha256_prefix=abc123def456" in caplog.text
+
+
+def test_record_hit_logs_debug(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    logger.addHandler(caplog.handler)
+    caplog.set_level(logging.DEBUG, logger="ingest.cache")
+    client = FakeClient(
+        [
+            _response(
+                tmp_path=tmp_path,
+                status=ReadStatus.MODIFIED,
+                name="hit-log",
+                sha256="sha-hit",
+            ),
+        ]
+    )
+
+    with _store(tmp_path=tmp_path, client=client) as store:
+        store.get(
+            CacheObject(
+                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
+                identity_key={"source": "test"},
+            )
+        )
+        store.get(
+            CacheObject(
+                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
+                identity_key={"source": "test"},
+            )
+        )
+
+    logger.removeHandler(caplog.handler)
+    assert "Cache hit" in caplog.text
