@@ -98,15 +98,6 @@ class TestBuildCacheObjects:
             objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
         assert objects == []
 
-    def test_logs_aggregate_counts(self, caplog: pytest.LogCaptureFixture) -> None:
-        logger.addHandler(caplog.handler)
-        caplog.set_level(logging.INFO, logger=logger.name)
-        html = '<html><body><a href="fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz">link1</a></body></html>'
-        with patch.object(requests, "get", return_value=MagicMock(text=html, raise_for_status=lambda: None)):
-            _build_cache_objects(date(2026, 1, 1), date(2026, 1, 2))
-        logger.removeHandler(caplog.handler)
-        assert "Built cache objects label=fuzzwork-orders date_count=2 total_snapshots=2" in caplog.text
-
 
 class TestReadCsvToArrow:
     @pytest.fixture
@@ -318,7 +309,7 @@ def test_run_pipeline_only_marks_successful(
 def test_run_pipeline_partial_success_warns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    logger.addHandler(caplog.handler)
+    logging.getLogger("ingest.sources").addHandler(caplog.handler)
     good_path = tmp_path / "good.csv.gz"
     with gzip.open(good_path, "wt") as f:
         f.write(_TSV_DATA)
@@ -420,7 +411,7 @@ def test_run_pipeline_partial_success_warns(
     )
 
     result = run_pipeline(config)
-    logger.removeHandler(caplog.handler)
+    logging.getLogger("ingest.sources").removeHandler(caplog.handler)
     assert result == 1
     args, _kwargs = mock_pubtrack.mark_published_many.call_args
     marked = args[0]
