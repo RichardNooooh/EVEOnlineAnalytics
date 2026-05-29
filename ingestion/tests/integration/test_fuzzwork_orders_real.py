@@ -77,7 +77,7 @@ def test_process_result_merges_fuzzwork_orders_rows(shared_con, tmp_path: Path) 
         assert _process_result(first, writer) is True
 
     with DuckLakeWriter(_ATTACH) as writer:
-        assert _process_result(second, writer) is True
+        assert _process_result(second, writer) is False
 
     rows = shared_con.execute(
         f'SELECT order_id, price, order_set_id, snapshot_time FROM "memory"."raw"."{RawDuckLakeTable.FUZZWORK_ORDERS.value}" ORDER BY order_id'

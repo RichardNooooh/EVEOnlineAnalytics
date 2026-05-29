@@ -28,9 +28,14 @@ class FakeConnection:
         self.relation = FakeRelation()
         self.arrow_tables: list[pa.Table] = []
         self.closed = False
+        self.fetchall_result: list[tuple[object, ...]] = []
 
-    def execute(self, query: str, params: list[str] | None = None) -> None:
+    def execute(self, query: str, params: list[str] | None = None) -> FakeConnection:
         self.calls.append((query, params))
+        return self
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return self.fetchall_result
 
     def from_arrow(self, arrow_table: pa.Table) -> FakeRelation:
         self.arrow_tables.append(arrow_table)
