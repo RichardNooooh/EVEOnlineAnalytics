@@ -10,7 +10,7 @@ import pyarrow.csv as pac
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
-from ingest.sources.everef.util import build_snapshot_cache_objects, read_csv_to_arrow
+from ingest.sources.everef.util import build_listed_objects, read_csv_to_arrow
 from ingest.sources.pipeline import run_pipeline as _run_pipeline
 
 logger = logging.getLogger("ingest.sources.everef")
@@ -36,19 +36,19 @@ _FUZZWORK_COLUMN_NAMES = [
 
 
 def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
-    def identity_key(filename: str, d: date) -> dict[str, str]:
-        name = filename.removeprefix("fuzzwork-orderset-").removesuffix(".csv.gz")
-        order_set_id, snapshot_time = name.split("-", 1)
-        return {"source_date": d.isoformat(), "order_set_id": order_set_id, "snapshot_time": snapshot_time}
-
-    return build_snapshot_cache_objects(
-        "fuzzwork/ordersets",
+    return build_listed_objects(
         start_date,
         end_date,
-        _FUZZWORK_RE,
-        identity_key,
-        source_label="fuzzwork-orders",
+        url_prefix="fuzzwork/ordersets",
+        filename_pattern=_FUZZWORK_RE,
+        identity_key_fn=_parse_fuzzwork_identity,
     )
+
+
+def _parse_fuzzwork_identity(filename: str, d: date) -> dict[str, str]:
+    name = filename.removeprefix("fuzzwork-orderset-").removesuffix(".csv.gz")
+    order_set_id, snapshot_time = name.split("-", 1)
+    return {"source_date": d.isoformat(), "order_set_id": order_set_id, "snapshot_time": snapshot_time}
 
 
 def _process_result(result: CacheResult, writer: DuckLakeWriter) -> bool:

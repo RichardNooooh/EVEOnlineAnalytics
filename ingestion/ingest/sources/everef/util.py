@@ -22,63 +22,90 @@ def list_snapshots(
     url_prefix: str,
     d: date,
     pattern: re.Pattern[str],
-    *,
-    source_label: str = "",
 ) -> list[str]:
     url = f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/"
     logger.debug("Fetching snapshot listing source_date=%s url=%s", d.isoformat(), url)
     resp = requests.get(url, timeout=30)
     resp.raise_for_status()
     filenames = pattern.findall(resp.text)
-    label = source_label or url_prefix
     if filenames:
         logger.info(
-            "Discovered snapshots source_date=%s count=%d first=%s last=%s label=%s",
+            "Discovered snapshots source_date=%s count=%d first=%s last=%s prefix=%s",
             d.isoformat(),
             len(filenames),
             filenames[0],
             filenames[-1],
-            label,
+            url_prefix,
         )
     else:
         logger.warning(
-            "No snapshots discovered source_date=%s listing_url=%s label=%s",
+            "No snapshots discovered source_date=%s listing_url=%s prefix=%s",
             d.isoformat(),
             url,
-            label,
+            url_prefix,
         )
     return filenames
 
 
-def build_snapshot_cache_objects(
-    url_prefix: str,
+def collect_cache_objects(
     start_date: date,
     end_date: date,
-    pattern: re.Pattern[str],
-    identity_key_fn: Callable[[str, date], dict[str, str]],
-    *,
-    source_label: str = "",
+    entries_fn: Callable[[date], list[CacheObject]],
 ) -> list[CacheObject]:
     objects: list[CacheObject] = []
     date_count = 0
     for d in iter_dates(start_date, end_date):
         date_count += 1
-        filenames = list_snapshots(url_prefix, d, pattern, source_label=source_label)
-        for filename in filenames:
-            objects.append(
-                CacheObject(
-                    source_url=f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/{filename}",
-                    identity_key=identity_key_fn(filename, d),
-                )
-            )
-    label = source_label or url_prefix
+        objects.extend(entries_fn(d))
     logger.info(
-        "Built cache objects label=%s date_count=%d total_snapshots=%d",
-        label,
+        "Collect cache objects date_count=%d total_snapshots=%d",
         date_count,
         len(objects),
     )
     return objects
+
+
+def build_listed_objects(
+    start_date: date,
+    end_date: date,
+    *,
+    url_prefix: str,
+    filename_pattern: re.Pattern[str],
+    identity_key_fn: Callable[[str, date], dict[str, str]],
+) -> list[CacheObject]:
+    def entries_fn(d: date) -> list[CacheObject]:
+        filenames = list_snapshots(url_prefix, d, filename_pattern)
+        return [
+            CacheObject(
+                source_url=f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/{filename}",
+                identity_key=identity_key_fn(filename, d),
+            )
+            for filename in filenames
+        ]
+
+    return collect_cache_objects(start_date, end_date, entries_fn)
+
+
+def build_deterministic_objects(
+    start_date: date,
+    end_date: date,
+    *,
+    url_prefix: str,
+    filename_prefix: str = "",
+    suffix: str = ".csv.bz2",
+    identity_key_fn: Callable[[date], dict[str, str]] | None = None,
+) -> list[CacheObject]:
+    def entries_fn(d: date) -> list[CacheObject]:
+        filename = f"{filename_prefix}{d.isoformat()}{suffix}"
+        identity_key = {"source_date": d.isoformat()} if identity_key_fn is None else identity_key_fn(d)
+        return [
+            CacheObject(
+                source_url=f"{EVEREF_BASE}/{url_prefix}/{d.year}/{filename}",
+                identity_key=identity_key,
+            )
+        ]
+
+    return collect_cache_objects(start_date, end_date, entries_fn)
 
 
 def add_provenance(
