@@ -8,15 +8,17 @@ from enum import StrEnum
 from urllib.parse import parse_qsl, unquote, urlparse
 from uuid import uuid4
 
+import logging
+
 import duckdb
 import pyarrow as pa
-
-from ingest.publishers.logger import logger
 from ingest.util import (
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
     DEFAULT_DUCKLAKE_RAW_DATA_PATH,
 )
+
+logger = logging.getLogger("ingest.publishers")
 
 DEFAULT_DUCKLAKE_ALIAS = "ducklake"
 DEFAULT_RAW_SCHEMA = "raw"
@@ -164,6 +166,46 @@ def _attach_ducklake(
     )
 
 
+def _log_key_column_diffs(
+    con: duckdb.DuckDBPyConnection,
+    arrow_table: pa.Table,
+    *,
+    quoted_target: str,
+    quoted_source: str,
+    key_columns: Sequence[str],
+) -> None:
+    """Log warnings for rows where the target already has matching keys but differing non-key columns.
+
+    Uses a SQL JOIN with IS DISTINCT FROM to detect differences efficiently
+    without materialising full tables in Python.
+    """
+    non_key_cols = [col for col in arrow_table.column_names if col not in key_columns]
+    if not non_key_cols:
+        return
+
+    key_join = " AND ".join(f"s.{_quote_identifier(k)} = t.{_quote_identifier(k)}" for k in key_columns)
+    key_list = ", ".join(f"s.{_quote_identifier(k)}" for k in key_columns)
+    where_clause = " OR ".join(
+        f"s.{_quote_identifier(c)} IS DISTINCT FROM t.{_quote_identifier(c)}" for c in non_key_cols
+    )
+    query = f"""
+        SELECT {key_list}
+        FROM {quoted_source} s
+        JOIN {quoted_target} t ON {key_join}
+        WHERE {where_clause}
+    """
+    try:
+        differing = con.execute(query).fetchall()
+        for row in differing:
+            key_values = {k: v for k, v in zip(key_columns, row)}
+            logger.warning(
+                "Matched key %s has differing values; inserting new row (latest everef is always right)",
+                key_values,
+            )
+    except Exception:
+        logger.warning("Could not query target for key validation", exc_info=True)
+
+
 class DuckLakeWriter:
     """Context-managed writer for raw DuckLake tables.
 
@@ -272,37 +314,13 @@ class DuckLakeWriter:
                 """
             )
             if key_columns:
-                non_key_cols = [col for col in arrow_table.column_names if col not in key_columns]
-                if non_key_cols:
-                    key_clause = ", ".join(_quote_identifier(k) for k in key_columns)
-                    subquery_cols = ", ".join(f"source.{_quote_identifier(k)}" for k in key_columns)
-                    subquery = f"SELECT {subquery_cols} FROM {quoted_source}"
-                    match_query = f"SELECT target.* FROM {quoted_target} AS target WHERE ({key_clause}) IN ({subquery})"
-                    try:
-                        matched_rows = con.execute(match_query).fetchall()
-                        target_col_names = [desc[0] for desc in con.description]
-                        if matched_rows:
-                            source_rows = arrow_table.to_pylist()
-                            for target_row in matched_rows:
-                                target_dict = dict(zip(target_col_names, target_row))
-                                key_values = {k: target_dict[k] for k in key_columns}
-                                for src_row in source_rows:
-                                    if all(src_row.get(k) == target_dict[k] for k in key_columns):
-                                        diffs = {}
-                                        for col in non_key_cols:
-                                            if col in target_dict and col in src_row:
-                                                if src_row[col] != target_dict[col]:
-                                                    diffs[col] = (target_dict[col], src_row[col])
-                                        if diffs:
-                                            logger.warning(
-                                                "Matched key %s has differing values; inserting new row "
-                                                "(latest everef is always right). Diffs: %s",
-                                                key_values,
-                                                {c: {"old": o, "new": n} for c, (o, n) in diffs.items()},
-                                            )
-                                        break
-                    except Exception:
-                        logger.warning("Could not query target for key validation", exc_info=True)
+                _log_key_column_diffs(
+                    con,
+                    arrow_table,
+                    quoted_target=quoted_target,
+                    quoted_source=quoted_source,
+                    key_columns=key_columns,
+                )
 
                 # DuckDB MERGE USING (columns) is an equi-join shorthand replacing ON.
                 # Insert-only semantics are intentional (key_columns replaces merge_keys):
