@@ -14,11 +14,11 @@ from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliCon
 
 from ingest.sources.everef.logger import logger
 from ingest.sources.everef.market_orders import (
+    _SNAPSHOT_RE,
     _build_cache_objects,
-    _list_snapshots,
     run_pipeline,
 )
-from ingest.sources.everef.util import read_csv_to_arrow
+from ingest.sources.everef.util import list_snapshots, read_csv_to_arrow
 
 from tests.sources.everef.conftest import FakeConnection, make_cache_result
 
@@ -40,7 +40,9 @@ def real_listing_html() -> str:
 class TestListSnapshots:
     def test_extracts_filenames(self, snapshot_html: str) -> None:
         with patch.object(requests, "get", return_value=MagicMock(text=snapshot_html, raise_for_status=lambda: None)):
-            filenames = _list_snapshots(date(2026, 1, 1))
+            filenames = list_snapshots(
+                "market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, source_label="market-orders"
+            )
         assert filenames == [
             "market-orders-2026-01-01_00-00-00.v3.csv.bz2",
             "market-orders-2026-01-01_12-00-00.v3.csv.bz2",
@@ -49,20 +51,26 @@ class TestListSnapshots:
     def test_empty_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
         with patch.object(requests, "get", return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None)):
-            filenames = _list_snapshots(date(2026, 1, 1))
+            filenames = list_snapshots(
+                "market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, source_label="market-orders"
+            )
         logger.removeHandler(caplog.handler)
         assert filenames == []
-        assert "No market order snapshots discovered" in caplog.text
+        assert "No snapshots discovered" in caplog.text
+        assert "label=market-orders" in caplog.text
 
     def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
         with patch.object(
             requests, "get", return_value=MagicMock(text="<html>bad</html>", raise_for_status=lambda: None)
         ):
-            filenames = _list_snapshots(date(2026, 1, 1))
+            filenames = list_snapshots(
+                "market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, source_label="market-orders"
+            )
         logger.removeHandler(caplog.handler)
         assert filenames == []
-        assert "No market order snapshots discovered" in caplog.text
+        assert "No snapshots discovered" in caplog.text
+        assert "label=market-orders" in caplog.text
 
 
 class TestBuildCacheObjects:
@@ -90,7 +98,7 @@ class TestBuildCacheObjects:
         with patch.object(requests, "get", return_value=MagicMock(text=html, raise_for_status=lambda: None)):
             _build_cache_objects(date(2026, 1, 1), date(2026, 1, 2))
         logger.removeHandler(caplog.handler)
-        assert "Built cache objects date_count=2 total_snapshots=2" in caplog.text
+        assert "Built cache objects label=market-orders date_count=2 total_snapshots=2" in caplog.text
 
 
 class TestListSnapshotsWithRealFixture:
@@ -152,7 +160,9 @@ class TestListSnapshotsWithRealFixture:
         with patch.object(
             requests, "get", return_value=MagicMock(text=real_listing_html, raise_for_status=lambda: None)
         ):
-            filenames = _list_snapshots(self.fixture_date)
+            filenames = list_snapshots(
+                "market-orders/history", self.fixture_date, _SNAPSHOT_RE, source_label="market-orders"
+            )
         assert filenames == self.EXPECTED_FILENAMES
 
 

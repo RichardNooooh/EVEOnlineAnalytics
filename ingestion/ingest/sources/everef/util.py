@@ -1,16 +1,82 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import re
+from collections.abc import Callable
+from datetime import UTC, date, datetime
 
 import pyarrow as pa
 import pyarrow.csv as pac
+import requests
 
-from ingest.cache import CacheResult
+from ingest.cache import CacheObject, CacheResult
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
 from ingest.sources.everef.logger import logger
-from ingest.util import file_size
+from ingest.util import file_size, iter_dates
 
 EVEREF_BASE = "https://data.everef.net"
+
+
+def list_snapshots(
+    url_prefix: str,
+    d: date,
+    pattern: re.Pattern[str],
+    *,
+    source_label: str = "",
+) -> list[str]:
+    url = f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/"
+    logger.debug("Fetching snapshot listing source_date=%s url=%s", d.isoformat(), url)
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    filenames = pattern.findall(resp.text)
+    label = source_label or url_prefix
+    if filenames:
+        logger.info(
+            "Discovered snapshots source_date=%s count=%d first=%s last=%s label=%s",
+            d.isoformat(),
+            len(filenames),
+            filenames[0],
+            filenames[-1],
+            label,
+        )
+    else:
+        logger.warning(
+            "No snapshots discovered source_date=%s listing_url=%s label=%s",
+            d.isoformat(),
+            url,
+            label,
+        )
+    return filenames
+
+
+def build_snapshot_cache_objects(
+    url_prefix: str,
+    start_date: date,
+    end_date: date,
+    pattern: re.Pattern[str],
+    identity_key_fn: Callable[[str, date], dict[str, str]],
+    *,
+    source_label: str = "",
+) -> list[CacheObject]:
+    objects: list[CacheObject] = []
+    date_count = 0
+    for d in iter_dates(start_date, end_date):
+        date_count += 1
+        filenames = list_snapshots(url_prefix, d, pattern, source_label=source_label)
+        for filename in filenames:
+            objects.append(
+                CacheObject(
+                    source_url=f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/{filename}",
+                    identity_key=identity_key_fn(filename, d),
+                )
+            )
+    label = source_label or url_prefix
+    logger.info(
+        "Built cache objects label=%s date_count=%d total_snapshots=%d",
+        label,
+        date_count,
+        len(objects),
+    )
+    return objects
 
 
 def add_provenance(
@@ -42,7 +108,12 @@ def add_provenance(
     return table
 
 
-def read_csv_to_arrow(result: CacheResult) -> pa.Table:
+def read_csv_to_arrow(
+    result: CacheResult,
+    *,
+    read_options: pac.ReadOptions | None = None,
+    parse_options: pac.ParseOptions | None = None,
+) -> pa.Table:
     path = result.path
     source_date = str(result.identity_key["source_date"])
     content_length = file_size(path)
@@ -54,7 +125,7 @@ def read_csv_to_arrow(result: CacheResult) -> pa.Table:
             content_length,
             expected,
         )
-    table = pac.read_csv(path)
+    table = pac.read_csv(path, read_options=read_options, parse_options=parse_options)
     n = len(table)
     logger.debug(
         "Parsed CSV to Arrow source_date=%s rows=%d columns=%d path=%s sha256_prefix=%s",

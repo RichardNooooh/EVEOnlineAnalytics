@@ -35,6 +35,10 @@ def build_everef_market_orders_config(args: argparse.Namespace) -> EverefCliConf
     return build_everef_config(args)
 
 
+def build_everef_fuzzwork_orders_config(args: argparse.Namespace) -> EverefCliConfig:
+    return build_everef_config(args)
+
+
 def build_raw_files_config(args: argparse.Namespace) -> RawFilesCliConfig:
     if not args.raw_ledger_url:
         raise ValueError("raw_ledger_url must not be empty")
