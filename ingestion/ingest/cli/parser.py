@@ -1,9 +1,7 @@
 import argparse
 
 from ingest.cli.builders import (
-    build_everef_fuzzwork_orders_config,
-    build_everef_market_history_config,
-    build_everef_market_orders_config,
+    build_everef_config,
     build_everef_references_config,
 )
 from ingest.util import (
@@ -35,12 +33,13 @@ def _command_not_implemented(
     parser.error(args.not_implemented_message)
 
 
-def _run_market_orders_pipeline(
+def _run_pipeline(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
 ) -> int:
-    from ingest.sources.everef.market_orders import run_pipeline
+    from importlib import import_module
 
+    module = import_module(args.pipeline_module)
     config_builder = getattr(args, "config_builder", None)
     if config_builder is None:
         parser.error("config_builder not set")
@@ -49,58 +48,7 @@ def _run_market_orders_pipeline(
     except ValueError as exc:
         parser.error(str(exc))
 
-    return run_pipeline(config)
-
-
-def _run_market_history_pipeline(
-    args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-) -> int:
-    from ingest.sources.everef.market_history import run_pipeline
-
-    config_builder = getattr(args, "config_builder", None)
-    if config_builder is None:
-        parser.error("config_builder not set")
-    try:
-        config = config_builder(args)
-    except ValueError as exc:
-        parser.error(str(exc))
-
-    return run_pipeline(config)
-
-
-def _run_fuzzwork_orders_pipeline(
-    args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-) -> int:
-    from ingest.sources.everef.fuzzwork_orders import run_pipeline
-
-    config_builder = getattr(args, "config_builder", None)
-    if config_builder is None:
-        parser.error("config_builder not set")
-    try:
-        config = config_builder(args)
-    except ValueError as exc:
-        parser.error(str(exc))
-
-    return run_pipeline(config)
-
-
-def _run_references_pipeline(
-    args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-) -> int:
-    from ingest.sources.everef.references import run_pipeline
-
-    config_builder = getattr(args, "config_builder", None)
-    if config_builder is None:
-        parser.error("config_builder not set")
-    try:
-        config = config_builder(args)
-    except ValueError as exc:
-        parser.error(str(exc))
-
-    return run_pipeline(config)
+    return module.run_pipeline(config)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -128,8 +76,9 @@ def build_parser() -> argparse.ArgumentParser:
         ],
     )
     everef_market_history_parser.set_defaults(
-        handler=_run_market_history_pipeline,
-        config_builder=build_everef_market_history_config,
+        handler=_run_pipeline,
+        config_builder=build_everef_config,
+        pipeline_module="ingest.sources.everef.market_history",
     )
 
     everef_market_orders_parser = everef_subparsers.add_parser(
@@ -142,8 +91,9 @@ def build_parser() -> argparse.ArgumentParser:
         ],
     )
     everef_market_orders_parser.set_defaults(
-        handler=_run_market_orders_pipeline,
-        config_builder=build_everef_market_orders_config,
+        handler=_run_pipeline,
+        config_builder=build_everef_config,
+        pipeline_module="ingest.sources.everef.market_orders",
     )
 
     everef_fuzzwork_orders_parser = everef_subparsers.add_parser(
@@ -156,8 +106,9 @@ def build_parser() -> argparse.ArgumentParser:
         ],
     )
     everef_fuzzwork_orders_parser.set_defaults(
-        handler=_run_fuzzwork_orders_pipeline,
-        config_builder=build_everef_fuzzwork_orders_config,
+        handler=_run_pipeline,
+        config_builder=build_everef_config,
+        pipeline_module="ingest.sources.everef.fuzzwork_orders",
     )
 
     everef_references_parser = everef_subparsers.add_parser(
@@ -169,8 +120,9 @@ def build_parser() -> argparse.ArgumentParser:
         ],
     )
     everef_references_parser.set_defaults(
-        handler=_run_references_pipeline,
+        handler=_run_pipeline,
         config_builder=build_everef_references_config,
+        pipeline_module="ingest.sources.everef.references",
     )
 
     esi_parser = subparsers.add_parser(
