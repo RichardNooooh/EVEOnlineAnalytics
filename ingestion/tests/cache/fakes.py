@@ -10,17 +10,12 @@ from ingest.cache.client_types import RevalidationMetadata
 from ingest.cache.helpers import merge_revalidation
 from ingest.cache.ledger.runtime import LedgerTx
 from ingest.cache.ledger.types import (
+    CurrentRawObjectState,
     PublicationContext,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
     RotateVersionResult,
-)
-from ingest.cache.plans import (
-    BaseFetchPlan,
-    FetchPlan,
-    ResolvedFetchPlan,
-    UnresolvedFetchPlan,
 )
 
 
@@ -55,6 +50,35 @@ class InMemoryRawObjectReader:
             if versions:
                 result[oid] = max(versions, key=lambda v: v.version_number)
         return result
+
+    def load_current_states(
+        self,
+        *,
+        refs: list[RawObjectRef],
+    ) -> dict[str, CurrentRawObjectState | None]:
+        raw_objects: dict[str, RawObjectEntry] = {}
+        for ref in refs:
+            entry = self._ledger._raw_objects_by_key.get(ref.group_key + (ref.identity_hash,))
+            if entry is not None:
+                raw_objects[ref.identity_hash] = entry
+
+        raw_object_ids = [ro.id for ro in raw_objects.values()]
+        latest_versions = self.load_latest_versions(raw_object_ids) if raw_object_ids else {}
+
+        states: dict[str, CurrentRawObjectState | None] = {}
+        for ref in refs:
+            raw_object = raw_objects.get(ref.identity_hash)
+            if raw_object is None:
+                states[ref.identity_hash] = None
+            else:
+                current_version = latest_versions.get(raw_object.id)
+                if current_version is None:
+                    raise RuntimeError(f"Ledger corruption: raw_object {raw_object.id} exists but has no versions")
+                states[ref.identity_hash] = CurrentRawObjectState(
+                    raw_object=raw_object,
+                    current_version=current_version,
+                )
+        return states
 
 
 class InMemoryRawObjectWriter:
@@ -136,52 +160,6 @@ class InMemoryRawObjectWriter:
         )
 
 
-class InMemoryFetchPlanResolver:
-    def __init__(self, ledger: InMemoryRawObjectLedger, reader: InMemoryRawObjectReader) -> None:
-        self._ledger = ledger
-        self._reader = reader
-
-    def resolve_fetch_plan(self, base_plan: BaseFetchPlan) -> FetchPlan:
-        return self.resolve_fetch_plans([base_plan])[0]
-
-    def resolve_fetch_plans(self, base_plans: list[BaseFetchPlan]) -> list[FetchPlan]:
-        self._ledger.resolve_fetch_plans_calls += 1
-        resolved_plans: list[FetchPlan] = []
-        for base_plan in base_plans:
-            raw_object = self._reader.load_raw_object(ref=base_plan.ref)
-            if raw_object is not None and raw_object.ref.update_mode is not base_plan.update_mode:
-                raise ValueError(
-                    "raw object update_mode mismatch: "
-                    f"stored={raw_object.ref.update_mode.value} requested={base_plan.update_mode.value}"
-                )
-            if raw_object is None:
-                resolved: FetchPlan = UnresolvedFetchPlan(
-                    ref=base_plan.ref,
-                    source_url=base_plan.source_url,
-                    source_relative_path=base_plan.source_relative_path,
-                    update_mode=base_plan.update_mode,
-                    identity_key=base_plan.identity_key,
-                    temp_path=base_plan.temp_path,
-                )
-            else:
-                versions = self._ledger._versions_by_object_id.get(raw_object.id, [])
-                current_version = max(versions, key=lambda v: v.version_number) if versions else None
-                if current_version is None:
-                    raise RuntimeError(f"Ledger corruption: raw_object {raw_object.id} exists but has no versions")
-                resolved = ResolvedFetchPlan(
-                    ref=base_plan.ref,
-                    source_url=base_plan.source_url,
-                    source_relative_path=base_plan.source_relative_path,
-                    update_mode=base_plan.update_mode,
-                    identity_key=base_plan.identity_key,
-                    temp_path=base_plan.temp_path,
-                    raw_object=raw_object,
-                    current_version=current_version,
-                )
-            resolved_plans.append(resolved)
-        return resolved_plans
-
-
 class InMemoryPublicationTrackerTx:
     def __init__(self, ledger: InMemoryRawObjectLedger) -> None:
         self._ledger = ledger
@@ -230,7 +208,6 @@ class InMemoryRawObjectLedger:
         self._raw_objects_by_key: dict[tuple[str, str, str], RawObjectEntry] = {}
         self._versions_by_object_id: dict[str, list[RawObjectVersion]] = {}
         self._publications: set[tuple[str, str, str, str]] = set()
-        self.resolve_fetch_plans_calls = 0
         self.filter_published_calls = 0
 
     def close(self) -> None:
@@ -242,6 +219,5 @@ class InMemoryRawObjectLedger:
         yield LedgerTx(
             reader=reader,
             writer=InMemoryRawObjectWriter(self),
-            resolver=InMemoryFetchPlanResolver(self, reader=reader),
             publications=InMemoryPublicationTrackerTx(self),
         )
