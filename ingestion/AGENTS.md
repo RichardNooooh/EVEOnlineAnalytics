@@ -1,11 +1,63 @@
 # ingestion/AGENTS.md
 
-This is a mostly hand-written rewrite attempt of the ingestion_old/ Python project.
-User may ask for some help on portions of this project.
+Read this when changing extraction, source clients, dlt pipelines, dataset publishers,
+or ingestion tests.
 
-## Conventions
-- When running any `python` commands, use `uv run` and working directory in `ingestion/`.
+## Read First
 
-## dlt
+- `../AGENTS.md`
+- `../datasets/AGENTS.md`
+- `../docs/data_lifecycle.md`
+- `../docs/storage_layout.md`
+- `../docs/data_dictionary.md`
 
-`dlt` is declared as a dependency for future ESI endpoint ingestion. The current custom Python ingestion handles only everef.net bulk archives. Once ESI endpoints are implemented, they will use dlt for pipeline orchestration. dlt is not an unused or excess dependency.
+## Source Contracts
+
+### everef.net
+
+- Market history lives at `data.everef.net/market-history/`.
+- Market order snapshots live at `data.everef.net/market-orders/`.
+- Market history archives are daily CSVs with ESI market history schema.
+- Market order snapshots are full order book compressed CSVs with headers, roughly
+  twice per hour.
+- Archives may be updated in place; ingestion should use source metadata such as
+  `totals.json` to detect changes and republish affected partitions.
+
+### EVE ESI API
+
+- dlt ESI source not yet implemented. Future work.
+- Current focus: everef.net bulk archives through existing custom ingestion.
+- Market history endpoint: `GET /markets/{region_id}/history/?type_id={type_id}`.
+- Market orders endpoint: `GET /markets/{region_id}/orders/`.
+- Market endpoints require no auth.
+- Respect global 300 requests/minute limit.
+- Respect `Expires` headers.
+- Too many errors can trigger temporary bans.
+- Treat market history `average` as VWAP.
+
+## ESI Market History Shape
+
+```json
+{
+  "average": 5.25,
+  "date": "2015-05-01",
+  "highest": 5.27,
+  "lowest": 5.11,
+  "order_count": 2267,
+  "volume": 16276782035
+}
+```
+
+## Ingestion Rules
+
+- Python + dlt for source-specific extraction and publication.
+- Publish through DuckLake table commits or merge/delete semantics.
+- Preserve single-writer publication for the dataset scope.
+- Primary dev/execution path is `infra/local/compose.yml` Docker Compose stack.
+  Direct `uv run` on host is deprecated.
+- Use local SQLite DuckLake catalogs only for local development and smoke tests.
+- Use PostgreSQL DuckLake catalogs for mounted/shared DuckLake storage in Docker
+  Compose and Airflow runs.
+- Do not write durable shared `.duckdb` files.
+- Keep DuckDB scratch databases local or transient only.
+- Update dataset contracts and docs when source semantics change.
