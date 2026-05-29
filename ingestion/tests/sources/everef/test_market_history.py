@@ -11,7 +11,6 @@ from ingest.cache import CacheObject, CacheResult
 from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliConfig
 import logging
 
-from ingest.sources.everef.logger import logger
 from ingest.sources.everef.market_history import (
     _build_cache_objects,
     run_pipeline,
@@ -268,8 +267,8 @@ def test_run_pipeline_only_marks_successful(monkeypatch: pytest.MonkeyPatch, tmp
 def test_run_pipeline_partial_success_warns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    logger.addHandler(caplog.handler)
-    caplog.set_level(logging.WARNING, logger=logger.name)
+    logging.getLogger("ingest.sources").addHandler(caplog.handler)
+    caplog.set_level(logging.WARNING, logger="ingest.sources")
 
     csv_content = (
         "average,date,highest,lowest,order_count,volume,"
@@ -350,7 +349,7 @@ def test_run_pipeline_partial_success_warns(
     )
 
     result = run_pipeline(config)
-    logger.removeHandler(caplog.handler)
+    logging.getLogger("ingest.sources").removeHandler(caplog.handler)
     assert result == 1
     args, _kwargs = mock_pubtrack.mark_published_many.call_args
     marked = args[0]
