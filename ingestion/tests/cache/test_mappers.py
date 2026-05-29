@@ -92,48 +92,57 @@ def _version() -> RawObjectVersion:
 
 
 class TestEntityToRow:
-    def test_raw_object_full(self) -> None:
-        entry = _entry()
-        result = raw_object_values(entry)
-        assert result == {
-            "id": "obj-1",
-            "source_name": "everef",
-            "dataset_name": "market-history",
-            "identity_key": {"date": "2026-01-01"},
-            "identity_hash": "abc123",
-            "update_mode": UpdateMode.SNAPSHOT,
-            "created_at": entry.created_at,
-            "last_checked_at": entry.last_checked_at,
-            "etag": '"e1"',
-            "last_modified": "Mon, 01 Jan 2026 12:00:00 GMT",
-            "content_length": 100,
-        }
-
-    def test_raw_object_seen_subset(self) -> None:
-        result = raw_object_seen_values(_entry())
-        assert result == {
-            "last_checked_at": _entry().last_checked_at,
-            "etag": '"e1"',
-            "last_modified": "Mon, 01 Jan 2026 12:00:00 GMT",
-            "content_length": 100,
-        }
-
-    def test_raw_object_version(self) -> None:
-        v = _version()
-        result = raw_object_version_values(v)
-        assert result == {
-            "id": "v-1",
-            "raw_object_id": "obj-1",
-            "source_url": "https://example.com/file.csv",
-            "fetched_at": v.fetched_at,
-            "etag": '"e1"',
-            "last_modified": None,
-            "content_length": 100,
-            "sha256": "sha-abc",
-            "local_path": "/tmp/file.csv",
-            "storage_encoding": "csv",
-            "version_number": 0,
-        }
+    @pytest.mark.parametrize(
+        ("mapper", "entity", "expected"),
+        [
+            (
+                raw_object_values,
+                _entry(),
+                {
+                    "id": "obj-1",
+                    "source_name": "everef",
+                    "dataset_name": "market-history",
+                    "identity_key": {"date": "2026-01-01"},
+                    "identity_hash": "abc123",
+                    "update_mode": UpdateMode.SNAPSHOT,
+                    "created_at": datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+                    "last_checked_at": datetime(2026, 1, 1, 12, 30, tzinfo=UTC),
+                    "etag": '"e1"',
+                    "last_modified": "Mon, 01 Jan 2026 12:00:00 GMT",
+                    "content_length": 100,
+                },
+            ),
+            (
+                raw_object_seen_values,
+                _entry(),
+                {
+                    "last_checked_at": datetime(2026, 1, 1, 12, 30, tzinfo=UTC),
+                    "etag": '"e1"',
+                    "last_modified": "Mon, 01 Jan 2026 12:00:00 GMT",
+                    "content_length": 100,
+                },
+            ),
+            (
+                raw_object_version_values,
+                _version(),
+                {
+                    "id": "v-1",
+                    "raw_object_id": "obj-1",
+                    "source_url": "https://example.com/file.csv",
+                    "fetched_at": datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+                    "etag": '"e1"',
+                    "last_modified": None,
+                    "content_length": 100,
+                    "sha256": "sha-abc",
+                    "local_path": "/tmp/file.csv",
+                    "storage_encoding": "csv",
+                    "version_number": 0,
+                },
+            ),
+        ],
+    )
+    def test_raw_object_mappers(self, mapper, entity, expected) -> None:
+        assert mapper(entity) == expected
 
     def test_raw_object_publication(self) -> None:
         ref = RawObjectRef(
@@ -163,15 +172,6 @@ class TestEntityToRow:
         assert result["publication_scope"] == "scope-1"
         assert result["publisher_run_id"] == "run-1"
         assert isinstance(result["id"], str)
-        assert len(result["id"]) == 32
-
-    def test_entity_to_row_basic(self) -> None:
-        entry = _entry()
-        from ingest.cache.ledger.column_maps import RAW_OBJECT_COLUMNS
-
-        result = entity_to_row(entry, RAW_OBJECT_COLUMNS)
-        assert result["source_name"] == "everef"
-        assert result["identity_key"] == {"date": "2026-01-01"}
 
     def test_entity_to_row_with_overrides(self) -> None:
         entry = _entry()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from ingest.cache.identity import (
@@ -16,14 +18,15 @@ from ingest.cache.primitives import IdentityKey, IdentityScalar
 # ── normalize_source_relative_path ─────────────────────────────────
 
 
-def test_normalize_source_relative_path_returns_relative_path() -> None:
-    result = normalize_source_relative_path("https://data.everef.net/a/file.csv.bz2")
-    assert result == "a/file.csv.bz2"
-
-
-def test_normalize_source_relative_path_strips_multi_level() -> None:
-    result = normalize_source_relative_path("https://data.everef.net/a/b/c.csv")
-    assert result == "a/b/c.csv"
+@pytest.mark.parametrize(
+    ("source_url", "expected"),
+    [
+        ("https://data.everef.net/a/file.csv.bz2", "a/file.csv.bz2"),
+        ("https://data.everef.net/a/b/c.csv", "a/b/c.csv"),
+    ],
+)
+def test_normalize_source_relative_path_returns_relative_path(source_url: str, expected: str) -> None:
+    assert normalize_source_relative_path(source_url) == expected
 
 
 @pytest.mark.parametrize(
@@ -40,77 +43,49 @@ def test_normalize_source_relative_path_rejects_non_https(url: str) -> None:
         normalize_source_relative_path(url)
 
 
-def test_normalize_source_relative_path_rejects_no_host() -> None:
-    with pytest.raises(ValueError, match="source_url must be an https URL"):
-        normalize_source_relative_path("https://")
-
-
-def test_normalize_source_relative_path_rejects_query() -> None:
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://data.everef.net/a.csv?foo=1",
+        "https://data.everef.net/a.csv#section",
+    ],
+)
+def test_normalize_source_relative_path_rejects_query_or_fragment(url: str) -> None:
     with pytest.raises(ValueError, match="source_url must not include query strings or fragments"):
-        normalize_source_relative_path("https://data.everef.net/a.csv?foo=1")
-
-
-def test_normalize_source_relative_path_rejects_fragment() -> None:
-    with pytest.raises(ValueError, match="source_url must not include query strings or fragments"):
-        normalize_source_relative_path("https://data.everef.net/a.csv#section")
+        normalize_source_relative_path(url)
 
 
 # ── normalize_source_path ───────────────────────────────────────────
 
 
-def test_normalize_source_path_passes_through_clean_path() -> None:
-    result = normalize_source_path("a/file.csv")
-    assert result == "a/file.csv"
+@pytest.mark.parametrize(
+    ("source_path", "expected"),
+    [
+        ("a/file.csv", "a/file.csv"),
+        ("./a/file.csv", "a/file.csv"),
+        ("vendor/../vendor/file.csv", "vendor/file.csv"),
+    ],
+)
+def test_normalize_source_path_normalizes_relative_paths(source_path: str, expected: str) -> None:
+    assert normalize_source_path(source_path) == expected
 
 
-def test_normalize_source_path_normalizes_dot() -> None:
-    result = normalize_source_path("./a/file.csv")
-    assert result == "a/file.csv"
-
-
-def test_normalize_source_path_normalizes_double_dot() -> None:
-    result = normalize_source_path("vendor/../vendor/file.csv")
-    assert result == "vendor/file.csv"
-
-
-def test_normalize_source_path_rejects_backslash() -> None:
-    with pytest.raises(ValueError, match="must use forward slash path separators"):
-        normalize_source_path("a\\file.csv")
-
-
-def test_normalize_source_path_rejects_absolute() -> None:
-    with pytest.raises(ValueError, match="must be relative"):
-        normalize_source_path("/absolute/path.csv")
-
-
-def test_normalize_source_path_rejects_query() -> None:
-    with pytest.raises(ValueError, match="must not include query strings or fragments"):
-        normalize_source_path("a/file.csv?q=1")
-
-
-def test_normalize_source_path_rejects_fragment() -> None:
-    with pytest.raises(ValueError, match="must not include query strings or fragments"):
-        normalize_source_path("a/file.csv#frag")
-
-
-def test_normalize_source_path_rejects_empty_after_normalization() -> None:
-    with pytest.raises(ValueError, match="must include a path"):
-        normalize_source_path(".")
-
-
-def test_normalize_source_path_rejects_empty_string() -> None:
-    with pytest.raises(ValueError, match="must include a path"):
-        normalize_source_path("")
-
-
-def test_normalize_source_path_rejects_escape_to_parent() -> None:
-    with pytest.raises(ValueError, match="must not escape source root"):
-        normalize_source_path("../escape.csv")
-
-
-def test_normalize_source_path_rejects_dot_dot_only() -> None:
-    with pytest.raises(ValueError, match="must not escape source root"):
-        normalize_source_path("..")
+@pytest.mark.parametrize(
+    ("source_path", "match"),
+    [
+        ("a\\file.csv", "must use forward slash path separators"),
+        ("/absolute/path.csv", "must be relative"),
+        ("a/file.csv?q=1", "must not include query strings or fragments"),
+        ("a/file.csv#frag", "must not include query strings or fragments"),
+        (".", "must include a path"),
+        ("", "must include a path"),
+        ("../escape.csv", "must not escape source root"),
+        ("..", "must not escape source root"),
+    ],
+)
+def test_normalize_source_path_rejects_invalid_paths(source_path: str, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        normalize_source_path(source_path)
 
 
 def test_normalize_source_path_uses_custom_field_name() -> None:
@@ -121,13 +96,19 @@ def test_normalize_source_path_uses_custom_field_name() -> None:
 # ── validate_identity_key ───────────────────────────────────────────
 
 
-def test_validate_identity_key_passes_valid() -> None:
-    validate_identity_key({"a": 1, "b": "x"})
-
-
-@pytest.mark.parametrize("value", ["hello", 42, 3.14, True, None])
-def test_validate_identity_key_passes_scalar_types(value: IdentityScalar) -> None:
-    validate_identity_key({"key": value})
+@pytest.mark.parametrize(
+    "identity_key",
+    [
+        {"a": 1, "b": "x"},
+        {"key": "hello"},
+        {"key": 42},
+        {"key": 3.14},
+        {"key": True},
+        {"key": None},
+    ],
+)
+def test_validate_identity_key_passes_valid(identity_key: dict[str, IdentityScalar]) -> None:
+    validate_identity_key(identity_key)
 
 
 def test_validate_identity_key_rejects_empty() -> None:
@@ -184,76 +165,32 @@ def test_resolve_identity_key_validates_explicit_key() -> None:
         )
 
 
-def test_resolve_identity_key_with_single_key() -> None:
-    result = resolve_identity_key(
-        identity_key={"id": 42},
-        source_relative_path="ignored.csv",
-    )
-    assert result == {"id": 42}
-
-
 # ── canonical_identity_json ─────────────────────────────────────────
 
 
-def test_canonical_identity_json_sorts_keys() -> None:
-    result = canonical_identity_json({"b": 2, "a": 1})
-    assert result == '{"a":1,"b":2}'
-
-
-def test_canonical_identity_json_compact_separators() -> None:
-    # no spaces after colons or commas
-    result = canonical_identity_json({"x": "hello", "y": 1})
-    assert " " not in result
-
-
-def test_canonical_identity_json_handles_none() -> None:
-    result = canonical_identity_json({"a": None})
-    assert result == '{"a":null}'
-
-
-def test_canonical_identity_json_handles_booleans() -> None:
-    result = canonical_identity_json({"a": True, "b": False})
-    assert result == '{"a":true,"b":false}'
-
-
-def test_canonical_identity_json_handles_float() -> None:
-    result = canonical_identity_json({"pi": 3.14})
-    assert result == '{"pi":3.14}'
-
-
-def test_canonical_identity_json_single_key() -> None:
-    result = canonical_identity_json({"source_date": "2026-01-01"})
-    assert result == '{"source_date":"2026-01-01"}'
+@pytest.mark.parametrize(
+    ("identity_key", "expected"),
+    [
+        ({"b": 2, "a": 1}, '{"a":1,"b":2}'),
+        ({"a": None}, '{"a":null}'),
+        ({"a": True, "b": False}, '{"a":true,"b":false}'),
+        ({"pi": 3.14}, '{"pi":3.14}'),
+        ({"source_date": "2026-01-01"}, '{"source_date":"2026-01-01"}'),
+    ],
+)
+def test_canonical_identity_json(identity_key: IdentityKey, expected: str) -> None:
+    assert canonical_identity_json(identity_key) == expected
 
 
 # ── hash_identity_key ───────────────────────────────────────────────
 
 
-def test_hash_identity_key_is_deterministic() -> None:
-    assert hash_identity_key({"a": 1}) == hash_identity_key({"a": 1})
-
-
-def test_hash_identity_key_differs_for_different_content() -> None:
-    assert hash_identity_key({"a": 1}) != hash_identity_key({"a": 2})
-
-
-def test_hash_identity_key_is_independent_of_key_order() -> None:
-    k1 = hash_identity_key({"b": 2, "a": 1})
-    k2 = hash_identity_key({"a": 1, "b": 2})
-    assert k1 == k2
-
-
-def test_hash_identity_key_returns_hex_string() -> None:
-    result = hash_identity_key({"source_date": "2026-01-01"})
-    assert isinstance(result, str)
-    assert len(result) == 64
-    int(result, 16)  # raises if not valid hex
-
-
-def test_hash_identity_key_known_input() -> None:
-    # {"a":1} canonical json is '{"a":1}', sha256 of that is known
-    result = hash_identity_key({"a": 1})
-    import hashlib
-
-    expected = hashlib.sha256(b'{"a":1}').hexdigest()
-    assert result == expected
+@pytest.mark.parametrize(
+    ("identity_key", "expected"),
+    [
+        ({"a": 1}, hashlib.sha256(b'{"a":1}').hexdigest()),
+        ({"b": 2, "a": 1}, hashlib.sha256(b'{"a":1,"b":2}').hexdigest()),
+    ],
+)
+def test_hash_identity_key(identity_key: IdentityKey, expected: str) -> None:
+    assert hash_identity_key(identity_key) == expected

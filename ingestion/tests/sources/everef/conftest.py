@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import MagicMock
 
 import pyarrow as pa
 
@@ -9,6 +10,8 @@ from ingest.cache import CacheResult, CacheResultStatus
 from ingest.cache.client_types import RevalidationMetadata
 from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
 from ingest.cache.primitives import UpdateMode
+from ingest.cache.models import GetMode
+from ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
 
 
 class FakeRelation:
@@ -78,3 +81,50 @@ def make_cache_result(
         raw_object=raw_object,
         version=version,
     )
+
+
+def make_everef_pipeline_config(config_cls: type[Any], tmp_path: Any, **kwargs: Any) -> Any:
+    return config_cls(
+        data_root=str(tmp_path),
+        raw_files=RawFilesCliConfig(
+            raw_root=str(tmp_path / "raw"),
+            raw_ledger_url="postgresql://fake:fake@localhost:5432/fake",
+        ),
+        ducklake=DuckLakeCliConfig(
+            ducklake_catalog="postgresql://fake:fake@localhost:5432/fake",
+            ducklake_metadata_schema="test_schema",
+        ),
+        **kwargs,
+    )
+
+
+def install_pipeline_fakes(
+    monkeypatch: Any,
+    results: list[CacheResult],
+    *,
+    assert_mode: GetMode = GetMode.UNPUBLISHED,
+) -> tuple[FakeConnection, MagicMock]:
+    mock_pubtrack = MagicMock()
+
+    class FakeCache:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeCache:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        @property
+        def pubtrack(self) -> MagicMock:
+            return mock_pubtrack
+
+        def get_many(self, objects: object, *, mode: object = None) -> list[CacheResult]:
+            assert mode is assert_mode
+            return results
+
+    con = FakeConnection()
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
+    return con, mock_pubtrack
