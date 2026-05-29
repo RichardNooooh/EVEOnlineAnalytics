@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import logging
 from datetime import date
 
-from ingest.cache import Cache, CacheObject, GetMode, UpdateMode
+from ingest.cache import Cache, CacheObject, CacheResult, GetMode, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import (
     DuckLakeWriter,
     RawDuckLakeTable,
     build_ducklake_attach_config_from_url,
 )
+from ingest.sources.everef.logger import logger
 from ingest.sources.everef.util import process_result
 from ingest.util import iter_dates
-
-logger = logging.getLogger(__name__)
 
 EVEREF_BASE = "https://data.everef.net"
 
@@ -43,6 +41,15 @@ def run_pipeline(config: EverefCliConfig) -> int:
     success = 0
     failed = 0
 
+    logger.info(
+        "Starting pipeline dataset=%s start_date=%s end_date=%s data_root=%s metadata_schema=%s",
+        "market-history",
+        config.start_date,
+        config.end_date,
+        config.data_root,
+        config.ducklake.ducklake_metadata_schema,
+    )
+
     with Cache(
         dataset_name="market-history",
         update_mode=UpdateMode.MUTABLE,
@@ -52,17 +59,36 @@ def run_pipeline(config: EverefCliConfig) -> int:
         results = cache.get_many(date_objects, mode=GetMode.UNPUBLISHED)
 
         if not results:
+            logger.info(
+                "No unpublished raw objects to process dataset=%s discovered=%d",
+                "market-history",
+                total,
+            )
             return 0
 
+        successful_results: list[CacheResult] = []
         with DuckLakeWriter(attach_config) as writer:
             for result in results:
                 if process_result(result, writer, table_key=RawDuckLakeTable.MARKET_HISTORY, key_columns=_KEY_COLUMNS):
                     success += 1
+                    successful_results.append(result)
                 else:
                     failed += 1
 
-        if success:
-            cache.pubtrack.mark_published_many(results)
+        if successful_results:
+            cache.pubtrack.mark_published_many(successful_results)
 
-    logger.info("Processed %d/%d days (%d failed)", success, total, failed)
+        if success and failed:
+            logger.warning(
+                "Partial publication dataset=%s success=%d failed=%d total=%d marked_published=%d",
+                "market-history",
+                success,
+                failed,
+                total,
+                len(successful_results),
+            )
+
+    logger.info(
+        "Processed %d/%d days (%d failed, %d marked_published)", success, total, failed, len(successful_results)
+    )
     return 1 if failed else 0

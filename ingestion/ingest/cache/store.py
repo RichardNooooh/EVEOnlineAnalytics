@@ -35,13 +35,13 @@ Output: CacheResult with status HIT (local) or STORED (downloaded).
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 
 from ingest.cache.client import HttpRawObjectClient
+from ingest.cache.logger import logger
 from ingest.cache.identity import (
     hash_identity_key,
     normalize_source_path,
@@ -78,8 +78,6 @@ from ingest.cache.paths import (
 )
 from ingest.cache.publishing import PublicationTracker
 from ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
-
-logger = logging.getLogger("ingest.cache")
 
 
 class Cache:
@@ -314,15 +312,40 @@ class Cache:
                 continue
             results.append(result)
 
-        if mode is not GetMode.UNPUBLISHED:
-            return results
+        hit_count = sum(1 for r in results if r.status is CacheResultStatus.HIT)
+        stored_count = sum(1 for r in results if r.status is CacheResultStatus.STORED)
 
-        published_versions = self.pubtrack.filter_published(results)
-        return [
-            result
-            for result in results
-            if (result.raw_object.ref.identity_hash, result.version.sha256) not in published_versions
-        ]
+        if mode is GetMode.UNPUBLISHED:
+            published_versions = self.pubtrack.filter_published(results)
+            filtered = [
+                result
+                for result in results
+                if (result.raw_object.ref.identity_hash, result.version.sha256) not in published_versions
+            ]
+            logger.info(
+                "Cache get_many source=%s dataset=%s mode=%s requested=%d result_count=%d hit_count=%d stored_count=%d unpublished_count=%d",
+                self._source_name,
+                self._dataset_name,
+                mode,
+                len(object_list),
+                len(results),
+                hit_count,
+                stored_count,
+                len(filtered),
+            )
+            return filtered
+
+        logger.info(
+            "Cache get_many source=%s dataset=%s mode=%s requested=%d result_count=%d hit_count=%d stored_count=%d",
+            self._source_name,
+            self._dataset_name,
+            mode,
+            len(object_list),
+            len(results),
+            hit_count,
+            stored_count,
+        )
+        return results
 
     def _record_hit(
         self,
@@ -331,6 +354,13 @@ class Cache:
         read_result: ReadResult | None = None,
     ) -> CacheResult:
         checked_at = read_result.fetched_at if read_result is not None else datetime.now(UTC)
+        logger.debug(
+            "Cache hit dataset=%s identity_hash=%s version=%d path=%s",
+            plan.ref.dataset_name,
+            plan.ref.identity_hash,
+            plan.current_version.version_number if plan.current_version else None,
+            plan.current_version.local_path if plan.current_version else None,
+        )
         with self._ledger.transaction() as tx:
             raw_object = tx.writer.touch_raw_object(
                 ref=plan.ref,
@@ -367,6 +397,16 @@ class Cache:
         except Exception:
             final_path.unlink(missing_ok=True)
             raise
+
+        logger.info(
+            "Stored raw object dataset=%s identity_hash=%s version=%d content_length=%s sha256_prefix=%s path=%s",
+            plan.ref.dataset_name,
+            plan.ref.identity_hash,
+            stored.version.version_number,
+            read_result.revalidation.content_length,
+            read_result.sha256[:16],
+            final_path,
+        )
 
         for stale_version in stored.stale_versions:
             if stale_version.local_path != stored.version.local_path:

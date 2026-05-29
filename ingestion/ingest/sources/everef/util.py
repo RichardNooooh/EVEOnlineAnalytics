@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 
 import pyarrow as pa
@@ -8,9 +7,8 @@ import pyarrow.csv as pac
 
 from ingest.cache import CacheResult
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
+from ingest.sources.everef.logger import logger
 from ingest.util import file_size
-
-logger = logging.getLogger(__name__)
 
 
 def read_csv_to_arrow(result: CacheResult) -> pa.Table:
@@ -27,6 +25,21 @@ def read_csv_to_arrow(result: CacheResult) -> pa.Table:
         )
     table = pac.read_csv(path)
     n = len(table)
+    logger.debug(
+        "Parsed CSV to Arrow source_date=%s rows=%d columns=%d path=%s sha256_prefix=%s",
+        source_date,
+        n,
+        len(table.column_names),
+        path,
+        result.version.sha256[:16],
+    )
+    if n == 0:
+        logger.warning(
+            "Zero-row CSV file source_date=%s path=%s source_url=%s",
+            source_date,
+            path,
+            result.version.source_url,
+        )
     now = datetime.now(UTC)
 
     provenance = [
