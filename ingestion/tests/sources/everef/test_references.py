@@ -2,17 +2,12 @@ from __future__ import annotations
 
 import json
 import tarfile
-from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pyarrow as pa
 import pytest
 
-from ingest.cache import CacheResult, CacheResultStatus
-from ingest.cache.client_types import RevalidationMetadata
-from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
-from ingest.cache.primitives import UpdateMode
+from ingest.cache import CacheResult
 from ingest.cli.config import (
     DuckLakeCliConfig,
     EverefReferencesCliConfig,
@@ -20,11 +15,12 @@ from ingest.cli.config import (
 )
 
 from ingest.sources.everef.references import (
-    _build_cache_object,
+    _build_cache_objects,
     _parse_json_to_table,
     _process_member,
     run_pipeline,
 )
+from tests.sources.everef.conftest import FakeConnection, make_cache_result
 
 
 def _make_tarball(path: Path, files: dict[str, str]) -> Path:
@@ -42,45 +38,9 @@ def _make_tarball(path: Path, files: dict[str, str]) -> Path:
     return path
 
 
-def _make_result(
-    file_path: str,
-    *,
-    content_length: int | None = None,
-    last_modified: str | None = None,
-) -> CacheResult:
-    ref = RawObjectRef(
-        source_name="everef",
-        dataset_name="reference-data",
-        identity_hash="abc",
-        identity_key={"source_date": "latest"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    raw_object = RawObjectEntry(
-        id="obj-1",
-        ref=ref,
-        created_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-    )
-    version = RawObjectVersion(
-        id="ver-1",
-        raw_object_id="obj-1",
-        source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
-        fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-        revalidation=RevalidationMetadata(content_length=content_length, last_modified=last_modified),
-        sha256="abc123",
-        local_path=file_path,
-        storage_encoding="xz",
-        version_number=1,
-    )
-    return CacheResult(
-        status=CacheResultStatus.STORED,
-        raw_object=raw_object,
-        version=version,
-    )
-
-
 class TestBuildCacheObject:
     def test_single_object(self) -> None:
-        objects = _build_cache_object()
+        objects = _build_cache_objects()
         assert len(objects) == 1
 
         obj = objects[0]
@@ -94,7 +54,7 @@ class TestParseJsonToTable:
         data = [{"type_id": 1, "name": "foo"}, {"type_id": 2, "name": "bar"}]
         member_path.write_text(json.dumps(data))
 
-        result = _make_result(
+        result = make_cache_result(
             str(tmp_path / "archive.tar.xz"), content_length=128, last_modified="2026-01-02T11:01:55Z"
         )
         table = _parse_json_to_table(str(member_path), result, "types.json")
@@ -109,8 +69,11 @@ class TestParseJsonToTable:
         data = [{"region_id": 10000001, "name": "The Forge"}]
         member_path.write_text(json.dumps(data))
 
-        result = _make_result(
-            str(tmp_path / "archive.tar.xz"), content_length=128, last_modified="2026-01-02T11:01:55Z"
+        result = make_cache_result(
+            str(tmp_path / "archive.tar.xz"),
+            content_length=128,
+            last_modified="2026-01-02T11:01:55Z",
+            source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
         )
         table = _parse_json_to_table(str(member_path), result, "regions.json")
 
@@ -127,7 +90,7 @@ class TestParseJsonToTable:
         member_path = tmp_path / "empty.json"
         member_path.write_text("[]")
 
-        result = _make_result(str(tmp_path / "archive.tar.xz"))
+        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
         table = _parse_json_to_table(str(member_path), result, "empty.json")
 
         assert table.num_rows == 0
@@ -136,7 +99,7 @@ class TestParseJsonToTable:
         member_path = tmp_path / "obj.json"
         member_path.write_text('{"key": "value"}')
 
-        result = _make_result(str(tmp_path / "archive.tar.xz"))
+        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
         table = _parse_json_to_table(str(member_path), result, "obj.json")
 
         assert table.num_rows == 0
@@ -151,7 +114,7 @@ class TestProcessMember:
 
         tarball_path = tmp_path / "archive.tar.xz"
         _make_tarball(tarball_path, {"types.json": json.dumps(self.TYPES_DATA)})
-        result = _make_result(str(tarball_path))
+        result = make_cache_result(str(tarball_path))
 
         writer = MagicMock()
         ok = _process_member(str(member_path), "types.json", result, writer)
@@ -166,7 +129,7 @@ class TestProcessMember:
         member_path = tmp_path / "unknown.json"
         member_path.write_text("[]")
 
-        result = _make_result(str(tmp_path / "archive.tar.xz"))
+        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
         writer = MagicMock()
         ok = _process_member(str(member_path), "unknown.json", result, writer)
 
@@ -177,38 +140,12 @@ class TestProcessMember:
         member_path = tmp_path / "types.json"
         member_path.write_text("not json")
 
-        result = _make_result(str(tmp_path / "archive.tar.xz"))
+        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
         writer = MagicMock()
         ok = _process_member(str(member_path), "types.json", result, writer)
 
         assert ok is False
         writer.write.assert_not_called()
-
-
-class FakeRelation:
-    def __init__(self) -> None:
-        self.view_names: list[str] = []
-
-    def create_view(self, view_name: str) -> None:
-        self.view_names.append(view_name)
-
-
-class FakeConnection:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, list[str] | None]] = []
-        self.relation = FakeRelation()
-        self.arrow_tables: list[pa.Table] = []
-        self.closed = False
-
-    def execute(self, query: str, params: list[str] | None = None) -> None:
-        self.calls.append((query, params))
-
-    def from_arrow(self, arrow_table: pa.Table) -> FakeRelation:
-        self.arrow_tables.append(arrow_table)
-        return self.relation
-
-    def close(self) -> None:
-        self.closed = True
 
 
 @pytest.mark.integration
@@ -226,7 +163,7 @@ def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
         },
     )
 
-    fake_result = _make_result(
+    fake_result = make_cache_result(
         str(archive_path), content_length=archive_path.stat().st_size, last_modified="2026-05-28T13:16:13Z"
     )
     mock_pubtrack = MagicMock()
@@ -250,7 +187,7 @@ def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.references.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
 
     config = EverefReferencesCliConfig(
         data_root=str(tmp_path),
@@ -276,7 +213,7 @@ def test_run_pipeline_handles_empty_archive(monkeypatch: pytest.MonkeyPatch, tmp
     archive_path = tmp_path / "reference-data-latest.tar.xz"
     _make_tarball(archive_path, {})
 
-    fake_result = _make_result(str(archive_path))
+    fake_result = make_cache_result(str(archive_path))
     mock_pubtrack = MagicMock()
 
     class FakeCache:
@@ -298,7 +235,7 @@ def test_run_pipeline_handles_empty_archive(monkeypatch: pytest.MonkeyPatch, tmp
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.references.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
 
     config = EverefReferencesCliConfig(
         data_root=str(tmp_path),
@@ -338,7 +275,7 @@ def test_run_pipeline_already_published(monkeypatch: pytest.MonkeyPatch, tmp_pat
         def get_many(self, objects: object, *, mode: object = None) -> list[CacheResult]:
             return []
 
-    monkeypatch.setattr("ingest.sources.everef.references.Cache", FakeCacheEmpty)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCacheEmpty)
 
     config = EverefReferencesCliConfig(
         data_root=str(tmp_path),
