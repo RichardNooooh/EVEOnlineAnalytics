@@ -1,6 +1,7 @@
 import argparse
 
 from ingest.cli.builders import (
+    build_everef_fuzzwork_orders_config,
     build_everef_market_history_config,
     build_everef_market_orders_config,
     build_everef_references_config,
@@ -56,6 +57,23 @@ def _run_market_history_pipeline(
     parser: argparse.ArgumentParser,
 ) -> int:
     from ingest.sources.everef.market_history import run_pipeline
+
+    config_builder = getattr(args, "config_builder", None)
+    if config_builder is None:
+        parser.error("config_builder not set")
+    try:
+        config = config_builder(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    return run_pipeline(config)
+
+
+def _run_fuzzwork_orders_pipeline(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> int:
+    from ingest.sources.everef.fuzzwork_orders import run_pipeline
 
     config_builder = getattr(args, "config_builder", None)
     if config_builder is None:
@@ -126,6 +144,20 @@ def build_parser() -> argparse.ArgumentParser:
     everef_market_orders_parser.set_defaults(
         handler=_run_market_orders_pipeline,
         config_builder=build_everef_market_orders_config,
+    )
+
+    everef_fuzzwork_orders_parser = everef_subparsers.add_parser(
+        "fuzzwork-orders",
+        help="Ingest Fuzzwork market order archives.",
+        parents=[
+            shared_parents["date_range"],
+            shared_parents["runtime"],
+            shared_parents["ducklake"],
+        ],
+    )
+    everef_fuzzwork_orders_parser.set_defaults(
+        handler=_run_fuzzwork_orders_pipeline,
+        config_builder=build_everef_fuzzwork_orders_config,
     )
 
     everef_references_parser = everef_subparsers.add_parser(

@@ -1,0 +1,429 @@
+from __future__ import annotations
+
+import gzip
+import logging
+import pathlib
+from datetime import date
+from unittest.mock import MagicMock, patch
+
+import pytest
+import requests
+
+from ingest.cache import CacheObject, CacheResult
+from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliConfig
+
+from ingest.sources.everef.fuzzwork_orders import (
+    _FUZZWORK_COLUMN_NAMES,
+    _FUZZWORK_RE,
+    _build_cache_objects,
+    run_pipeline,
+)
+from ingest.sources.everef.logger import logger
+from ingest.sources.everef.util import list_snapshots, read_csv_to_arrow
+
+from tests.sources.everef.conftest import FakeConnection, make_cache_result
+
+import pyarrow.csv as pac  # noqa: E402
+
+_TSV_DATA = "1\t34\t2026-01-01T00:00:00Z\tTrue\t10\t100\t1\t9.99\t60000001\t0\t30\t10000002\t161676\n"
+
+
+@pytest.fixture
+def snapshot_html() -> str:
+    return (
+        '<html><body><a href="fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz">link1</a>'
+        '<a href="fuzzwork-orderset-42-2026-01-01_00-00-00.csv.gz">link2</a></body></html>'
+    )
+
+
+class TestListSnapshots:
+    def test_extracts_filenames(self, snapshot_html: str) -> None:
+        with patch.object(requests, "get", return_value=MagicMock(text=snapshot_html, raise_for_status=lambda: None)):
+            filenames = list_snapshots(
+                "fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, source_label="fuzzwork-orders"
+            )
+        assert filenames == [
+            "fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
+            "fuzzwork-orderset-42-2026-01-01_00-00-00.csv.gz",
+        ]
+
+    def test_empty_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        logger.addHandler(caplog.handler)
+        with patch.object(requests, "get", return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None)):
+            filenames = list_snapshots(
+                "fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, source_label="fuzzwork-orders"
+            )
+        logger.removeHandler(caplog.handler)
+        assert filenames == []
+        assert "No snapshots discovered" in caplog.text
+        assert "label=fuzzwork-orders" in caplog.text
+
+    def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        logger.addHandler(caplog.handler)
+        with patch.object(
+            requests, "get", return_value=MagicMock(text="<html>bad</html>", raise_for_status=lambda: None)
+        ):
+            filenames = list_snapshots(
+                "fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, source_label="fuzzwork-orders"
+            )
+        logger.removeHandler(caplog.handler)
+        assert filenames == []
+        assert "No snapshots discovered" in caplog.text
+        assert "label=fuzzwork-orders" in caplog.text
+
+
+class TestBuildCacheObjects:
+    def test_creates_objects_for_snapshots(self) -> None:
+        html = (
+            '<html><body><a href="fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz">link1</a>'
+            '<a href="fuzzwork-orderset-42-2026-01-01_00-00-00.csv.gz">link2</a></body></html>'
+        )
+        with patch.object(requests, "get", return_value=MagicMock(text=html, raise_for_status=lambda: None)):
+            objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
+
+        assert len(objects) == 2
+        assert objects[0].identity_key == {
+            "source_date": "2026-01-01",
+            "order_set_id": "161676",
+            "snapshot_time": "2026-01-01_12-06-49",
+        }
+        assert objects[1].identity_key == {
+            "source_date": "2026-01-01",
+            "order_set_id": "42",
+            "snapshot_time": "2026-01-01_00-00-00",
+        }
+
+    def test_skips_dates_with_no_snapshots(self) -> None:
+        with patch.object(requests, "get", return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None)):
+            objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
+        assert objects == []
+
+    def test_logs_aggregate_counts(self, caplog: pytest.LogCaptureFixture) -> None:
+        logger.addHandler(caplog.handler)
+        caplog.set_level(logging.INFO, logger=logger.name)
+        html = '<html><body><a href="fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz">link1</a></body></html>'
+        with patch.object(requests, "get", return_value=MagicMock(text=html, raise_for_status=lambda: None)):
+            _build_cache_objects(date(2026, 1, 1), date(2026, 1, 2))
+        logger.removeHandler(caplog.handler)
+        assert "Built cache objects label=fuzzwork-orders date_count=2 total_snapshots=2" in caplog.text
+
+
+class TestReadCsvToArrow:
+    @pytest.fixture
+    def csv_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        path = tmp_path / "fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz"
+        with gzip.open(path, "wt") as f:
+            f.write(_TSV_DATA)
+        return path
+
+    def test_adds_provenance(self, csv_path: pathlib.Path) -> None:
+        result = make_cache_result(
+            str(csv_path),
+            content_length=csv_path.stat().st_size,
+            last_modified="2026-01-01T12:06:49Z",
+            dataset_name="fuzzwork-orders",
+            identity_key={
+                "source_date": "2026-01-01",
+                "order_set_id": "161676",
+                "snapshot_time": "2026-01-01_12-06-49",
+            },
+            source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
+        )
+        table = read_csv_to_arrow(
+            result,
+            read_options=pac.ReadOptions(column_names=_FUZZWORK_COLUMN_NAMES),
+            parse_options=pac.ParseOptions(delimiter="\t"),
+        )
+
+        assert "order_id" in table.column_names
+        assert "order_set_id" in table.column_names
+        assert "_source_market_date" in table.column_names
+        assert len(table) == 1
+        assert table.column("_source_market_date")[0].as_py() == "2026-01-01"
+        assert table.column("order_set_id")[0].as_py() == 161676
+        assert table.column("order_id")[0].as_py() == 1
+
+    def test_zero_row_warning(self, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
+        logger.addHandler(caplog.handler)
+        path = tmp_path / "empty.csv.gz"
+        with gzip.open(path, "wt") as f:
+            f.write("order_id\ttype_id\n")
+        result = make_cache_result(
+            str(path),
+            dataset_name="fuzzwork-orders",
+            identity_key={
+                "source_date": "2026-01-01",
+                "order_set_id": "161676",
+                "snapshot_time": "2026-01-01_12-06-49",
+            },
+            source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
+        )
+        table = read_csv_to_arrow(result)
+        logger.removeHandler(caplog.handler)
+        assert len(table) == 0
+        assert "Zero-row CSV file" in caplog.text
+
+
+@pytest.mark.integration
+def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    file_path = tmp_path / "fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz"
+    with gzip.open(file_path, "wt") as f:
+        f.write(_TSV_DATA)
+
+    fake_result = make_cache_result(
+        str(file_path),
+        dataset_name="fuzzwork-orders",
+        identity_key={
+            "source_date": "2026-01-01",
+            "order_set_id": "161676",
+            "snapshot_time": "2026-01-01_12-06-49",
+        },
+        source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
+    )
+    mock_pubtrack = MagicMock()
+
+    class FakeCache:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeCache:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        @property
+        def pubtrack(self) -> MagicMock:
+            return mock_pubtrack
+
+        def get_many(self, objects: object, *, mode: object = None) -> list[CacheResult]:
+            return [fake_result]
+
+    con = FakeConnection()
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
+    monkeypatch.setattr(
+        "ingest.sources.everef.fuzzwork_orders._build_cache_objects",
+        lambda start, end: [
+            CacheObject(
+                source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
+                identity_key={
+                    "source_date": "2026-01-01",
+                    "order_set_id": "161676",
+                    "snapshot_time": "2026-01-01_12-06-49",
+                },
+            )
+        ],
+    )
+
+    config = EverefCliConfig(
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 1),
+        data_root=str(tmp_path),
+        raw_files=RawFilesCliConfig(
+            raw_root=str(tmp_path / "raw"),
+            raw_ledger_url="postgresql://fake:fake@localhost:5432/fake",
+        ),
+        ducklake=DuckLakeCliConfig(
+            ducklake_catalog="postgresql://fake:fake@localhost:5432/fake",
+            ducklake_metadata_schema="test_schema",
+        ),
+    )
+
+    result = run_pipeline(config)
+
+    assert result == 0
+    mock_pubtrack.mark_published_many.assert_called_once()
+    assert con.closed is True
+
+
+def test_run_pipeline_only_marks_successful(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    bad_tsv = tmp_path / "bad.csv.gz"
+    with gzip.open(bad_tsv, "wt") as f:
+        f.write("not\ta\tcsv\n")
+
+    good_result = make_cache_result(
+        str(bad_tsv),
+        dataset_name="fuzzwork-orders",
+        identity_key={
+            "source_date": "2026-01-01",
+            "order_set_id": "161676",
+            "snapshot_time": "2026-01-01_12-06-49",
+        },
+        source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
+    )
+
+    mock_pubtrack = MagicMock()
+
+    class FakeCache:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeCache:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        @property
+        def pubtrack(self) -> MagicMock:
+            return mock_pubtrack
+
+        def get_many(self, objects: object, *, mode: object = None) -> list[CacheResult]:
+            return [good_result]
+
+    con = FakeConnection()
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
+    monkeypatch.setattr(
+        "ingest.sources.everef.fuzzwork_orders._build_cache_objects",
+        lambda start, end: [
+            CacheObject(
+                source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
+                identity_key={
+                    "source_date": "2026-01-01",
+                    "order_set_id": "161676",
+                    "snapshot_time": "2026-01-01_12-06-49",
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "ingest.sources.everef.fuzzwork_orders.read_csv_to_arrow",
+        lambda result, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    config = EverefCliConfig(
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 1),
+        data_root=str(tmp_path),
+        raw_files=RawFilesCliConfig(
+            raw_root=str(tmp_path / "raw"),
+            raw_ledger_url="postgresql://fake:fake@localhost:5432/fake",
+        ),
+        ducklake=DuckLakeCliConfig(
+            ducklake_catalog="postgresql://fake:fake@localhost:5432/fake",
+            ducklake_metadata_schema="test_schema",
+        ),
+    )
+
+    result = run_pipeline(config)
+    assert result == 1
+    mock_pubtrack.mark_published_many.assert_not_called()
+    assert "Partial publication" not in caplog.text
+
+
+def test_run_pipeline_partial_success_warns(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    logger.addHandler(caplog.handler)
+    good_path = tmp_path / "good.csv.gz"
+    with gzip.open(good_path, "wt") as f:
+        f.write(_TSV_DATA)
+
+    bad_path = tmp_path / "bad.csv.gz"
+    with gzip.open(bad_path, "wt") as f:
+        f.write("not\ta\tcsv\n")
+
+    good_result = make_cache_result(
+        str(good_path),
+        dataset_name="fuzzwork-orders",
+        identity_key={
+            "source_date": "2026-01-01",
+            "order_set_id": "161676",
+            "snapshot_time": "2026-01-01_12-06-49",
+        },
+        source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
+    )
+    bad_result = make_cache_result(
+        str(bad_path),
+        dataset_name="fuzzwork-orders",
+        identity_key={
+            "source_date": "2026-01-01",
+            "order_set_id": "42",
+            "snapshot_time": "2026-01-01_00-00-00",
+        },
+        source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-42-2026-01-01_00-00-00.csv.gz",
+    )
+
+    call_count = 0
+    original_process_result = __import__(
+        "ingest.sources.everef.fuzzwork_orders", fromlist=["_process_result"]
+    )._process_result
+
+    def flaky_process(result, writer):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return original_process_result(result, writer)
+        return False
+
+    mock_pubtrack = MagicMock()
+
+    class FakeCache:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeCache:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        @property
+        def pubtrack(self) -> MagicMock:
+            return mock_pubtrack
+
+        def get_many(self, objects: object, *, mode: object = None) -> list[CacheResult]:
+            return [good_result, bad_result]
+
+    con = FakeConnection()
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
+    monkeypatch.setattr(
+        "ingest.sources.everef.fuzzwork_orders._build_cache_objects",
+        lambda start, end: [
+            CacheObject(
+                source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
+                identity_key={
+                    "source_date": "2026-01-01",
+                    "order_set_id": "161676",
+                    "snapshot_time": "2026-01-01_12-06-49",
+                },
+            ),
+            CacheObject(
+                source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-42-2026-01-01_00-00-00.csv.gz",
+                identity_key={
+                    "source_date": "2026-01-01",
+                    "order_set_id": "42",
+                    "snapshot_time": "2026-01-01_00-00-00",
+                },
+            ),
+        ],
+    )
+    monkeypatch.setattr("ingest.sources.everef.fuzzwork_orders._process_result", flaky_process)
+
+    config = EverefCliConfig(
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 1),
+        data_root=str(tmp_path),
+        raw_files=RawFilesCliConfig(
+            raw_root=str(tmp_path / "raw"),
+            raw_ledger_url="postgresql://fake:fake@localhost:5432/fake",
+        ),
+        ducklake=DuckLakeCliConfig(
+            ducklake_catalog="postgresql://fake:fake@localhost:5432/fake",
+            ducklake_metadata_schema="test_schema",
+        ),
+    )
+
+    result = run_pipeline(config)
+    logger.removeHandler(caplog.handler)
+    assert result == 1
+    args, _kwargs = mock_pubtrack.mark_published_many.call_args
+    marked = args[0]
+    assert len(marked) == 1
+    assert marked[0] is good_result
+    assert "Partial publication" in caplog.text
