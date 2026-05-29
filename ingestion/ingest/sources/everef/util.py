@@ -10,6 +10,37 @@ from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
 from ingest.sources.everef.logger import logger
 from ingest.util import file_size
 
+EVEREF_BASE = "https://data.everef.net"
+
+
+def add_provenance(
+    table: pa.Table,
+    result: CacheResult,
+    *,
+    extra_columns: dict[str, pa.Array] | None = None,
+) -> pa.Table:
+    n = len(table)
+    now = datetime.now(UTC)
+    content_length = file_size(result.path)
+
+    base_cols = [
+        ("_source_url", pa.array([result.version.source_url] * n, type=pa.utf8())),
+        ("_source_local_path", pa.array([result.path] * n, type=pa.utf8())),
+        ("_source_sha256", pa.array([result.version.sha256] * n, type=pa.utf8())),
+        ("_source_content_length", pa.array([content_length] * n, type=pa.int64())),
+        ("_source_last_modified", pa.array([result.version.revalidation.last_modified] * n, type=pa.utf8())),
+        ("_source_downloaded_at", pa.array([result.version.fetched_at] * n, type=pa.timestamp("us", tz="UTC"))),
+        ("_ingested_at", pa.array([now] * n, type=pa.timestamp("us", tz="UTC"))),
+    ]
+    for name, col in base_cols:
+        table = table.append_column(name, col)
+
+    if extra_columns:
+        for name, col in extra_columns.items():
+            table = table.append_column(name, col)
+
+    return table
+
 
 def read_csv_to_arrow(result: CacheResult) -> pa.Table:
     path = result.path
@@ -40,22 +71,13 @@ def read_csv_to_arrow(result: CacheResult) -> pa.Table:
             path,
             result.version.source_url,
         )
-    now = datetime.now(UTC)
-
-    provenance = [
-        ("_source_market_date", pa.array([source_date] * n, type=pa.utf8())),
-        ("_source_url", pa.array([result.version.source_url] * n, type=pa.utf8())),
-        ("_source_local_path", pa.array([path] * n, type=pa.utf8())),
-        ("_source_sha256", pa.array([result.version.sha256] * n, type=pa.utf8())),
-        ("_source_content_length", pa.array([content_length] * n, type=pa.int64())),
-        ("_source_last_modified", pa.array([result.version.revalidation.last_modified] * n, type=pa.utf8())),
-        ("_source_downloaded_at", pa.array([result.version.fetched_at] * n, type=pa.timestamp("us", tz="UTC"))),
-        ("_ingested_at", pa.array([now] * n, type=pa.timestamp("us", tz="UTC"))),
-    ]
-    for name, col in provenance:
-        table = table.append_column(name, col)
-
-    return table
+    return add_provenance(
+        table,
+        result,
+        extra_columns={
+            "_source_market_date": pa.array([source_date] * n, type=pa.utf8()),
+        },
+    )
 
 
 def process_result(

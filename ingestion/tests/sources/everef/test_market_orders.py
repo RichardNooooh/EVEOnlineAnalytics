@@ -3,17 +3,13 @@ from __future__ import annotations
 import bz2
 import logging
 import pathlib
-from datetime import UTC, date, datetime
+from datetime import date
 from unittest.mock import MagicMock, patch
 
-import pyarrow as pa
 import pytest
 import requests
 
-from ingest.cache import CacheObject, CacheResult, CacheResultStatus
-from ingest.cache.client_types import RevalidationMetadata
-from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
-from ingest.cache.primitives import UpdateMode
+from ingest.cache import CacheObject, CacheResult
 from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliConfig
 
 from ingest.sources.everef.logger import logger
@@ -23,6 +19,8 @@ from ingest.sources.everef.market_orders import (
     run_pipeline,
 )
 from ingest.sources.everef.util import read_csv_to_arrow
+
+from tests.sources.everef.conftest import FakeConnection, make_cache_result
 
 
 @pytest.fixture
@@ -87,7 +85,7 @@ class TestBuildCacheObjects:
 
     def test_logs_aggregate_counts(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
-        caplog.set_level(logging.INFO, logger="ingest.sources.everef")
+        caplog.set_level(logging.INFO, logger=logger.name)
         html = '<html><body><a href="market-orders-2026-01-01_00-00-00.v3.csv.bz2">link1</a></body></html>'
         with patch.object(requests, "get", return_value=MagicMock(text=html, raise_for_status=lambda: None)):
             _build_cache_objects(date(2026, 1, 1), date(2026, 1, 2))
@@ -182,42 +180,6 @@ class TestBuildCacheObjectsWithRealFixture:
         )
 
 
-def _make_result(
-    file_path: str,
-    *,
-    content_length: int | None = None,
-    last_modified: str | None = None,
-) -> CacheResult:
-    ref = RawObjectRef(
-        source_name="everef",
-        dataset_name="market-orders",
-        identity_hash="abc",
-        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    raw_object = RawObjectEntry(
-        id="obj-1",
-        ref=ref,
-        created_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-    )
-    version = RawObjectVersion(
-        id="ver-1",
-        raw_object_id="obj-1",
-        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
-        fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-        revalidation=RevalidationMetadata(content_length=content_length, last_modified=last_modified),
-        sha256="abc123",
-        local_path=file_path,
-        storage_encoding="bz2",
-        version_number=1,
-    )
-    return CacheResult(
-        status=CacheResultStatus.STORED,
-        raw_object=raw_object,
-        version=version,
-    )
-
-
 class TestReadCsvToArrow:
     CSV_CONTENT = (
         "order_id,type_id,region_id,location_id,system_id,"
@@ -233,10 +195,13 @@ class TestReadCsvToArrow:
         return path
 
     def test_adds_provenance(self, csv_path: pathlib.Path) -> None:
-        result = _make_result(
+        result = make_cache_result(
             str(csv_path),
             content_length=csv_path.stat().st_size,
             last_modified="2026-01-01T00:00:00Z",
+            dataset_name="market-orders",
+            identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
+            source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
         )
         table = read_csv_to_arrow(result)
 
@@ -251,68 +216,16 @@ class TestReadCsvToArrow:
         path = tmp_path / "empty.csv.bz2"
         with bz2.open(path, "wt") as f:
             f.write("order_id,type_id\n")
-        result = _make_result(str(path))
+        result = make_cache_result(
+            str(path),
+            dataset_name="market-orders",
+            identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
+            source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
+        )
         table = read_csv_to_arrow(result)
         logger.removeHandler(caplog.handler)
         assert len(table) == 0
         assert "Zero-row CSV file" in caplog.text
-
-
-class FakeRelation:
-    def __init__(self) -> None:
-        self.view_names: list[str] = []
-
-    def create_view(self, view_name: str) -> None:
-        self.view_names.append(view_name)
-
-
-class FakeConnection:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, list[str] | None]] = []
-        self.relation = FakeRelation()
-        self.arrow_tables: list[pa.Table] = []
-        self.closed = False
-
-    def execute(self, query: str, params: list[str] | None = None) -> None:
-        self.calls.append((query, params))
-
-    def from_arrow(self, arrow_table: pa.Table) -> FakeRelation:
-        self.arrow_tables.append(arrow_table)
-        return self.relation
-
-    def close(self) -> None:
-        self.closed = True
-
-
-def _fake_cache_result(file_path: str) -> CacheResult:
-    ref = RawObjectRef(
-        source_name="everef",
-        dataset_name="market-orders",
-        identity_hash="abc",
-        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    raw_object = RawObjectEntry(
-        id="obj-1",
-        ref=ref,
-        created_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-    )
-    version = RawObjectVersion(
-        id="ver-1",
-        raw_object_id="obj-1",
-        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
-        fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
-        revalidation=RevalidationMetadata(),
-        sha256="abc123",
-        local_path=file_path,
-        storage_encoding="bz2",
-        version_number=1,
-    )
-    return CacheResult(
-        status=CacheResultStatus.STORED,
-        raw_object=raw_object,
-        version=version,
-    )
 
 
 @pytest.mark.integration
@@ -326,7 +239,12 @@ def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     with bz2.open(file_path, "wt") as f:
         f.write(csv_content)
 
-    fake_result = _fake_cache_result(str(file_path))
+    fake_result = make_cache_result(
+        str(file_path),
+        dataset_name="market-orders",
+        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
+    )
     mock_pubtrack = MagicMock()
 
     class FakeCache:
@@ -353,7 +271,7 @@ def test_run_pipeline_integration(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.market_orders.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
     monkeypatch.setattr(
         "ingest.sources.everef.market_orders._build_cache_objects",
         lambda start, end: [
@@ -392,7 +310,12 @@ def test_run_pipeline_only_marks_successful(
     with bz2.open(bad_csv, "wt") as f:
         f.write("not,a,csv\n")
 
-    good_result = _fake_cache_result(str(bad_csv))
+    good_result = make_cache_result(
+        str(bad_csv),
+        dataset_name="market-orders",
+        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
+    )
     # Force _process_result to fail by monkeypatching read_csv_to_arrow to raise
 
     mock_pubtrack = MagicMock()
@@ -416,7 +339,7 @@ def test_run_pipeline_only_marks_successful(
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.market_orders.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
     monkeypatch.setattr(
         "ingest.sources.everef.market_orders._build_cache_objects",
         lambda start, end: [
@@ -469,9 +392,18 @@ def test_run_pipeline_partial_success_warns(
     with bz2.open(bad_path, "wt") as f:
         f.write("not,a,csv\n")
 
-    good_result = _fake_cache_result(str(good_path))
-    # Adjust identity key for second result
-    bad_result = _fake_cache_result(str(bad_path))
+    good_result = make_cache_result(
+        str(good_path),
+        dataset_name="market-orders",
+        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
+    )
+    bad_result = make_cache_result(
+        str(bad_path),
+        dataset_name="market-orders",
+        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_12-00-00"},
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_12-00-00.v3.csv.bz2",
+    )
 
     call_count = 0
     original_process_result = __import__(
@@ -506,7 +438,7 @@ def test_run_pipeline_partial_success_warns(
 
     con = FakeConnection()
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.everef.market_orders.Cache", FakeCache)
+    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
     monkeypatch.setattr(
         "ingest.sources.everef.market_orders._build_cache_objects",
         lambda start, end: [
