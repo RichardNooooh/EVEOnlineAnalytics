@@ -9,7 +9,7 @@ import pyarrow as pa
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
-from ingest.sources.everef.util import build_snapshot_cache_objects, read_csv_to_arrow
+from ingest.sources.everef.util import build_listed_objects, read_csv_to_arrow
 from ingest.sources.pipeline import run_pipeline as _run_pipeline
 
 logger = logging.getLogger("ingest.sources.everef")
@@ -19,17 +19,15 @@ _KEY_COLUMNS = ["order_id", "snapshot_time"]
 
 
 def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
-    def identity_key(filename: str, d: date) -> dict[str, str]:
-        snapshot_id = filename.replace("market-orders-", "").replace(".v3.csv.bz2", "")
-        return {"source_date": d.isoformat(), "snapshot_time": snapshot_id}
-
-    return build_snapshot_cache_objects(
-        "market-orders/history",
+    return build_listed_objects(
         start_date,
         end_date,
-        _SNAPSHOT_RE,
-        identity_key,
-        source_label="market-orders",
+        url_prefix="market-orders/history",
+        filename_pattern=_SNAPSHOT_RE,
+        identity_key_fn=lambda filename, d: {
+            "source_date": d.isoformat(),
+            "snapshot_time": filename.replace("market-orders-", "").replace(".v3.csv.bz2", ""),
+        },
     )
 
 
