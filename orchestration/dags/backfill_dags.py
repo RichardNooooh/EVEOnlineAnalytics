@@ -1,4 +1,4 @@
-from include.dag_utils import build_backfill_dag
+from eve_market_airflow.dag_utils import build_backfill_dag
 
 _DAG_CONFIGS = [
     {
@@ -28,5 +28,6 @@ _DAG_CONFIGS = [
 ]
 
 for config in _DAG_CONFIGS:
-    dag_id = config.pop("dag_id")
-    globals()[dag_id] = build_backfill_dag(dag_id=dag_id, **config)
+    dag_id = config["dag_id"]
+    dag_kwargs = {k: v for k, v in config.items() if k != "dag_id"}
+    globals()[dag_id] = build_backfill_dag(dag_id=dag_id, **dag_kwargs)

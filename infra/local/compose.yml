@@ -10,6 +10,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?Set AIRFLOW_FERNET_KEY in infra/local/.env}
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAG_DISCOVERY_SAFE_MODE: "false"
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/local/.env}@postgres:5432/${POSTGRES_DB:-airflow}
     AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
     EVE_MARKET_LOCAL_DATA_HOST_PATH: ${EVE_MARKET_LOCAL_DATA_HOST_PATH:?Set EVE_MARKET_LOCAL_DATA_HOST_PATH in infra/local/.env}
@@ -19,13 +20,14 @@ x-airflow-common: &airflow-common
     RAW_FILES_POSTGRES_PASSWORD: ${RAW_FILES_POSTGRES_PASSWORD:?Set RAW_FILES_POSTGRES_PASSWORD in infra/local/.env}
     INGESTION_APP_GID: ${INGESTION_APP_GID:-10001}
     INGESTION_APP_UID: ${INGESTION_APP_UID:-10001}
-    PYTHONPATH: /opt/eve-market/ingestion
+    PYTHONPATH: /opt/eve-market/ingestion:/opt/airflow/dags
   user: "${AIRFLOW_UID:-50000}:0"
   group_add:
     - "${DOCKER_GID:-1001}"
   volumes:
     - /var/run/docker.sock:/var/run/docker.sock
     - ../../orchestration/dags:/opt/airflow/dags
+    - ../../orchestration/eve_market_airflow:/opt/airflow/dags/eve_market_airflow:ro
     - ../../ingestion:/opt/eve-market/ingestion
     - ../../transformation:/opt/eve-market/transform
     - ../../datasets:/opt/eve-market/datasets
