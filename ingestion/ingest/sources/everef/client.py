@@ -10,7 +10,14 @@ logger = logging.getLogger("ingest.sources.everef")
 
 
 class EverefSnapshotClient:
-    """Small HTTP client with retry/backoff for everef.net listing pages."""
+    """Small HTTP client with retry/backoff for everef.net listing pages.
+
+    Use as a context manager to guarantee the underlying connection pool is
+    closed:
+
+        with EverefSnapshotClient() as client:
+            html = client.fetch_text(url)
+    """
 
     def __init__(
         self,
@@ -25,6 +32,12 @@ class EverefSnapshotClient:
         self.backoff_factor = backoff_factor
         self.backoff_jitter = backoff_jitter
         self._session = self._build_session()
+
+    def __enter__(self) -> EverefSnapshotClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._session.close()
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()

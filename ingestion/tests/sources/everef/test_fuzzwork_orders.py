@@ -10,7 +10,6 @@ import pytest
 
 from ingest.cache import CacheObject, CacheResult
 from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliConfig
-from ingest.sources.everef.client import EverefSnapshotClient
 
 from ingest.sources.everef.fuzzwork_orders import (
     _FUZZWORK_COLUMN_NAMES,
@@ -40,10 +39,9 @@ def snapshot_html() -> str:
 
 class TestListSnapshots:
     def test_extracts_filenames(self, snapshot_html: str) -> None:
-        client = EverefSnapshotClient()
-        client._session.get = MagicMock(return_value=MagicMock(text=snapshot_html, raise_for_status=lambda: None))
-        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
-            filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE)
+        client = MagicMock()
+        client.fetch_text.return_value = snapshot_html
+        filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, client)
         assert filenames == [
             "fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
             "fuzzwork-orderset-42-2026-01-01_00-00-00.csv.gz",
@@ -51,10 +49,9 @@ class TestListSnapshots:
 
     def test_empty_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
-        client = EverefSnapshotClient()
-        client._session.get = MagicMock(return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None))
-        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
-            filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE)
+        client = MagicMock()
+        client.fetch_text.return_value = "<html></html>"
+        filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, client)
         logger.removeHandler(caplog.handler)
         assert filenames == []
         assert "No snapshots discovered" in caplog.text
@@ -62,10 +59,9 @@ class TestListSnapshots:
 
     def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         logger.addHandler(caplog.handler)
-        client = EverefSnapshotClient()
-        client._session.get = MagicMock(return_value=MagicMock(text="<html>bad</html>", raise_for_status=lambda: None))
-        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
-            filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE)
+        client = MagicMock()
+        client.fetch_text.return_value = "<html>bad</html>"
+        filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, client)
         logger.removeHandler(caplog.handler)
         assert filenames == []
         assert "No snapshots discovered" in caplog.text
@@ -78,9 +74,8 @@ class TestBuildCacheObjects:
             '<html><body><a href="fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz">link1</a>'
             '<a href="fuzzwork-orderset-42-2026-01-01_00-00-00.csv.gz">link2</a></body></html>'
         )
-        client = EverefSnapshotClient()
-        client._session.get = MagicMock(return_value=MagicMock(text=html, raise_for_status=lambda: None))
-        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
+        with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
+            mock_cls.return_value.__enter__.return_value.fetch_text.return_value = html
             objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
 
         assert len(objects) == 2
@@ -96,9 +91,8 @@ class TestBuildCacheObjects:
         }
 
     def test_skips_dates_with_no_snapshots(self) -> None:
-        client = EverefSnapshotClient()
-        client._session.get = MagicMock(return_value=MagicMock(text="<html></html>", raise_for_status=lambda: None))
-        with patch.object(everef_util, "_DEFAULT_CLIENT", client):
+        with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
+            mock_cls.return_value.__enter__.return_value.fetch_text.return_value = "<html></html>"
             objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
         assert objects == []
 

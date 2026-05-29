@@ -17,17 +17,16 @@ logger = logging.getLogger("ingest.sources.everef")
 
 EVEREF_BASE = "https://data.everef.net"
 
-_DEFAULT_CLIENT = EverefSnapshotClient()
-
 
 def list_snapshots(
     url_prefix: str,
     d: date,
     pattern: re.Pattern[str],
+    client: EverefSnapshotClient,
 ) -> list[str]:
     url = f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/"
     logger.debug("Fetching snapshot listing source_date=%s url=%s", d.isoformat(), url)
-    html = _DEFAULT_CLIENT.fetch_text(url)
+    html = client.fetch_text(url)
     filenames = pattern.findall(html)
     if filenames:
         logger.info(
@@ -74,17 +73,25 @@ def build_listed_objects(
     filename_pattern: re.Pattern[str],
     identity_key_fn: Callable[[str, date], dict[str, str]],
 ) -> list[CacheObject]:
-    def entries_fn(d: date) -> list[CacheObject]:
-        filenames = list_snapshots(url_prefix, d, filename_pattern)
-        return [
-            CacheObject(
-                source_url=f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/{filename}",
-                identity_key=identity_key_fn(filename, d),
+    objects: list[CacheObject] = []
+    date_count = 0
+    with EverefSnapshotClient() as client:
+        for d in iter_dates(start_date, end_date):
+            date_count += 1
+            filenames = list_snapshots(url_prefix, d, filename_pattern, client=client)
+            objects.extend(
+                CacheObject(
+                    source_url=f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/{filename}",
+                    identity_key=identity_key_fn(filename, d),
+                )
+                for filename in filenames
             )
-            for filename in filenames
-        ]
-
-    return collect_cache_objects(start_date, end_date, entries_fn)
+    logger.info(
+        "Collect cache objects date_count=%d total_snapshots=%d",
+        date_count,
+        len(objects),
+    )
+    return objects
 
 
 def build_deterministic_objects(
