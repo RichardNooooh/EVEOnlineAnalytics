@@ -37,17 +37,13 @@ image name.
 
 ## Useful Flags
 
-- `--storage-target {local|mounted}`: choose local smoke-test paths or shared
-  mounted storage layout.
-- `--ducklake-catalog`: set DuckLake catalog URL. Use PostgreSQL for mounted/shared
-  runs.
-- `--raw-ledger-url`: set raw-file acquisition ledger URL. Required for mounted raw
-  cache.
-- `--data-root`: change mounted shared root from `/opt/eve-market/data`.
-- `--sync-raw`: download changed raw files first, then load from raw cache.
-- `--check-headers`: for raw sync, also inspect `content-length`, `last-modified`,
-  and `ETag` in addition to `totals.json`.
-- `--chunksize`: override pandas CSV chunk size when tuning memory or throughput.
+- `--start-date`, `--end-date`: inclusive date range for daily archives (required for
+  market-history, market-orders, fuzzwork-orders).
+- `--data-root`: mounted shared data root (default `/opt/eve-market/data`).
+- `--raw-ledger-url`: raw-file acquisition ledger PostgreSQL URL.
+- `--ducklake-catalog`: DuckLake catalog URL (PostgreSQL for mounted, SQLite for
+  local smoke tests).
+- `--ducklake-metadata-schema`: DuckLake metadata schema name (default `eve_market`).
 
 ## Rerun Note
 
