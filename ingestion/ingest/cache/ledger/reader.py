@@ -6,7 +6,9 @@ from sqlalchemy.engine import Connection
 from ingest.cache.ledger.mappers import row_to_raw_object, row_to_raw_object_version
 from ingest.cache.ledger._db import _fetchall, _fetchone
 from ingest.cache.ledger.schema import raw_object_versions, raw_objects
-from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
+from collections import defaultdict
+
+from ingest.cache.ledger.types import CurrentRawObjectState, RawObjectEntry, RawObjectRef, RawObjectVersion
 
 
 class RawObjectReader:
@@ -81,3 +83,42 @@ class RawObjectReader:
         )
         rows = _fetchall(self._con, select(subq).where(subq.c.rn == 1))
         return {version.raw_object_id: version for version in (row_to_raw_object_version(row) for row in rows)}
+
+    def load_current_states(
+        self,
+        *,
+        refs: list[RawObjectRef],
+    ) -> dict[str, CurrentRawObjectState | None]:
+        if not refs:
+            return {}
+
+        groups: dict[tuple[str, str], list[str]] = defaultdict(list)
+        for ref in refs:
+            groups[ref.group_key].append(ref.identity_hash)
+
+        raw_objects: dict[str, RawObjectEntry] = {}
+        for (source_name, dataset_name), hashes in groups.items():
+            raw_objects.update(
+                self.load_raw_objects(
+                    group_key=(source_name, dataset_name),
+                    identity_hashes=hashes,
+                )
+            )
+
+        raw_object_ids = [ro.id for ro in raw_objects.values()]
+        latest_versions = self.load_latest_versions(raw_object_ids) if raw_object_ids else {}
+
+        states: dict[str, CurrentRawObjectState | None] = {}
+        for ref in refs:
+            raw_object = raw_objects.get(ref.identity_hash)
+            if raw_object is None:
+                states[ref.identity_hash] = None
+            else:
+                current_version = latest_versions.get(raw_object.id)
+                if current_version is None:
+                    raise RuntimeError(f"Ledger corruption: raw_object {raw_object.id} exists but has no versions")
+                states[ref.identity_hash] = CurrentRawObjectState(
+                    raw_object=raw_object,
+                    current_version=current_version,
+                )
+        return states
