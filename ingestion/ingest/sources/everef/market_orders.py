@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 
@@ -8,9 +9,10 @@ import pyarrow as pa
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
-from ingest.sources.everef.logger import logger
 from ingest.sources.everef.util import build_snapshot_cache_objects, read_csv_to_arrow
 from ingest.sources.pipeline import run_pipeline as _run_pipeline
+
+logger = logging.getLogger("ingest.sources.everef")
 
 _SNAPSHOT_RE = re.compile(r'href="[^"]*(market-orders-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.v3\.csv\.bz2)"')
 _KEY_COLUMNS = ["order_id", "snapshot_time"]

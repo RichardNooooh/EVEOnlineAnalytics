@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime
@@ -10,8 +11,9 @@ import requests
 
 from ingest.cache import CacheObject, CacheResult
 from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
-from ingest.sources.everef.logger import logger
 from ingest.util import file_size, iter_dates
+
+logger = logging.getLogger("ingest.sources.everef")
 
 EVEREF_BASE = "https://data.everef.net"
 

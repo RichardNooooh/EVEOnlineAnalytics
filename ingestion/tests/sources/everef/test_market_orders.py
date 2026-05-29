@@ -12,7 +12,6 @@ import requests
 from ingest.cache import CacheObject, CacheResult
 from ingest.cli.config import DuckLakeCliConfig, EverefCliConfig, RawFilesCliConfig
 
-from ingest.sources.everef.logger import logger
 from ingest.sources.everef.market_orders import (
     _SNAPSHOT_RE,
     _build_cache_objects,
@@ -21,6 +20,8 @@ from ingest.sources.everef.market_orders import (
 from ingest.sources.everef.util import list_snapshots, read_csv_to_arrow
 
 from tests.sources.everef.conftest import FakeConnection, make_cache_result
+
+logger = logging.getLogger("ingest.sources.everef")
 
 
 @pytest.fixture
