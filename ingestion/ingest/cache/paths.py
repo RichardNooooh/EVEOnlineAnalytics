@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from ingest.cache.plans import BaseFetchPlan
+from ingest.cache.plans import FetchPlan
 from ingest.cache.ledger.types import RawObjectRef
 from ingest.cache.primitives import UpdateMode
 
@@ -19,11 +19,11 @@ def build_temp_path(*, raw_root: Path, ref: RawObjectRef) -> Path:
 def build_final_path(
     *,
     raw_root: Path,
-    plan: BaseFetchPlan,
+    plan: FetchPlan,
     fetched_at: datetime,
     sha256: str,
 ) -> Path:
-    if plan.update_mode is UpdateMode.SNAPSHOT:
+    if plan.ref.update_mode is UpdateMode.SNAPSHOT:
         return build_snapshot_path(raw_root=raw_root, plan=plan)
 
     source_name = validate_path_segment(plan.ref.source_name, field_name="source_name")
@@ -41,7 +41,7 @@ def build_final_path(
     )
 
 
-def build_snapshot_path(*, raw_root: Path, plan: BaseFetchPlan) -> Path:
+def build_snapshot_path(*, raw_root: Path, plan: FetchPlan) -> Path:
     source_name = validate_path_segment(plan.ref.source_name, field_name="source_name")
     return raw_root / source_name / Path(plan.source_relative_path)
 
