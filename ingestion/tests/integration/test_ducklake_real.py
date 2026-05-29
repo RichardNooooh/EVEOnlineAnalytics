@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import duckdb
 import pyarrow as pa
 import pytest
@@ -117,3 +119,28 @@ def test_append_without_key_columns(shared_con):
         (1, 10),
         (1, 99),
     ]
+
+
+@pytest.mark.integration
+@pytest.mark.real_duckdb
+def test_merge_logs_warning_for_matching_key_with_different_values(shared_con, caplog):
+    caplog.set_level(logging.WARNING, logger="ingest.publishers")
+
+    first = pa.table({"id": [1], "value": [10]})
+    with DuckLakeWriter(_ATTACH) as writer:
+        writer.write(first, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["id"])
+
+    caplog.clear()
+
+    second = pa.table({"id": [1], "value": [99]})
+    with DuckLakeWriter(_ATTACH) as writer:
+        writer.write(second, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["id"])
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelname == "WARNING"
+    assert "Matched key" in caplog.text
+
+    rows = shared_con.execute(
+        f'SELECT id, value FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY id'
+    ).fetchall()
+    assert rows == [(1, 10)]

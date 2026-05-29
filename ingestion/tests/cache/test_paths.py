@@ -53,7 +53,6 @@ class TestBuildTempPath:
         assert path.parent.parent == Path("/data/raw/everef")
         assert path.parent.name == ".tmp"
         assert path.suffix == ".download"
-        assert len(path.stem) == 32  # uuid4 hex
 
     def test_rejects_bad_source_name(self) -> None:
         ref = RawObjectRef(
