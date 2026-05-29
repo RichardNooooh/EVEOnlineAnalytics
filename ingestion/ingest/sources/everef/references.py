@@ -116,7 +116,7 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> b
 def run_pipeline(config: EverefReferencesCliConfig) -> int:
     return _run_pipeline(
         dataset_name="reference-data",
-        update_mode=UpdateMode.SNAPSHOT,
+        update_mode=UpdateMode.MUTABLE,
         objects=_build_cache_objects(),
         config=config,
         process_one=_process_references_result,
