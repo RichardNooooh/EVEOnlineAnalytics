@@ -63,15 +63,34 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
         archive_path,
         {
             "types.json": json.dumps(
-                [
-                    {"type_id": 1, "name": "foo"},
-                    {"type_id": 2, "name": "bar"},
-                ]
+                {
+                    "1": {"type_id": 1, "name": {"en": "foo"}, "group_id": 10, "category_id": 20, "published": True},
+                    "2": {"type_id": 2, "name": {"en": "bar"}, "group_id": 11, "category_id": 21, "published": True},
+                }
             ),
             "regions.json": json.dumps(
-                [
-                    {"region_id": 10000001, "name": "The Forge"},
-                ]
+                {
+                    "10000001": {
+                        "region_id": 10000001,
+                        "name": {"en": "The Forge"},
+                        "description": {"en": "Trade hub region"},
+                        "universe_id": "eve",
+                        "faction_id": 500001,
+                        "wormhole_class_id": 7,
+                    }
+                }
+            ),
+            "market_groups.json": json.dumps(
+                {
+                    "1857": {
+                        "market_group_id": 1857,
+                        "name": {"en": "Minerals"},
+                        "description": {"en": "Mined goods"},
+                        "parent_group_id": 533,
+                        "has_types": True,
+                        "icon_id": 404,
+                    }
+                }
             ),
         },
     )
@@ -89,14 +108,18 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
 
     assert outcome.success is True
     assert outcome.source_date == "2026-01-01"
-    assert len(outcome.write_metrics) == 2
+    assert len(outcome.write_metrics) == 3
 
     types = shared_con.execute(
-        f'SELECT type_id, name FROM "memory"."raw"."{RawDuckLakeTable.REFERENCE_TYPES.value}" ORDER BY type_id'
+        f'SELECT type_id, name_en, group_id, category_id, published FROM "memory"."raw"."{RawDuckLakeTable.REFERENCE_TYPES.value}" ORDER BY type_id'
     ).fetchall()
     regions = shared_con.execute(
-        f'SELECT region_id, name FROM "memory"."raw"."{RawDuckLakeTable.REFERENCE_REGIONS.value}" ORDER BY region_id'
+        f'SELECT region_id, name_en, universe_id, faction_id, wormhole_class_id FROM "memory"."raw"."{RawDuckLakeTable.REFERENCE_REGIONS.value}" ORDER BY region_id'
+    ).fetchall()
+    market_groups = shared_con.execute(
+        f'SELECT market_group_id, name_en, parent_group_id, has_types FROM "memory"."raw"."{RawDuckLakeTable.REFERENCE_MARKET_GROUPS.value}" ORDER BY market_group_id'
     ).fetchall()
 
-    assert types == [(1, "foo"), (2, "bar")]
-    assert regions == [(10000001, "The Forge")]
+    assert types == [(1, "foo", 10, 20, True), (2, "bar", 11, 21, True)]
+    assert regions == [(10000001, "The Forge", "eve", 500001, 7)]
+    assert market_groups == [(1857, "Minerals", 533, True)]
