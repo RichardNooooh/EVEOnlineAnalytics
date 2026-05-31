@@ -6,7 +6,7 @@ tags:
 amended: []
 ---
 
-# ADR-010 - Streaming Component as Future Enhancement
+# ADR-011 - Streaming Component as Future Enhancement
 
 ## Context
 
