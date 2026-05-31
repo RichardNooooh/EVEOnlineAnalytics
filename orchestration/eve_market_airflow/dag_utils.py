@@ -21,8 +21,8 @@ def local_data_host_path() -> str:
     return DEFAULT_LOCAL_DATA_HOST_PATH
 
 
-def should_force_pull(image: str) -> bool:
-    return image != "eve-market-ingestion:local"
+def should_force_pull() -> bool:
+    return os.environ.get("EVE_MARKET_INGESTION_FORCE_PULL", "false").lower() == "true"
 
 
 def raw_ledger_url() -> str:
@@ -116,7 +116,7 @@ def build_backfill_dag(
                     type="bind",
                 )
             ],
-            force_pull=should_force_pull(INGESTION_IMAGE),
+            force_pull=should_force_pull(),
             auto_remove="success",
             retries=0,
             retry_delay=timedelta(minutes=5),
