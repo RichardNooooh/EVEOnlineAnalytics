@@ -18,7 +18,7 @@ loggers:
     level: INFO
     handlers:
       - stderr
-    propagate: true
+    propagate: false
 
 root:
   level: WARNING

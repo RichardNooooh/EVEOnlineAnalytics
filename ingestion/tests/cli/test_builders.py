@@ -159,4 +159,4 @@ def test_configure_logging_warns_on_invalid_env_level(monkeypatch, capsys) -> No
 
     captured = capsys.readouterr()
     assert "Invalid INGEST_LOG_LEVEL='BANANA'; falling back to INFO" in captured.err
-    assert "info still logs" in captured.err
+    assert captured.err.count("info still logs") == 1
