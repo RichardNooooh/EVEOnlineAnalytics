@@ -8,7 +8,7 @@ tags:
 amended: []
 ---
 
-# ADR-008 - Raw Source-File Ledger Backends
+# ADR-009 - Raw Source-File Ledger Backends
 
 ## Context
 
