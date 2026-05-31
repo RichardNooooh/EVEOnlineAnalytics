@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from unittest.mock import patch
 
 import pytest
 
@@ -148,6 +149,71 @@ def test_main_propagates_non_zero_handler_return(monkeypatch) -> None:
     monkeypatch.setattr("ingest.main.build_parser", lambda: _FakeParser())
 
     assert main(["ignored"]) == 1
+
+
+def test_main_logs_cli_dispatch(monkeypatch, caplog: pytest.LogCaptureFixture) -> None:
+    monkeypatch.setattr("ingest.main.configure_logging", lambda: None)
+    monkeypatch.setattr("ingest.main.log_runtime_context", lambda: None)
+    ingest_logger = logging.getLogger("ingest")
+
+    class _FakeParser:
+        def parse_args(self, argv: list[str]):
+            class _Args:
+                command = "everef"
+                sub_command = "market-history"
+                pipeline_module = "ingest.sources.everef.market_history"
+
+                @staticmethod
+                def handler(args, parser) -> int:
+                    return 0
+
+            return _Args()
+
+    monkeypatch.setattr("ingest.main.build_parser", lambda: _FakeParser())
+
+    ingest_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.INFO, logger="ingest"):
+            assert main(["ignored"]) == 0
+    finally:
+        ingest_logger.removeHandler(caplog.handler)
+
+    assert (
+        "cli_dispatch provider=everef subcommand=market-history pipeline_module=ingest.sources.everef.market_history"
+        in caplog.text
+    )
+
+
+def test_parser_logs_cli_run_start(caplog: pytest.LogCaptureFixture) -> None:
+    ingest_logger = logging.getLogger("ingest")
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "everef",
+            "market-history",
+            "--start-date",
+            "2025-01-01",
+            "--end-date",
+            "2025-01-31",
+        ]
+    )
+
+    ingest_logger.addHandler(caplog.handler)
+    try:
+        with patch("importlib.import_module") as import_module:
+            import_module.return_value.run_pipeline.return_value = 0
+            with caplog.at_level(logging.INFO, logger="ingest"):
+                assert args.handler(args, parser) == 0
+    finally:
+        ingest_logger.removeHandler(caplog.handler)
+
+    assert (
+        "cli_run_start provider=everef subcommand=market-history pipeline_module=ingest.sources.everef.market_history"
+        in caplog.text
+    )
+    assert "start_date=2025-01-01" in caplog.text
+    assert "end_date=2025-01-31" in caplog.text
+    assert f"data_root={DEFAULT_DATA_ROOT}" in caplog.text
 
 
 def test_configure_logging_warns_on_invalid_env_level(monkeypatch, capsys) -> None:

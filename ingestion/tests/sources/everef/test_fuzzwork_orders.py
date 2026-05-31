@@ -50,12 +50,12 @@ class TestListSnapshots:
         client.fetch_text.return_value = "<html></html>"
         logger.addHandler(caplog.handler)
         try:
-            with caplog.at_level(logging.WARNING, logger=logger.name):
+            with caplog.at_level(logging.INFO, logger=logger.name):
                 filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, client)
         finally:
             logger.removeHandler(caplog.handler)
         assert filenames == []
-        assert "No snapshots discovered" in caplog.text
+        assert "Snapshot listing source_date=2026-01-01 snapshot_count=0" in caplog.text
         assert "prefix=fuzzwork/ordersets" in caplog.text
 
     def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -63,12 +63,12 @@ class TestListSnapshots:
         client.fetch_text.return_value = "<html>bad</html>"
         logger.addHandler(caplog.handler)
         try:
-            with caplog.at_level(logging.WARNING, logger=logger.name):
+            with caplog.at_level(logging.INFO, logger=logger.name):
                 filenames = list_snapshots("fuzzwork/ordersets", date(2026, 1, 1), _FUZZWORK_RE, client)
         finally:
             logger.removeHandler(caplog.handler)
         assert filenames == []
-        assert "No snapshots discovered" in caplog.text
+        assert "Snapshot listing source_date=2026-01-01 snapshot_count=0" in caplog.text
         assert "prefix=fuzzwork/ordersets" in caplog.text
 
 
@@ -176,7 +176,12 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
         lambda result, read_options=None, parse_options=None: pa.table({"order_id": [1], "order_set_id": [161676]}),
     )
 
-    assert _process_result(result, writer) is True
+    writer.write.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
+
+    outcome = _process_result(result, writer)
+    assert outcome.success is True
+    assert outcome.source_date == "2026-01-01"
+    assert len(outcome.write_metrics) == 1
     call_kwargs = writer.write.call_args.kwargs
     assert call_kwargs["mode"].value == "insert_missing_keys"
     assert call_kwargs["key_columns"] == ["order_id", "order_set_id", "snapshot_time"]

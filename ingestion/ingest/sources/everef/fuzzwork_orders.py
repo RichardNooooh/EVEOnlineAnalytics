@@ -11,7 +11,7 @@ from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
 from ingest.sources.everef.util import build_listed_objects, read_csv_to_arrow
-from ingest.sources.pipeline import run_pipeline as _run_pipeline
+from ingest.sources.pipeline import PipelineProcessResult, run_pipeline as _run_pipeline
 
 logger = logging.getLogger("ingest.sources.everef")
 
@@ -51,7 +51,7 @@ def _parse_fuzzwork_identity(filename: str, d: date) -> dict[str, str]:
     return {"source_date": d.isoformat(), "order_set_id": order_set_id, "snapshot_time": snapshot_time}
 
 
-def _process_result(result: CacheResult, writer: DuckLakeWriter) -> bool:
+def _process_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
     try:
         table = read_csv_to_arrow(
             result,
@@ -61,16 +61,33 @@ def _process_result(result: CacheResult, writer: DuckLakeWriter) -> bool:
         n = len(table)
         snapshot_time = str(result.identity_key["snapshot_time"])
         table = table.append_column("snapshot_time", pa.array([snapshot_time] * n, type=pa.utf8()))
-        writer.write(
+        metrics = writer.write(
             table,
             table=RawDuckLakeTable.FUZZWORK_ORDERS,
             mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
             key_columns=_KEY_COLUMNS,
         )
-        return True
+        logger.debug(
+            "Processed source file source_date=%s snapshot_time=%s order_set_id=%s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
+            result.identity_key.get("source_date"),
+            snapshot_time,
+            result.identity_key.get("order_set_id"),
+            RawDuckLakeTable.FUZZWORK_ORDERS.value,
+            metrics.attempted_rows,
+            metrics.inserted_rows,
+            metrics.matched_rows,
+        )
+        return PipelineProcessResult(
+            success=True,
+            source_date=str(result.identity_key.get("source_date", "unknown")),
+            write_metrics=(metrics,),
+        )
     except Exception:
         logger.exception("Failed to process %s", result.identity_key)
-        return False
+        return PipelineProcessResult(
+            success=False,
+            source_date=str(result.identity_key.get("source_date", "unknown")),
+        )
 
 
 def run_pipeline(config: EverefCliConfig) -> int:

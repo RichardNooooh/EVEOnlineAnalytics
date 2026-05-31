@@ -10,6 +10,7 @@ import pyarrow.csv as pac
 
 from ingest.cache import CacheObject, CacheResult
 from ingest.publishers.ducklake import DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
+from ingest.sources.pipeline import PipelineProcessResult
 from ingest.sources.everef.client import EverefSnapshotClient
 from ingest.util import file_size, iter_dates
 
@@ -28,22 +29,23 @@ def list_snapshots(
     logger.debug("Fetching snapshot listing source_date=%s url=%s", d.isoformat(), url)
     html = client.fetch_text(url)
     filenames = pattern.findall(html)
-    if filenames:
-        logger.info(
-            "Discovered snapshots source_date=%s count=%d first=%s last=%s prefix=%s",
-            d.isoformat(),
-            len(filenames),
-            filenames[0],
-            filenames[-1],
-            url_prefix,
-        )
-    else:
+    if not filenames:
         logger.warning(
             "No snapshots discovered source_date=%s listing_url=%s prefix=%s",
             d.isoformat(),
             url,
             url_prefix,
         )
+    first = filenames[0] if filenames else "-"
+    last = filenames[-1] if filenames else "-"
+    logger.info(
+        "Snapshot listing source_date=%s snapshot_count=%d first=%s last=%s prefix=%s",
+        d.isoformat(),
+        len(filenames),
+        first,
+        last,
+        url_prefix,
+    )
     return filenames
 
 
@@ -106,6 +108,12 @@ def build_deterministic_objects(
     def entries_fn(d: date) -> list[CacheObject]:
         filename = f"{filename_prefix}{d.isoformat()}{suffix}"
         identity_key = {"source_date": d.isoformat()} if identity_key_fn is None else identity_key_fn(d)
+        logger.info(
+            "Queued daily archive source_date=%s filename=%s prefix=%s",
+            d.isoformat(),
+            filename,
+            url_prefix,
+        )
         return [
             CacheObject(
                 source_url=f"{EVEREF_BASE}/{url_prefix}/{d.year}/{filename}",
@@ -195,10 +203,26 @@ def process_result(
     table_key: RawDuckLakeTable,
     mode: DuckLakeWriterMode,
     key_columns: list[str],
-) -> bool:
+) -> PipelineProcessResult:
     try:
-        writer.write(read_csv_to_arrow(result), table=table_key, mode=mode, key_columns=key_columns)
-        return True
+        metrics = writer.write(read_csv_to_arrow(result), table=table_key, mode=mode, key_columns=key_columns)
+        logger.debug(
+            "Processed source file source_date=%s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d replaced_rows=%d",
+            result.identity_key.get("source_date"),
+            table_key.value,
+            metrics.attempted_rows,
+            metrics.inserted_rows,
+            metrics.matched_rows,
+            metrics.replaced_rows,
+        )
+        return PipelineProcessResult(
+            success=True,
+            source_date=str(result.identity_key.get("source_date", "unknown")),
+            write_metrics=(metrics,),
+        )
     except Exception:
         logger.exception("Failed to process %s", result.identity_key)
-        return False
+        return PipelineProcessResult(
+            success=False,
+            source_date=str(result.identity_key.get("source_date", "unknown")),
+        )

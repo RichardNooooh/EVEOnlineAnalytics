@@ -26,6 +26,7 @@ class FakeConnection:
         self.closed = False
         self.raise_on_execute: str | None = None
         self.fetchall_result: list[tuple[object, ...]] = []
+        self.fetchone_results: list[tuple[object, ...]] = []
 
     def execute(self, query: str, params: list[str] | None = None) -> FakeConnection:
         if self.raise_on_execute is not None and self.raise_on_execute in query:
@@ -35,6 +36,11 @@ class FakeConnection:
 
     def fetchall(self) -> list[tuple[object, ...]]:
         return self.fetchall_result
+
+    def fetchone(self) -> tuple[object, ...]:
+        if not self.fetchone_results:
+            raise AssertionError("no fetchone result queued")
+        return self.fetchone_results.pop(0)
 
     def from_arrow(self, arrow_table: pa.Table) -> FakeRelation:
         self.arrow_tables.append(arrow_table)
@@ -101,6 +107,7 @@ def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
 
 def test_writer_replaces_table(monkeypatch) -> None:
     con = FakeConnection()
+    con.fetchone_results = [(0,), (0,)]
     arrow_table = pa.table({"b": [2], "a": [1]})
 
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
@@ -124,6 +131,7 @@ def test_writer_replaces_table(monkeypatch) -> None:
 
 def test_writer_merges_with_keys(monkeypatch) -> None:
     con = FakeConnection()
+    con.fetchone_results = [(1,), (0,), (2,)]
     arrow_table = pa.table({"id": [1, 2], "value": [10, 20]})
 
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
@@ -143,6 +151,47 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
     assert merge_queries[0].lstrip().startswith("MERGE INTO ")
     assert "USING (" in merge_queries[0]
     assert "WHEN NOT MATCHED THEN INSERT BY NAME" in merge_queries[0]
+
+
+def test_writer_returns_write_metrics(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [(1,), (1,), (1,)]
+    arrow_table = pa.table({"id": [1, 2], "value": [10, 20]})
+
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        metrics = writer.write(
+            arrow_table,
+            table=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+            key_columns=["id"],
+        )
+
+    assert metrics.attempted_rows == 2
+    assert metrics.inserted_rows == 1
+    assert metrics.matched_rows == 1
+    assert metrics.replaced_rows == 0
+
+
+def test_replace_table_returns_replaced_row_metrics(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [(1,), (7,)]
+    arrow_table = pa.table({"id": [1]})
+
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        metrics = writer.write(
+            arrow_table,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.REPLACE_TABLE,
+        )
+
+    assert metrics.attempted_rows == 1
+    assert metrics.inserted_rows == 1
+    assert metrics.matched_rows == 0
+    assert metrics.replaced_rows == 7
 
 
 @pytest.mark.parametrize(
@@ -198,6 +247,7 @@ def test_writer_requires_with_block() -> None:
 
 def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
     con = FakeConnection()
+    con.fetchone_results = [(0,)]
     con.raise_on_execute = "CREATE OR REPLACE TABLE"
 
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
@@ -252,6 +302,7 @@ def test_replace_table_rejects_key_columns(monkeypatch) -> None:
 
 def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
     con = FakeConnection()
+    con.fetchone_results = [(0,), (0,), (1,)]
     table_a = pa.table({"id": [1]})
     table_b = pa.table({"order_id": [10]})
 

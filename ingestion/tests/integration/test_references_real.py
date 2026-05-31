@@ -85,7 +85,11 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
     )
 
     with DuckLakeWriter(_ATTACH) as writer:
-        assert _process_references_result(result, writer) is True
+        outcome = _process_references_result(result, writer)
+
+    assert outcome.success is True
+    assert outcome.source_date == "2026-01-01"
+    assert len(outcome.write_metrics) == 2
 
     types = shared_con.execute(
         f'SELECT type_id, name FROM "memory"."raw"."{RawDuckLakeTable.REFERENCE_TYPES.value}" ORDER BY type_id'

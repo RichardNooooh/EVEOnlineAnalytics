@@ -51,12 +51,12 @@ class TestListSnapshots:
         client.fetch_text.return_value = "<html></html>"
         logger.addHandler(caplog.handler)
         try:
-            with caplog.at_level(logging.WARNING, logger=logger.name):
+            with caplog.at_level(logging.INFO, logger=logger.name):
                 filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, client)
         finally:
             logger.removeHandler(caplog.handler)
         assert filenames == []
-        assert "No snapshots discovered" in caplog.text
+        assert "Snapshot listing source_date=2026-01-01 snapshot_count=0" in caplog.text
         assert "prefix=market-orders/history" in caplog.text
 
     def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -64,12 +64,12 @@ class TestListSnapshots:
         client.fetch_text.return_value = "<html>bad</html>"
         logger.addHandler(caplog.handler)
         try:
-            with caplog.at_level(logging.WARNING, logger=logger.name):
+            with caplog.at_level(logging.INFO, logger=logger.name):
                 filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, client)
         finally:
             logger.removeHandler(caplog.handler)
         assert filenames == []
-        assert "No snapshots discovered" in caplog.text
+        assert "Snapshot listing source_date=2026-01-01 snapshot_count=0" in caplog.text
         assert "prefix=market-orders/history" in caplog.text
 
 
@@ -86,6 +86,24 @@ class TestBuildCacheObjects:
         assert len(objects) == 2
         assert objects[0].identity_key == {"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"}
         assert objects[1].identity_key == {"source_date": "2026-01-01", "snapshot_time": "2026-01-01_12-00-00"}
+
+    def test_logs_daily_snapshot_summary(self, caplog: pytest.LogCaptureFixture) -> None:
+        html = (
+            '<html><body><a href="market-orders-2026-01-01_00-00-00.v3.csv.bz2">link1</a>'
+            '<a href="market-orders-2026-01-01_12-00-00.v3.csv.bz2">link2</a></body></html>'
+        )
+        with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
+            mock_cls.return_value.__enter__.return_value.fetch_text.return_value = html
+            logger.addHandler(caplog.handler)
+            try:
+                with caplog.at_level(logging.INFO, logger=logger.name):
+                    _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
+            finally:
+                logger.removeHandler(caplog.handler)
+
+        assert "Snapshot listing source_date=2026-01-01 snapshot_count=2" in caplog.text
+        assert "first=market-orders-2026-01-01_00-00-00.v3.csv.bz2" in caplog.text
+        assert "last=market-orders-2026-01-01_12-00-00.v3.csv.bz2" in caplog.text
 
     def test_skips_dates_with_no_snapshots(self) -> None:
         with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
@@ -242,7 +260,12 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
         lambda result: pa.table({"order_id": [1]}),
     )
 
-    assert _process_result(result, writer) is True
+    writer.write.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
+
+    outcome = _process_result(result, writer)
+    assert outcome.success is True
+    assert outcome.source_date == "2026-01-01"
+    assert len(outcome.write_metrics) == 1
     call_kwargs = writer.write.call_args.kwargs
     assert call_kwargs["mode"].value == "insert_missing_keys"
     assert call_kwargs["key_columns"] == ["order_id", "snapshot_time"]

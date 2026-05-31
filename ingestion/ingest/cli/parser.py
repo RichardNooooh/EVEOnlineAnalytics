@@ -1,5 +1,7 @@
 import argparse
 
+from ingest.logging import log_cli_run_start
+
 from ingest.cli.builders import (
     build_everef_config,
     build_everef_references_config,
@@ -47,6 +49,13 @@ def _run_pipeline(
         config = config_builder(args)
     except ValueError as exc:
         parser.error(str(exc))
+
+    log_cli_run_start(
+        provider=getattr(args, "command", None),
+        subcommand=getattr(args, "sub_command", None),
+        pipeline_module=getattr(args, "pipeline_module", None),
+        config=config,
+    )
 
     return module.run_pipeline(config)
 
