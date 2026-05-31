@@ -14,7 +14,7 @@ from ingest.sources.everef.market_orders import (
     _build_cache_objects,
     _process_result,
 )
-from ingest.sources.everef.util import list_snapshots, read_csv_to_arrow
+from ingest.sources.everef.util import list_snapshots, parse_csv_to_arrow
 from ingest.sources.everef import util as everef_util
 
 from tests.sources.everef.conftest import make_cache_result
@@ -197,7 +197,7 @@ class TestBuildCacheObjectsWithRealFixture:
         )
 
 
-class TestReadCsvToArrow:
+class TestParseCsvToArrow:
     CSV_CONTENT = (
         "order_id,type_id,region_id,location_id,system_id,"
         "range,price,volume_remain,volume_total,min_volume,issued,expires,duration,is_buy_order,reported_by,http_last_modified\n"
@@ -211,7 +211,7 @@ class TestReadCsvToArrow:
             f.write(self.CSV_CONTENT)
         return path
 
-    def test_adds_provenance(self, csv_path: pathlib.Path) -> None:
+    def test_parses_without_provenance(self, csv_path: pathlib.Path) -> None:
         result = make_cache_result(
             str(csv_path),
             content_length=csv_path.stat().st_size,
@@ -220,13 +220,13 @@ class TestReadCsvToArrow:
             identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
             source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
         )
-        table = read_csv_to_arrow(result)
+        table = parse_csv_to_arrow(result)
 
         assert "order_id" in table.column_names
-        assert "_source_market_date" in table.column_names
+        assert "_source_market_date" not in table.column_names
+        assert "_source_local_path" not in table.column_names
         assert len(table) == 1
-        assert table.column("_source_market_date")[0].as_py() == "2026-01-01"
-        assert table.column("_source_local_path")[0].as_py() == str(csv_path)
+        assert table.column("order_id")[0].as_py() == 1
 
     def test_zero_row_warning(self, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
         path = tmp_path / "empty.csv.bz2"
@@ -241,7 +241,7 @@ class TestReadCsvToArrow:
         logger.addHandler(caplog.handler)
         try:
             with caplog.at_level(logging.WARNING, logger=logger.name):
-                table = read_csv_to_arrow(result)
+                table = parse_csv_to_arrow(result)
         finally:
             logger.removeHandler(caplog.handler)
         assert len(table) == 0
@@ -253,10 +253,11 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
         "/tmp/fake.csv.bz2",
         dataset_name="market-orders",
         identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
     )
     writer = MagicMock()
     monkeypatch.setattr(
-        "ingest.sources.everef.market_orders.read_csv_to_arrow",
+        "ingest.sources.everef.market_orders.parse_csv_to_arrow",
         lambda result: pa.table({"order_id": [1]}),
     )
 
@@ -268,4 +269,4 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
     assert len(outcome.write_metrics) == 1
     call_kwargs = writer.write.call_args.kwargs
     assert call_kwargs["mode"].value == "insert_missing_keys"
-    assert call_kwargs["key_columns"] == ["order_id", "snapshot_time"]
+    assert call_kwargs["key_columns"] == ["source_object_id", "order_id"]

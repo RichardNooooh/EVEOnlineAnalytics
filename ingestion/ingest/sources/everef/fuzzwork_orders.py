@@ -2,21 +2,20 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date
+from datetime import UTC, date, datetime
 
-import pyarrow as pa
 import pyarrow.csv as pac
 
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
-from ingest.sources.everef.util import build_listed_objects, read_csv_to_arrow
+from ingest.sources.everef.util import build_listed_objects, parse_csv_to_arrow, publish_file_backed_rows
 from ingest.sources.pipeline import PipelineProcessResult, run_pipeline as _run_pipeline
 
 logger = logging.getLogger("ingest.sources.everef")
 
 _FUZZWORK_RE = re.compile(r'href="[^"]*(fuzzwork-orderset-\d+-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.csv\.gz)"')
-_KEY_COLUMNS = ["order_id", "order_set_id", "snapshot_time"]
+_KEY_COLUMNS = ["source_object_id", "order_id"]
 
 _FUZZWORK_COLUMN_NAMES = [
     "order_id",
@@ -52,42 +51,25 @@ def _parse_fuzzwork_identity(filename: str, d: date) -> dict[str, str]:
 
 
 def _process_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
-    try:
-        table = read_csv_to_arrow(
-            result,
+    source_market_date = date.fromisoformat(str(result.identity_key["source_date"]))
+    snapshot_ts = datetime.strptime(str(result.identity_key["snapshot_time"]), "%Y-%m-%d_%H-%M-%S").replace(tzinfo=UTC)
+    return publish_file_backed_rows(
+        result,
+        writer,
+        source_system="fuzzwork",
+        endpoint="fuzzwork_orders",
+        source_market_date=source_market_date,
+        snapshot_ts=snapshot_ts,
+        table_key=RawDuckLakeTable.FUZZWORK_ORDERS,
+        mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+        key_columns=_KEY_COLUMNS,
+        parse_table=lambda cache_result: parse_csv_to_arrow(
+            cache_result,
             read_options=pac.ReadOptions(column_names=_FUZZWORK_COLUMN_NAMES),
             parse_options=pac.ParseOptions(delimiter="\t"),
-        )
-        n = len(table)
-        snapshot_time = str(result.identity_key["snapshot_time"])
-        table = table.append_column("snapshot_time", pa.array([snapshot_time] * n, type=pa.utf8()))
-        metrics = writer.write(
-            table,
-            table=RawDuckLakeTable.FUZZWORK_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=_KEY_COLUMNS,
-        )
-        logger.debug(
-            "Processed source file source_date=%s snapshot_time=%s order_set_id=%s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
-            result.identity_key.get("source_date"),
-            snapshot_time,
-            result.identity_key.get("order_set_id"),
-            RawDuckLakeTable.FUZZWORK_ORDERS.value,
-            metrics.attempted_rows,
-            metrics.inserted_rows,
-            metrics.matched_rows,
-        )
-        return PipelineProcessResult(
-            success=True,
-            source_date=str(result.identity_key.get("source_date", "unknown")),
-            write_metrics=(metrics,),
-        )
-    except Exception:
-        logger.exception("Failed to process %s", result.identity_key)
-        return PipelineProcessResult(
-            success=False,
-            source_date=str(result.identity_key.get("source_date", "unknown")),
-        )
+        ),
+        log_context={"order_set_id": result.identity_key.get("order_set_id")},
+    )
 
 
 def run_pipeline(config: EverefCliConfig) -> int:

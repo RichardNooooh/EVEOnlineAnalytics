@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pyarrow as pa
 import pytest
 from ingest.publishers.ducklake import (
@@ -8,6 +10,7 @@ from ingest.publishers.ducklake import (
     DuckLakeWriterMode,
     RawDuckLakeTable,
 )
+from ingest.sources.everef.util import parse_last_modified_timestamp
 
 
 class FakeRelation:
@@ -79,6 +82,10 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     assert "LOAD ducklake" in queries
     assert attach_call[0].lstrip().startswith("ATTACH ")
     assert attach_call[1] is None  # all params inlined
+    assert any(
+        f'CREATE TABLE IF NOT EXISTS "ducklake"."raw"."{RawDuckLakeTable.RAW_SOURCE_OBJECTS.value}"' in query
+        for query in queries
+    )
 
 
 def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
@@ -322,3 +329,52 @@ def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
     assert any(f'"{RawDuckLakeTable.MARKET_HISTORY.value}"' in query for query in queries)
     assert any(f'"{RawDuckLakeTable.MARKET_ORDERS.value}"' in query for query in queries)
     assert con.closed is True
+
+
+def test_upsert_source_object_uses_merge(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        writer.upsert_source_object(
+            {
+                "source_object_id": "soid-1",
+                "source_system": "everef",
+                "endpoint": "market_orders",
+                "source_url": "https://example.com/file.csv.bz2",
+                "status": "failed",
+                "status_reason": "boom",
+            }
+        )
+        writer.upsert_source_object(
+            {
+                "source_object_id": "soid-1",
+                "status": "ingested",
+                "status_reason": None,
+            }
+        )
+
+    merge_queries = [call for call in con.calls if call[0].lstrip().startswith("MERGE INTO")]
+    assert len(merge_queries) == 2
+    assert "source.source_object_id" in merge_queries[0][0]
+    assert merge_queries[1][1] == ["soid-1", "ingested", None]
+
+
+def test_parse_last_modified_timestamp_supports_iso_and_http_date() -> None:
+    iso_value = parse_last_modified_timestamp("2026-01-02T11:01:55Z")
+    http_value = parse_last_modified_timestamp("Fri, 02 Jan 2026 11:01:55 GMT")
+
+    assert iso_value == http_value
+
+
+def test_parse_last_modified_timestamp_returns_none_for_invalid_value(caplog: pytest.LogCaptureFixture) -> None:
+    logger = logging.getLogger("ingest.sources.everef")
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.WARNING, logger=logger.name):
+            value = parse_last_modified_timestamp("not-a-timestamp")
+            assert value is None
+            assert "Could not parse last_modified timestamp" in caplog.text
+    finally:
+        logger.removeHandler(caplog.handler)

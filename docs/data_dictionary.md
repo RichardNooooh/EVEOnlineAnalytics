@@ -26,6 +26,23 @@ The ESI `average` field should be documented as a **volume-weighted average pric
 `experiments/esi-average-field-validation/` for the Gleaned Static sample that
 validates `average = total ISK traded / total units traded` on low-volume rows.
 
+### `raw_source_objects`
+
+Shared provenance table for file-backed raw datasets. One row per downloaded
+source object.
+
+Expected contract elements:
+
+- deterministic `source_object_id` derived from `source_system`, `endpoint`,
+  and `source_url`
+- `source_url`, `sha256`, `content_length`, timestamps, and operational status
+  per object
+- `raw_market_orders`, `raw_fuzzwork_orders`, and `raw_market_history` use
+  `source_object_id` as a foreign key for lineage instead of storing
+  row-level provenance
+- reference row tables carry payload columns only; their provenance is the
+  archive object row
+
 ## Planned Raw Dataset Contracts
 
 ### `raw_market_history`

@@ -2,20 +2,18 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date
-
-import pyarrow as pa
+from datetime import UTC, date, datetime
 
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefCliConfig
 from ingest.publishers.ducklake import DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
-from ingest.sources.everef.util import build_listed_objects, read_csv_to_arrow
+from ingest.sources.everef.util import build_listed_objects, parse_csv_to_arrow, publish_file_backed_rows
 from ingest.sources.pipeline import PipelineProcessResult, run_pipeline as _run_pipeline
 
 logger = logging.getLogger("ingest.sources.everef")
 
 _SNAPSHOT_RE = re.compile(r'href="[^"]*(market-orders-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.v3\.csv\.bz2)"')
-_KEY_COLUMNS = ["order_id", "snapshot_time"]
+_KEY_COLUMNS = ["source_object_id", "order_id"]
 
 
 def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
@@ -32,40 +30,20 @@ def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
 
 
 def _process_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
-    try:
-        table = read_csv_to_arrow(result)
-        snapshot_time = str(result.identity_key["snapshot_time"])
-        n = len(table)
-        table = table.append_column(
-            "snapshot_time",
-            pa.array([snapshot_time] * n, type=pa.utf8()),
-        )
-        metrics = writer.write(
-            table,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=_KEY_COLUMNS,
-        )
-        logger.debug(
-            "Processed source file source_date=%s snapshot_time=%s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
-            result.identity_key.get("source_date"),
-            snapshot_time,
-            RawDuckLakeTable.MARKET_ORDERS.value,
-            metrics.attempted_rows,
-            metrics.inserted_rows,
-            metrics.matched_rows,
-        )
-        return PipelineProcessResult(
-            success=True,
-            source_date=str(result.identity_key.get("source_date", "unknown")),
-            write_metrics=(metrics,),
-        )
-    except Exception:
-        logger.exception("Failed to process %s", result.identity_key)
-        return PipelineProcessResult(
-            success=False,
-            source_date=str(result.identity_key.get("source_date", "unknown")),
-        )
+    source_market_date = date.fromisoformat(str(result.identity_key["source_date"]))
+    snapshot_ts = datetime.strptime(str(result.identity_key["snapshot_time"]), "%Y-%m-%d_%H-%M-%S").replace(tzinfo=UTC)
+    return publish_file_backed_rows(
+        result,
+        writer,
+        source_system="everef",
+        endpoint="market_orders",
+        source_market_date=source_market_date,
+        snapshot_ts=snapshot_ts,
+        table_key=RawDuckLakeTable.MARKET_ORDERS,
+        mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+        key_columns=_KEY_COLUMNS,
+        parse_table=parse_csv_to_arrow,
+    )
 
 
 def run_pipeline(config: EverefCliConfig) -> int:

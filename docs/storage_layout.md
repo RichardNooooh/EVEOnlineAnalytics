@@ -50,6 +50,7 @@ for `dlt` runtime state rather than shared NFS or DuckLake durable storage paths
 
 Planned table naming convention:
 
+- `raw_source_objects`
 - `raw_market_history`
 - `raw_market_orders`
 - `raw_fuzzwork_orders`
@@ -93,8 +94,7 @@ Current planned rules:
 - market history tables use `date` as the primary Everef replacement scope and include
   `region_id` and `type_id`
 - market order snapshot tables, including Fuzzwork order snapshots, partition by
-  `region_id` and snapshot time bucket such as `snapshot_date` or a timestamp
-  partition
+  `source_market_date`
 - curated tables partition by the smallest stable unit that supports rebuild and
   efficient downstream reads, typically `date` and optionally `region_id`
 - current curated BI marts `curated_daily_prices` and `curated_trade_volume` use `date`

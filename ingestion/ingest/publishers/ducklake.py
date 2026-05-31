@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from collections.abc import Iterator, Sequence
@@ -56,6 +57,7 @@ class DuckLakeWriteMetrics:
 
 
 class RawDuckLakeTable(StrEnum):
+    RAW_SOURCE_OBJECTS = "raw_source_objects"
     MARKET_HISTORY = "raw_market_history"
     MARKET_ORDERS = "raw_market_orders"
     FUZZWORK_ORDERS = "raw_fuzzwork_orders"
@@ -117,6 +119,11 @@ def build_ducklake_attach_config_from_url(
 
 def _build_default_attach_config() -> DuckLakeAttachConfig:
     return build_ducklake_attach_config_from_url(DEFAULT_DUCKLAKE_CATALOG)
+
+
+def compute_source_object_id(source_system: str, endpoint: str, source_url: str) -> str:
+    raw = f"{source_system}|{endpoint}|{source_url}"
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _quote_identifier(identifier: str) -> str:
@@ -231,7 +238,7 @@ def _assert_target_rows_missing_from_source(
     quoted_source: str,
     key_columns: Sequence[str],
 ) -> None:
-    source_date_col = "_source_market_date"
+    source_date_col = "source_market_date"
     if source_date_col not in arrow_table.column_names:
         return
 
@@ -405,6 +412,7 @@ class DuckLakeWriter:
         _attach_ducklake(self._con, config=self._attach)
         schema_name = f"{_quote_identifier(self._attach.alias)}.{_quote_identifier(DEFAULT_RAW_SCHEMA)}"
         self._con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+        self._ensure_support_tables()
         logger.info(
             "DuckLake writer attached alias=%s metadata_schema=%s data_path=%s raw_schema=%s",
             self._attach.alias,
@@ -585,3 +593,60 @@ class DuckLakeWriter:
                 return metrics
 
             raise ValueError(f"Unsupported DuckLake writer mode: {mode}")
+
+    def upsert_source_object(self, data: dict) -> None:
+        con = self._con
+        if con is None:
+            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+
+        quoted_target = _quote_table_target(self._attach.alias, _target_for(RawDuckLakeTable.RAW_SOURCE_OBJECTS))
+        self._ensure_support_tables()
+
+        columns = list(data.keys())
+        col_list = ", ".join(_quote_identifier(c) for c in columns)
+        select_list = ", ".join("?" for _ in columns)
+        update_set = ", ".join(
+            f"{_quote_identifier(k)} = source.{_quote_identifier(k)}" for k in columns if k != "source_object_id"
+        )
+        insert_cols = ", ".join(f"source.{_quote_identifier(k)}" for k in columns)
+        values = list(data.values())
+
+        con.execute(
+            f"""
+            MERGE INTO {quoted_target} AS target
+            USING (SELECT {select_list}) AS source({col_list})
+            ON target.source_object_id = source.source_object_id
+            WHEN MATCHED THEN UPDATE SET {update_set}
+            WHEN NOT MATCHED THEN INSERT ({col_list}) VALUES ({insert_cols})
+            """,
+            values,
+        )
+
+    def _ensure_support_tables(self) -> None:
+        con = self._con
+        if con is None:
+            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+
+        quoted_target = _quote_table_target(self._attach.alias, _target_for(RawDuckLakeTable.RAW_SOURCE_OBJECTS))
+        con.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {quoted_target} (
+                source_object_id VARCHAR NOT NULL,
+                source_system VARCHAR NOT NULL,
+                endpoint VARCHAR NOT NULL,
+                source_url VARCHAR NOT NULL,
+                storage_uri VARCHAR,
+                source_market_date DATE,
+                snapshot_ts TIMESTAMP,
+                last_modified TIMESTAMP,
+                content_length BIGINT,
+                sha256 VARCHAR,
+                downloaded_at TIMESTAMP,
+                parsed_at TIMESTAMP,
+                ingested_at TIMESTAMP,
+                status VARCHAR NOT NULL,
+                status_reason VARCHAR,
+                row_count BIGINT
+            )
+            """
+        )
