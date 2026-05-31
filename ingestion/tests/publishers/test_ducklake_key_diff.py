@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 import duckdb
 import pyarrow as pa
 import pytest
@@ -31,21 +29,17 @@ def test_all_columns_are_key_columns_early_return(real_con):
 
 
 @pytest.mark.real_duckdb
-def test_query_error_is_caught(real_con, caplog):
-    caplog.set_level(logging.WARNING, logger="ingest.publishers")
+def test_query_error_raises_value_error(real_con):
     src = pa.table({"id": [1], "val": [10]})
     with _temporary_arrow_view(real_con, src) as view:
-        _assert_matched_key_rows_identical(
-            real_con,
-            src,
-            quoted_target='"nonexistent"',
-            quoted_source=f'"{view}"',
-            key_columns=["id"],
-        )
-    assert len(caplog.records) == 1
-    assert caplog.records[0].levelname == "WARNING"
-    assert "Could not query target" in caplog.text
-    assert caplog.records[0].exc_info is not None
+        with pytest.raises(ValueError, match="Could not query target for key validation"):
+            _assert_matched_key_rows_identical(
+                real_con,
+                src,
+                quoted_target='"nonexistent"',
+                quoted_source=f'"{view}"',
+                key_columns=["id"],
+            )
 
 
 @pytest.mark.real_duckdb

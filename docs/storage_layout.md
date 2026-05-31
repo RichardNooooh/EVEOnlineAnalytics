@@ -52,6 +52,7 @@ Planned table naming convention:
 
 - `raw_market_history`
 - `raw_market_orders`
+- `raw_fuzzwork_orders`
 - `curated_daily_prices`
 - `curated_trade_volume`
 - `feat_item_daily`
@@ -66,7 +67,8 @@ datasets/
 ├── ducklake/
 │   ├── raw/
 │   │   ├── raw_market_history/
-│   │   └── raw_market_orders/
+│   │   ├── raw_market_orders/
+│   │   └── raw_fuzzwork_orders/
 │   └── curated/
 │       ├── curated_daily_prices/
 │       ├── curated_trade_volume/
@@ -90,12 +92,37 @@ Current planned rules:
 
 - market history tables use `date` as the primary Everef replacement scope and include
   `region_id` and `type_id`
-- market order snapshot tables partition by `region_id` and snapshot time
-  bucket such as `snapshot_date` or a timestamp partition
+- market order snapshot tables, including Fuzzwork order snapshots, partition by
+  `region_id` and snapshot time bucket such as `snapshot_date` or a timestamp
+  partition
 - curated tables partition by the smallest stable unit that supports rebuild and
   efficient downstream reads, typically `date` and optionally `region_id`
 - current curated BI marts `curated_daily_prices` and `curated_trade_volume` use `date`
   as the primary replacement scope and retain `region_id` and `type_id` at row grain
+
+## Write Semantics and Replacement Scope
+
+Storage layout must preserve the difference between snapshot publication and
+authoritative publication.
+
+- snapshot-oriented datasets append new published observations over time and rely on
+  idempotent insert-missing-key behavior to avoid duplicate publication of the same
+  snapshot rows
+- authoritative datasets define an explicit visible replacement scope, such as a source
+  date partition or an entire table
+
+Current raw dataset expectations:
+
+- `raw_market_orders` and `raw_fuzzwork_orders` are snapshot-oriented datasets
+- `raw_market_history` is authoritative for the source market date represented by each
+  Everef daily file
+- reference tables are authoritative latest extracts and replace the previously visible
+  full-table contents when republished
+
+This distinction matters for both physical organization and publication safety. A later
+market-order snapshot should not be interpreted as a deletion set for earlier snapshots,
+while a corrected market-history daily file must preserve its explicit date-level
+publication boundary.
 
 ## Local BI Read Path
 
@@ -112,6 +139,7 @@ Supplemental manifests may record at least:
 - dataset name
 - publication timestamp
 - writer identity or job reference
+- publication mode or replacement class when useful for auditability
 - partition set included in the publication
 - schema or contract version
 

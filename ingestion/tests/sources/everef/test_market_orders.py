@@ -7,10 +7,12 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
+import pyarrow as pa
 
 from ingest.sources.everef.market_orders import (
     _SNAPSHOT_RE,
     _build_cache_objects,
+    _process_result,
 )
 from ingest.sources.everef.util import list_snapshots, read_csv_to_arrow
 from ingest.sources.everef import util as everef_util
@@ -217,3 +219,21 @@ class TestReadCsvToArrow:
         logger.removeHandler(caplog.handler)
         assert len(table) == 0
         assert "Zero-row CSV file" in caplog.text
+
+
+def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = make_cache_result(
+        "/tmp/fake.csv.bz2",
+        dataset_name="market-orders",
+        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
+    )
+    writer = MagicMock()
+    monkeypatch.setattr(
+        "ingest.sources.everef.market_orders.read_csv_to_arrow",
+        lambda result: pa.table({"order_id": [1]}),
+    )
+
+    assert _process_result(result, writer) is True
+    call_kwargs = writer.write.call_args.kwargs
+    assert call_kwargs["mode"].value == "insert_missing_keys"
+    assert call_kwargs["key_columns"] == ["order_id", "snapshot_time"]

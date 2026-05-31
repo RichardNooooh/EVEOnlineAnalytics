@@ -42,6 +42,9 @@ Expected contract elements:
 - source fields preserved with documented semantic quirks
 - publication metadata recorded through DuckLake catalog state, contracts, and
   supplemental manifests where useful
+- dataset class is source-date-authoritative
+- current publication behavior uses assert-partition-coverage plus insert-missing
+  semantics for each source market date
 
 ### `raw_market_orders`
 
@@ -53,6 +56,22 @@ Expected contract elements:
 - snapshot timestamp
 - buy or sell side flags
 - price, volume, range, and location fields from the source snapshot
+- dataset class is snapshot-oriented
+- publication behavior uses idempotent insert-missing-key semantics so replay of the
+  same snapshot does not duplicate rows
+
+The same snapshot-oriented publication model also applies to `raw_fuzzwork_orders`.
+
+### Reference Tables
+
+Reference tables such as item types, regions, groups, and categories are published from
+latest full extracts.
+
+Expected contract elements:
+
+- stable natural keys such as `type_id`, `region_id`, `group_id`, or `category_id`
+- latest-extract-authoritative semantics
+- publication behavior uses full-table replacement semantics per reference table
 
 ## Curated Dataset Contracts
 

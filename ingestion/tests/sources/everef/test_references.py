@@ -113,7 +113,7 @@ class TestProcessMember:
         writer.write.assert_called_once()
         call_kwargs = writer.write.call_args.kwargs
         assert call_kwargs["table"].value == "raw_reference_types"
-        assert call_kwargs["key_columns"] == ["type_id"]
+        assert call_kwargs["mode"].value == "replace_table"
 
     def test_skips_unknown_file(self, tmp_path: Path) -> None:
         member_path = tmp_path / "unknown.json"
