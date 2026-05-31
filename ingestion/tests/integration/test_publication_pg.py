@@ -5,9 +5,9 @@ from uuid import uuid4
 
 import pytest
 
-from ingest.cache.ledger import RawObjectLedger
-from ingest.cache.ledger.types import PublicationContext, RawObjectRef
-from ingest.cache.primitives import UpdateMode
+from eve_ingest.raw_objects.ledger import RawObjectLedger
+from eve_ingest.raw_objects.ledger.models import PublicationContext, RawObjectRef
+from eve_ingest.raw_objects.primitives import UpdateMode
 
 
 @pytest.fixture

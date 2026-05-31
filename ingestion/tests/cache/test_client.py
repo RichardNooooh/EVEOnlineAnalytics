@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import requests
 
-from ingest.cache.client import HttpRawObjectClient
-from ingest.cache.client_types import ReadStatus
+from eve_ingest.raw_objects.http_client import HttpRawObjectClient
+from eve_ingest.raw_objects.http_models import ReadStatus
 
 
 class FakeResponse:
@@ -80,7 +80,7 @@ def test_read_returns_not_modified_without_writing_file(monkeypatch, tmp_path: P
     )
     session = FakeSession(response)
 
-    monkeypatch.setattr("ingest.cache.client.requests.Session", lambda: session)
+    monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
 
     temp_path = tmp_path / "file.download"
     with HttpRawObjectClient(timeout_seconds=9.5) as client:
@@ -113,7 +113,7 @@ def test_read_streams_file_and_computes_sha256(monkeypatch, tmp_path: Path) -> N
     )
     session = FakeSession(response)
 
-    monkeypatch.setattr("ingest.cache.client.requests.Session", lambda: session)
+    monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
 
     temp_path = tmp_path / "nested" / "file.download"
     with HttpRawObjectClient() as client:
@@ -134,7 +134,7 @@ def test_read_removes_partial_file_when_stream_fails(monkeypatch, tmp_path: Path
     response = FakeResponse(chunks=[b"partial"], error=RuntimeError("boom"))
     session = FakeSession(response)
 
-    monkeypatch.setattr("ingest.cache.client.requests.Session", lambda: session)
+    monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
 
     temp_path = tmp_path / "file.download"
     with HttpRawObjectClient() as client:
@@ -159,7 +159,7 @@ def test_read_returns_not_modified_with_last_modified_fallback(monkeypatch, tmp_
     )
     session = FakeSession(response)
 
-    monkeypatch.setattr("ingest.cache.client.requests.Session", lambda: session)
+    monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
 
     temp_path = tmp_path / "file.download"
     with HttpRawObjectClient() as client:
@@ -187,7 +187,7 @@ def test_read_raises_on_404(monkeypatch, tmp_path: Path) -> None:
     response = FakeResponse(status_code=404)
     session = FakeSession(response)
 
-    monkeypatch.setattr("ingest.cache.client.requests.Session", lambda: session)
+    monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
 
     temp_path = tmp_path / "file.download"
     with HttpRawObjectClient() as client:
@@ -205,7 +205,7 @@ def test_read_raises_on_500(monkeypatch, tmp_path: Path) -> None:
     response = FakeResponse(status_code=500)
     session = FakeSession(response)
 
-    monkeypatch.setattr("ingest.cache.client.requests.Session", lambda: session)
+    monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
 
     temp_path = tmp_path / "file.download"
     with HttpRawObjectClient() as client:

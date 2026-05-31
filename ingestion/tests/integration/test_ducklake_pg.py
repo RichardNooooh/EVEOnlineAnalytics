@@ -7,15 +7,9 @@ import duckdb
 import pyarrow as pa
 import pytest
 
-from ingest.publishers.ducklake import (
-    _attach_ducklake,
-    _quote_identifier,
-    DuckLakeAttachConfig,
-    DuckLakeWriter,
-    DuckLakeWriterMode,
-    RawDuckLakeTable,
-    build_ducklake_attach_config_from_url,
-)
+from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig, build_ducklake_attach_config_from_url
+from eve_ingest.ducklake.writer import DuckLakeWriter, _attach_ducklake, _quote_identifier
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeTable
 
 
 @pytest.fixture

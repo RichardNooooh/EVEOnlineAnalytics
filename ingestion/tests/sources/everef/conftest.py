@@ -6,12 +6,12 @@ from unittest.mock import MagicMock
 
 import pyarrow as pa
 
-from ingest.cache import CacheResult, CacheResultStatus
-from ingest.cache.client_types import RevalidationMetadata
-from ingest.cache.ledger.types import RawObjectEntry, RawObjectRef, RawObjectVersion
-from ingest.cache.primitives import UpdateMode
-from ingest.cache.models import GetMode
-from ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
+from eve_ingest.raw_objects import CacheResult, CacheResultStatus
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
+from eve_ingest.raw_objects.ledger.models import RawObjectEntry, RawObjectRef, RawObjectVersion
+from eve_ingest.raw_objects.primitives import UpdateMode
+from eve_ingest.raw_objects.models import GetMode
+from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
 
 
 class FakeRelation:
@@ -136,6 +136,6 @@ def install_pipeline_fakes(
             return results
 
     con = FakeConnection()
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.sources.pipeline.Cache", FakeCache)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
     return con, mock_pubtrack

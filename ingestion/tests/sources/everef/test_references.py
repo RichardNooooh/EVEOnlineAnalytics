@@ -5,7 +5,7 @@ import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ingest.sources.everef.references import (
+from eve_ingest.sources.everef.reference_data import (
     _build_cache_objects,
     _parse_json_to_table,
     _process_member,
@@ -155,7 +155,7 @@ class TestParseJsonToTable:
             )
         )
 
-        with patch("ingest.sources.everef.references.logger.warning") as mock_warning:
+        with patch("eve_ingest.sources.everef.reference_data.logger.warning") as mock_warning:
             table = _parse_json_to_table(str(member_path), "types.json")
 
         assert table.num_rows == 1

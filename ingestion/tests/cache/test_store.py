@@ -5,22 +5,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from ingest.cache import Cache, CacheObject, GetMode, UpdateMode
-from ingest.cache.client_types import (
+from eve_ingest.raw_objects import Cache, CacheObject, GetMode, UpdateMode
+from eve_ingest.raw_objects.http_models import (
     ModifiedRead,
     NotModifiedRead,
     ReadResult,
     ReadStatus,
     RevalidationMetadata,
 )
-from ingest.cache.ledger.types import (
+from eve_ingest.raw_objects.ledger.models import (
     PublicationContext,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
     RotateVersionResult,
 )
-from ingest.cache.models import CacheResultStatus
+from eve_ingest.raw_objects.models import CacheResultStatus
 from tests.cache.fakes import InMemoryRawObjectLedger
 
 

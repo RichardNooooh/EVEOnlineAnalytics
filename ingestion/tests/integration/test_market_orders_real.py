@@ -6,8 +6,10 @@ import bz2
 import duckdb
 import pytest
 
-from ingest.publishers.ducklake import DuckLakeAttachConfig, DuckLakeWriter, RawDuckLakeTable
-from ingest.sources.everef.market_orders import _process_result
+from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
+from eve_ingest.ducklake.writer import DuckLakeWriter
+from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
+from eve_ingest.sources.everef.market_orders import _process_result
 from tests.sources.everef.conftest import make_cache_result
 
 
@@ -25,8 +27,8 @@ class _KeepConnection:
 @pytest.fixture
 def shared_con(monkeypatch):
     con = _KeepConnection()
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
-    monkeypatch.setattr("ingest.publishers.ducklake._attach_ducklake", lambda c, config: None)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer._attach_ducklake", lambda c, config: None)
     yield con._con
     con._con.close()
 

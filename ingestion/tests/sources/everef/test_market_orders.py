@@ -9,17 +9,18 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pyarrow as pa
 
-from ingest.sources.everef.market_orders import (
+from eve_ingest.sources.everef.market_orders import (
     _SNAPSHOT_RE,
     _build_cache_objects,
     _process_result,
 )
-from ingest.sources.everef.util import list_snapshots, parse_csv_to_arrow
-from ingest.sources.everef import util as everef_util
+from eve_ingest.sources.everef.discovery import list_snapshots
+from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow
+from eve_ingest.sources.everef import discovery as everef_discovery
 
 from tests.sources.everef.conftest import make_cache_result
 
-logger = logging.getLogger("ingest.sources.everef")
+logger = logging.getLogger("eve_ingest.sources.everef")
 
 
 @pytest.fixture
@@ -79,7 +80,7 @@ class TestBuildCacheObjects:
             '<html><body><a href="market-orders-2026-01-01_00-00-00.v3.csv.bz2">link1</a>'
             '<a href="market-orders-2026-01-01_12-00-00.v3.csv.bz2">link2</a></body></html>'
         )
-        with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
+        with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = html
             objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
 
@@ -92,7 +93,7 @@ class TestBuildCacheObjects:
             '<html><body><a href="market-orders-2026-01-01_00-00-00.v3.csv.bz2">link1</a>'
             '<a href="market-orders-2026-01-01_12-00-00.v3.csv.bz2">link2</a></body></html>'
         )
-        with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
+        with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = html
             logger.addHandler(caplog.handler)
             try:
@@ -106,7 +107,7 @@ class TestBuildCacheObjects:
         assert "last=market-orders-2026-01-01_12-00-00.v3.csv.bz2" in caplog.text
 
     def test_skips_dates_with_no_snapshots(self) -> None:
-        with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
+        with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = "<html></html>"
             objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
         assert objects == []
@@ -179,7 +180,7 @@ class TestBuildCacheObjectsWithRealFixture:
     EXPECTED_FILENAMES = TestListSnapshotsWithRealFixture.EXPECTED_FILENAMES
 
     def test_builds_cache_objects_from_real_listing(self, real_listing_html: str) -> None:
-        with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
+        with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = real_listing_html
             objects = _build_cache_objects(self.fixture_date, self.fixture_date)
         assert len(objects) == len(self.EXPECTED_FILENAMES)
@@ -257,7 +258,7 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
     )
     writer = MagicMock()
     monkeypatch.setattr(
-        "ingest.sources.everef.market_orders.parse_csv_to_arrow",
+        "eve_ingest.sources.everef.market_orders.parse_csv_to_arrow",
         lambda result: pa.table({"order_id": [1]}),
     )
 

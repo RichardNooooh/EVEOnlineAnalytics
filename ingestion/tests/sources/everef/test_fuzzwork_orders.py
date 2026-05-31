@@ -9,18 +9,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pyarrow as pa
 
-from ingest.sources.everef.fuzzwork_orders import (
+from eve_ingest.sources.everef.fuzzwork_orders import (
     _FUZZWORK_COLUMN_NAMES,
     _FUZZWORK_RE,
     _build_cache_objects,
     _process_result,
 )
-from ingest.sources.everef.util import list_snapshots, parse_csv_to_arrow
-from ingest.sources.everef import util as everef_util
+from eve_ingest.sources.everef.discovery import list_snapshots
+from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow
+from eve_ingest.sources.everef import discovery as everef_discovery
 
 from tests.sources.everef.conftest import make_cache_result
 
-logger = logging.getLogger("ingest.sources.everef")
+logger = logging.getLogger("eve_ingest.sources.everef")
 
 import pyarrow.csv as pac  # noqa: E402
 
@@ -78,7 +79,7 @@ class TestBuildCacheObjects:
             '<html><body><a href="fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz">link1</a>'
             '<a href="fuzzwork-orderset-42-2026-01-01_00-00-00.csv.gz">link2</a></body></html>'
         )
-        with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
+        with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = html
             objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
 
@@ -95,7 +96,7 @@ class TestBuildCacheObjects:
         }
 
     def test_skips_dates_with_no_snapshots(self) -> None:
-        with patch.object(everef_util, "EverefSnapshotClient") as mock_cls:
+        with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = "<html></html>"
             objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
         assert objects == []
@@ -172,7 +173,7 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
     )
     writer = MagicMock()
     monkeypatch.setattr(
-        "ingest.sources.everef.fuzzwork_orders.parse_csv_to_arrow",
+        "eve_ingest.sources.everef.fuzzwork_orders.parse_csv_to_arrow",
         lambda result, read_options=None, parse_options=None: pa.table({"order_id": [1]}),
     )
 

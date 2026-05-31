@@ -4,13 +4,10 @@ import logging
 
 import pyarrow as pa
 import pytest
-from ingest.publishers.ducklake import (
-    DuckLakeAttachConfig,
-    DuckLakeWriter,
-    DuckLakeWriterMode,
-    RawDuckLakeTable,
-)
-from ingest.sources.everef.util import parse_last_modified_timestamp
+from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
+from eve_ingest.ducklake.writer import DuckLakeWriter
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeTable
+from eve_ingest.sources.everef.provenance import parse_last_modified_timestamp
 
 
 class FakeRelation:
@@ -67,7 +64,7 @@ def _attach_call(con: FakeConnection) -> tuple[str, list[str] | None]:
 def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         assert writer._con is con
@@ -91,7 +88,7 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
 def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter(
         DuckLakeAttachConfig(
@@ -117,7 +114,7 @@ def test_writer_replaces_table(monkeypatch) -> None:
     con.fetchone_results = [(0,), (0,)]
     arrow_table = pa.table({"b": [2], "a": [1]})
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         writer.write(
@@ -141,7 +138,7 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
     con.fetchone_results = [(1,), (0,), (2,)]
     arrow_table = pa.table({"id": [1, 2], "value": [10, 20]})
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         writer.write(
@@ -165,7 +162,7 @@ def test_writer_returns_write_metrics(monkeypatch) -> None:
     con.fetchone_results = [(1,), (1,), (1,)]
     arrow_table = pa.table({"id": [1, 2], "value": [10, 20]})
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         metrics = writer.write(
@@ -186,7 +183,7 @@ def test_replace_table_returns_replaced_row_metrics(monkeypatch) -> None:
     con.fetchone_results = [(1,), (7,)]
     arrow_table = pa.table({"id": [1]})
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         metrics = writer.write(
@@ -229,7 +226,7 @@ def test_writer_rejects_invalid_inputs(
 ) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         with pytest.raises(ValueError, match=error_message):
@@ -257,7 +254,7 @@ def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
     con.fetchone_results = [(0,)]
     con.raise_on_execute = "CREATE OR REPLACE TABLE"
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with pytest.raises(RuntimeError, match="boom"):
         with DuckLakeWriter() as writer:
@@ -275,7 +272,7 @@ def test_replace_table_rejects_empty_arrow_table_without_writing(monkeypatch) ->
     con = FakeConnection()
     arrow_table = pa.table({"id": pa.array([], type=pa.int64())})
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         with pytest.raises(ValueError, match="REPLACE_TABLE requires a non-empty arrow_table"):
@@ -293,7 +290,7 @@ def test_replace_table_rejects_key_columns(monkeypatch) -> None:
     con = FakeConnection()
     arrow_table = pa.table({"id": [1]})
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         with pytest.raises(ValueError, match="REPLACE_TABLE does not accept key_columns"):
@@ -313,7 +310,7 @@ def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
     table_a = pa.table({"id": [1]})
     table_b = pa.table({"order_id": [10]})
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         writer.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
@@ -334,7 +331,7 @@ def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
 def test_upsert_source_object_uses_merge(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
         writer.upsert_source_object(
@@ -369,7 +366,7 @@ def test_parse_last_modified_timestamp_supports_iso_and_http_date() -> None:
 
 
 def test_parse_last_modified_timestamp_returns_none_for_invalid_value(caplog: pytest.LogCaptureFixture) -> None:
-    logger = logging.getLogger("ingest.sources.everef")
+    logger = logging.getLogger("eve_ingest.sources.everef")
     logger.addHandler(caplog.handler)
     try:
         with caplog.at_level(logging.WARNING, logger=logger.name):

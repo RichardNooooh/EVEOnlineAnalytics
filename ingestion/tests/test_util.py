@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from ingest.util import (
+from eve_ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from ingest.cache.plans import FetchPlan
-from ingest.cache.ledger.types import RawObjectRef
-from ingest.cache.primitives import UpdateMode
-from ingest.cache.paths import (
+from eve_ingest.raw_objects.fetch_plan import FetchPlan
+from eve_ingest.raw_objects.ledger.models import RawObjectRef
+from eve_ingest.raw_objects.primitives import UpdateMode
+from eve_ingest.raw_objects.paths import (
     build_final_path,
     build_snapshot_path,
     build_temp_path,

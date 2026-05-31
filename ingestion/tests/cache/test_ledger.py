@@ -5,17 +5,17 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import insert, select
 
-from ingest.cache.ledger import RawObjectLedger
-from ingest.cache.ledger import _db as ledger_db
-from ingest.cache.ledger import runtime as ledger_runtime
-from ingest.cache.ledger.publishing_tx import PublicationTrackerTx
-from ingest.cache.ledger.reader import RawObjectReader
-from ingest.cache.ledger.runtime import LedgerTx
-from ingest.cache.ledger.schema import raw_objects, raw_object_versions
-from ingest.cache.ledger.writer import RawObjectWriter
-from ingest.cache.client_types import RevalidationMetadata
-from ingest.cache.ledger.types import RawObjectRef
-from ingest.cache.primitives import UpdateMode
+from eve_ingest.raw_objects.ledger import RawObjectLedger
+from eve_ingest.raw_objects.ledger import _db as ledger_db
+from eve_ingest.raw_objects.ledger import repository as ledger_runtime
+from eve_ingest.raw_objects.ledger.publication_repository import PublicationTrackerTx
+from eve_ingest.raw_objects.ledger.reader import RawObjectReader
+from eve_ingest.raw_objects.ledger.repository import LedgerTx
+from eve_ingest.raw_objects.ledger.schema import raw_objects, raw_object_versions
+from eve_ingest.raw_objects.ledger.writer import RawObjectWriter
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
+from eve_ingest.raw_objects.ledger.models import RawObjectRef
+from eve_ingest.raw_objects.primitives import UpdateMode
 
 
 class FakeBegin:
@@ -148,7 +148,7 @@ def test_rotate_version_rolls_back_on_insert_failure(monkeypatch) -> None:
             raise RuntimeError("boom")
         return ledger_db._execute(con, statement)
 
-    monkeypatch.setattr("ingest.cache.ledger.writer._execute", flaky_execute)
+    monkeypatch.setattr("eve_ingest.raw_objects.ledger.writer._execute", flaky_execute)
 
     with pytest.raises(RuntimeError, match="boom"):
         with ledger.transaction() as tx:
