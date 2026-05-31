@@ -4,19 +4,39 @@ import logging
 import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime
+from email.utils import parsedate_to_datetime
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.csv as pac
 
 from ingest.cache import CacheObject, CacheResult
-from ingest.publishers.ducklake import DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
-from ingest.sources.pipeline import PipelineProcessResult
+from ingest.publishers.ducklake import DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable, compute_source_object_id
 from ingest.sources.everef.client import EverefSnapshotClient
+from ingest.sources.pipeline import PipelineProcessResult
 from ingest.util import file_size, iter_dates
 
 logger = logging.getLogger("ingest.sources.everef")
 
 EVEREF_BASE = "https://data.everef.net"
+
+
+def parse_last_modified_timestamp(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(value)
+        except (TypeError, ValueError, IndexError):
+            logger.warning("Could not parse last_modified timestamp value=%r", value)
+            return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def list_snapshots(
@@ -124,36 +144,30 @@ def build_deterministic_objects(
     return collect_cache_objects(start_date, end_date, entries_fn)
 
 
-def add_provenance(
-    table: pa.Table,
+def build_source_object_metadata(
     result: CacheResult,
-    *,
-    extra_columns: dict[str, pa.Array] | None = None,
-) -> pa.Table:
-    n = len(table)
-    now = datetime.now(UTC)
-    content_length = file_size(result.path)
-
-    base_cols = [
-        ("_source_url", pa.array([result.version.source_url] * n, type=pa.utf8())),
-        ("_source_local_path", pa.array([result.path] * n, type=pa.utf8())),
-        ("_source_sha256", pa.array([result.version.sha256] * n, type=pa.utf8())),
-        ("_source_content_length", pa.array([content_length] * n, type=pa.int64())),
-        ("_source_last_modified", pa.array([result.version.revalidation.last_modified] * n, type=pa.utf8())),
-        ("_source_downloaded_at", pa.array([result.version.fetched_at] * n, type=pa.timestamp("us", tz="UTC"))),
-        ("_ingested_at", pa.array([now] * n, type=pa.timestamp("us", tz="UTC"))),
-    ]
-    for name, col in base_cols:
-        table = table.append_column(name, col)
-
-    if extra_columns:
-        for name, col in extra_columns.items():
-            table = table.append_column(name, col)
-
-    return table
+    source_system: str,
+    endpoint: str,
+    source_market_date: date | None = None,
+    snapshot_ts: datetime | None = None,
+) -> dict:
+    return {
+        "source_object_id": compute_source_object_id(source_system, endpoint, result.version.source_url),
+        "source_system": source_system,
+        "endpoint": endpoint,
+        "source_url": result.version.source_url,
+        "storage_uri": result.path,
+        "source_market_date": source_market_date,
+        "snapshot_ts": snapshot_ts,
+        "last_modified": parse_last_modified_timestamp(result.version.revalidation.last_modified),
+        "content_length": result.version.revalidation.content_length,
+        "sha256": result.version.sha256,
+        "downloaded_at": result.version.fetched_at,
+        "status": "downloaded",
+    }
 
 
-def read_csv_to_arrow(
+def parse_csv_to_arrow(
     result: CacheResult,
     *,
     read_options: pac.ReadOptions | None = None,
@@ -187,42 +201,118 @@ def read_csv_to_arrow(
             path,
             result.version.source_url,
         )
-    return add_provenance(
-        table,
-        result,
-        extra_columns={
-            "_source_market_date": pa.array([source_date] * n, type=pa.utf8()),
-        },
-    )
+    return table
 
 
-def process_result(
+def publish_file_backed_rows(
     result: CacheResult,
     writer: DuckLakeWriter,
     *,
+    source_system: str,
+    endpoint: str,
+    source_market_date: date,
     table_key: RawDuckLakeTable,
     mode: DuckLakeWriterMode,
     key_columns: list[str],
+    parse_table: Callable[[CacheResult], pa.Table],
+    snapshot_ts: datetime | None = None,
+    log_context: dict[str, Any] | None = None,
 ) -> PipelineProcessResult:
+    source_date_str = str(result.identity_key.get("source_date", "unknown"))
+    soid = compute_source_object_id(source_system, endpoint, result.version.source_url)
+
     try:
-        metrics = writer.write(read_csv_to_arrow(result), table=table_key, mode=mode, key_columns=key_columns)
-        logger.debug(
-            "Processed source file source_date=%s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d replaced_rows=%d",
-            result.identity_key.get("source_date"),
-            table_key.value,
-            metrics.attempted_rows,
-            metrics.inserted_rows,
-            metrics.matched_rows,
-            metrics.replaced_rows,
+        metadata = build_source_object_metadata(
+            result,
+            source_system,
+            endpoint,
+            source_market_date=source_market_date,
+            snapshot_ts=snapshot_ts,
         )
+        writer.upsert_source_object(metadata)
+
+        table = parse_table(result)
+        n = len(table)
+
+        writer.upsert_source_object(
+            {
+                "source_object_id": soid,
+                "status": "parsed",
+                "parsed_at": datetime.now(UTC),
+            }
+        )
+
+        table = table.append_column(
+            "source_object_id",
+            pa.array([soid] * n, type=pa.utf8()),
+        )
+        table = table.append_column(
+            "source_market_date",
+            pa.array([source_market_date] * n, type=pa.date32()),
+        )
+        if snapshot_ts is not None:
+            table = table.append_column(
+                "snapshot_ts",
+                pa.array([snapshot_ts] * n, type=pa.timestamp("us", tz="UTC")),
+            )
+
+        metrics = writer.write(
+            table,
+            table=table_key,
+            mode=mode,
+            key_columns=key_columns,
+        )
+
+        writer.upsert_source_object(
+            {
+                "source_object_id": soid,
+                "status": "ingested",
+                "ingested_at": datetime.now(UTC),
+                "row_count": n,
+                "status_reason": None,
+            }
+        )
+
+        extra_context = log_context or {}
+        if snapshot_ts is None:
+            logger.debug(
+                "Processed source file source_date=%s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
+                source_date_str,
+                table_key.value,
+                metrics.attempted_rows,
+                metrics.inserted_rows,
+                metrics.matched_rows,
+            )
+        else:
+            logger.debug(
+                "Processed source file source_date=%s snapshot_ts=%s %s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
+                source_date_str,
+                snapshot_ts,
+                " ".join(f"{key}={value}" for key, value in extra_context.items()),
+                table_key.value,
+                metrics.attempted_rows,
+                metrics.inserted_rows,
+                metrics.matched_rows,
+            )
+
         return PipelineProcessResult(
             success=True,
-            source_date=str(result.identity_key.get("source_date", "unknown")),
+            source_date=source_date_str,
             write_metrics=(metrics,),
         )
     except Exception:
         logger.exception("Failed to process %s", result.identity_key)
+        try:
+            writer.upsert_source_object(
+                {
+                    "source_object_id": soid,
+                    "status": "failed",
+                    "status_reason": "see log for details",
+                }
+            )
+        except Exception:
+            pass
         return PipelineProcessResult(
             success=False,
-            source_date=str(result.identity_key.get("source_date", "unknown")),
+            source_date=source_date_str,
         )

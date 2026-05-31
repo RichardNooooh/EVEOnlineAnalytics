@@ -7,9 +7,9 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from ingest.publishers.ducklake import DuckLakeAttachConfig, DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
-from ingest.sources.everef.market_history import _KEY_COLUMNS
-from ingest.sources.everef.util import process_result, read_csv_to_arrow
+from ingest.publishers.ducklake import DuckLakeAttachConfig, DuckLakeWriter, RawDuckLakeTable
+from ingest.sources.everef.market_history import _process_result
+from ingest.sources.everef.util import parse_csv_to_arrow
 from tests.sources.everef.conftest import make_cache_result
 
 
@@ -65,27 +65,18 @@ def test_process_result_writes_and_merges_history_rows(shared_con, tmp_path: Pat
         source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
     )
 
-    table = read_csv_to_arrow(result)
-    assert "_source_market_date" in table.column_names
-    assert table.column("_source_market_date")[0].as_py() == "2026-01-01"
+    table = parse_csv_to_arrow(result)
+    assert "source_market_date" not in table.column_names
+    assert "_source_market_date" not in table.column_names
+    assert all(not c.startswith("_source") for c in table.column_names)
 
     with DuckLakeWriter(_ATTACH) as writer:
-        assert process_result(
-            result,
-            writer,
-            table_key=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-            key_columns=_KEY_COLUMNS,
-        )
+        outcome = _process_result(result, writer)
+        assert outcome.success is True
 
     with DuckLakeWriter(_ATTACH) as writer:
-        assert process_result(
-            result,
-            writer,
-            table_key=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-            key_columns=_KEY_COLUMNS,
-        )
+        outcome = _process_result(result, writer)
+        assert outcome.success is True
 
     rows = shared_con.execute(
         f'SELECT average, "date", region_id, type_id FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}"'

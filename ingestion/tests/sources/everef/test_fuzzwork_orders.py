@@ -15,7 +15,7 @@ from ingest.sources.everef.fuzzwork_orders import (
     _build_cache_objects,
     _process_result,
 )
-from ingest.sources.everef.util import list_snapshots, read_csv_to_arrow
+from ingest.sources.everef.util import list_snapshots, parse_csv_to_arrow
 from ingest.sources.everef import util as everef_util
 
 from tests.sources.everef.conftest import make_cache_result
@@ -101,7 +101,7 @@ class TestBuildCacheObjects:
         assert objects == []
 
 
-class TestReadCsvToArrow:
+class TestParseCsvToArrow:
     @pytest.fixture
     def csv_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
         path = tmp_path / "fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz"
@@ -109,7 +109,7 @@ class TestReadCsvToArrow:
             f.write(_TSV_DATA)
         return path
 
-    def test_adds_provenance(self, csv_path: pathlib.Path) -> None:
+    def test_parses_without_provenance(self, csv_path: pathlib.Path) -> None:
         result = make_cache_result(
             str(csv_path),
             content_length=csv_path.stat().st_size,
@@ -122,7 +122,7 @@ class TestReadCsvToArrow:
             },
             source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
         )
-        table = read_csv_to_arrow(
+        table = parse_csv_to_arrow(
             result,
             read_options=pac.ReadOptions(column_names=_FUZZWORK_COLUMN_NAMES),
             parse_options=pac.ParseOptions(delimiter="\t"),
@@ -130,9 +130,8 @@ class TestReadCsvToArrow:
 
         assert "order_id" in table.column_names
         assert "order_set_id" in table.column_names
-        assert "_source_market_date" in table.column_names
+        assert "_source_market_date" not in table.column_names
         assert len(table) == 1
-        assert table.column("_source_market_date")[0].as_py() == "2026-01-01"
         assert table.column("order_set_id")[0].as_py() == 161676
         assert table.column("order_id")[0].as_py() == 1
 
@@ -153,7 +152,7 @@ class TestReadCsvToArrow:
         logger.addHandler(caplog.handler)
         try:
             with caplog.at_level(logging.WARNING, logger=logger.name):
-                table = read_csv_to_arrow(result)
+                table = parse_csv_to_arrow(result)
         finally:
             logger.removeHandler(caplog.handler)
         assert len(table) == 0
@@ -169,11 +168,12 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
             "order_set_id": "161676",
             "snapshot_time": "2026-01-01_12-06-49",
         },
+        source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
     )
     writer = MagicMock()
     monkeypatch.setattr(
-        "ingest.sources.everef.fuzzwork_orders.read_csv_to_arrow",
-        lambda result, read_options=None, parse_options=None: pa.table({"order_id": [1], "order_set_id": [161676]}),
+        "ingest.sources.everef.fuzzwork_orders.parse_csv_to_arrow",
+        lambda result, read_options=None, parse_options=None: pa.table({"order_id": [1]}),
     )
 
     writer.write.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
@@ -184,4 +184,4 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
     assert len(outcome.write_metrics) == 1
     call_kwargs = writer.write.call_args.kwargs
     assert call_kwargs["mode"].value == "insert_missing_keys"
-    assert call_kwargs["key_columns"] == ["order_id", "order_set_id", "snapshot_time"]
+    assert call_kwargs["key_columns"] == ["source_object_id", "order_id"]

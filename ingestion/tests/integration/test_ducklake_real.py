@@ -147,7 +147,7 @@ def test_replace_table_overwrites_existing_rows(shared_con):
 @pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_merge_raises_for_matching_key_with_different_values(shared_con):
-    first = pa.table({"id": [1], "value": [10], "_source_market_date": ["2026-01-01"]})
+    first = pa.table({"id": [1], "value": [10], "source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH) as writer:
         writer.write(
             first,
@@ -156,7 +156,7 @@ def test_merge_raises_for_matching_key_with_different_values(shared_con):
             key_columns=["id"],
         )
 
-    second = pa.table({"id": [1], "value": [99], "_source_market_date": ["2026-01-01"]})
+    second = pa.table({"id": [1], "value": [99], "source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH) as writer:
         with pytest.raises(ValueError, match="differing values"):
             writer.write(
@@ -175,7 +175,7 @@ def test_merge_raises_for_matching_key_with_different_values(shared_con):
 @pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_insert_missing_keys_is_idempotent_for_identical_snapshot(shared_con):
-    rows = pa.table({"id": [1], "value": [10], "_source_market_date": ["2026-01-01"]})
+    rows = pa.table({"id": [1], "value": [10], "source_market_date": ["2026-01-01"]})
 
     with DuckLakeWriter(_ATTACH) as writer:
         writer.write(
@@ -202,7 +202,7 @@ def test_insert_missing_keys_is_idempotent_for_identical_snapshot(shared_con):
 @pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from_source(shared_con):
-    first = pa.table({"id": [1], "value": [10], "_source_market_date": ["2026-01-01"]})
+    first = pa.table({"id": [1], "value": [10], "source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH) as writer:
         writer.write(
             first,
@@ -211,7 +211,7 @@ def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from
             key_columns=["id"],
         )
 
-    second = pa.table({"id": [2], "value": [20], "_source_market_date": ["2026-01-01"]})
+    second = pa.table({"id": [2], "value": [20], "source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH) as writer:
         with pytest.raises(ValueError, match="source_date"):
             writer.write(
@@ -222,7 +222,7 @@ def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from
             )
 
     rows = shared_con.execute(
-        f'SELECT id, value, "_source_market_date" FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}" ORDER BY id'
+        f'SELECT id, value, "source_market_date" FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}" ORDER BY id'
     ).fetchall()
     assert rows == [(1, 10, "2026-01-01")]
 
@@ -230,7 +230,7 @@ def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from
 @pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_insert_missing_keys_allows_partial_source_date_coverage(shared_con):
-    first = pa.table({"id": [1], "value": [10], "_source_market_date": ["2026-01-01"]})
+    first = pa.table({"id": [1], "value": [10], "source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH) as writer:
         writer.write(
             first,
@@ -239,7 +239,7 @@ def test_insert_missing_keys_allows_partial_source_date_coverage(shared_con):
             key_columns=["id"],
         )
 
-    second = pa.table({"id": [2], "value": [20], "_source_market_date": ["2026-01-01"]})
+    second = pa.table({"id": [2], "value": [20], "source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH) as writer:
         writer.write(
             second,
@@ -249,6 +249,6 @@ def test_insert_missing_keys_allows_partial_source_date_coverage(shared_con):
         )
 
     rows = shared_con.execute(
-        f'SELECT id, value, "_source_market_date" FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY id'
+        f'SELECT id, value, "source_market_date" FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY id'
     ).fetchall()
     assert rows == [(1, 10, "2026-01-01"), (2, 20, "2026-01-01")]

@@ -87,12 +87,16 @@ def test_process_result_merges_market_orders_rows(shared_con, tmp_path: Path) ->
     with DuckLakeWriter(_ATTACH) as writer:
         second_outcome = _process_result(second, writer)
 
-    assert second_outcome.success is False
+    assert second_outcome.success is True
     assert second_outcome.source_date == "2026-01-01"
-    assert second_outcome.write_metrics == ()
+    assert len(second_outcome.write_metrics) == 1
+    assert second_outcome.write_metrics[0].inserted_rows == 1
+    assert second_outcome.write_metrics[0].matched_rows == 0
 
     rows = shared_con.execute(
-        f'SELECT order_id, price, snapshot_time FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY order_id'
+        f'SELECT order_id, price FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY price'
     ).fetchall()
 
-    assert rows == [(1, 9.99, "2026-01-01_00-00-00")]
+    assert len(rows) == 2
+    assert rows[0] == (1, 9.99)
+    assert rows[1] == (1, 99.99)

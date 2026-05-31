@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 import pyarrow as pa
@@ -10,8 +11,14 @@ import pyarrow as pa
 from ingest.archive.tarball import ExtractedTarball
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefReferencesCliConfig
-from ingest.publishers.ducklake import DuckLakeWriteMetrics, DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
-from ingest.sources.everef.util import EVEREF_BASE, add_provenance
+from ingest.publishers.ducklake import (
+    DuckLakeWriteMetrics,
+    DuckLakeWriter,
+    DuckLakeWriterMode,
+    RawDuckLakeTable,
+    compute_source_object_id,
+)
+from ingest.sources.everef.util import EVEREF_BASE, build_source_object_metadata
 from ingest.sources.pipeline import PipelineProcessResult, run_pipeline as _run_pipeline
 
 logger = logging.getLogger("ingest.sources.everef")
@@ -114,7 +121,7 @@ def _build_cache_objects() -> list[CacheObject]:
     ]
 
 
-def _parse_json_to_table(member_path: str, result: CacheResult, archive_name: str) -> pa.Table:
+def _parse_json_to_table(member_path: str, archive_name: str) -> pa.Table:
     with open(member_path) as f:
         data = json.load(f)
 
@@ -165,14 +172,7 @@ def _parse_json_to_table(member_path: str, result: CacheResult, archive_name: st
             mismatch_count,
         )
 
-    table = pa.Table.from_pylist(rows)
-    return add_provenance(
-        table,
-        result,
-        extra_columns={
-            "_source_archive_member": pa.array([archive_name] * len(table), type=pa.utf8()),
-        },
-    )
+    return pa.Table.from_pylist(rows)
 
 
 def _process_member(
@@ -193,7 +193,7 @@ def _process_member(
     table_key = table_info
 
     try:
-        table = _parse_json_to_table(member_path, result, archive_name)
+        table = _parse_json_to_table(member_path, archive_name)
         if table.num_rows == 0:
             logger.warning("Zero-row table for archive_member=%s", archive_name)
             return True, None
@@ -213,65 +213,126 @@ def _process_member(
 
 
 def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
-    with ExtractedTarball(result.path) as archive:
-        json_members = list(archive.iter_json_files())
-        if not json_members:
-            logger.warning(
-                "No JSON files found in archive identity_key=%s path=%s",
-                result.identity_key,
-                result.path,
+    source_url = result.version.source_url
+    soid = compute_source_object_id("everef", "reference_data", source_url)
+
+    try:
+        metadata = build_source_object_metadata(result, "everef", "reference_data")
+        writer.upsert_source_object(metadata)
+
+        with ExtractedTarball(result.path) as archive:
+            json_members = list(archive.iter_json_files())
+            if not json_members:
+                logger.warning(
+                    "No JSON files found in archive identity_key=%s path=%s",
+                    result.identity_key,
+                    result.path,
+                )
+                writer.upsert_source_object(
+                    {
+                        "source_object_id": soid,
+                        "status": "failed",
+                        "status_reason": "no JSON files in archive",
+                    }
+                )
+                return PipelineProcessResult(
+                    success=False, source_date=str(result.identity_key.get("source_date", "unknown"))
+                )
+
+            writer.upsert_source_object(
+                {
+                    "source_object_id": soid,
+                    "status": "parsed",
+                    "parsed_at": datetime.now(UTC),
+                }
             )
-            return PipelineProcessResult(
-                success=False, source_date=str(result.identity_key.get("source_date", "unknown"))
+
+            logger.info(
+                "Reference archive summary source_date=%s member_count=%d first=%s last=%s",
+                result.identity_key.get("source_date"),
+                len(json_members),
+                json_members[0].archive_name,
+                json_members[-1].archive_name,
             )
 
-        logger.info(
-            "Reference archive summary source_date=%s member_count=%d first=%s last=%s",
-            result.identity_key.get("source_date"),
-            len(json_members),
-            json_members[0].archive_name,
-            json_members[-1].archive_name,
-        )
+            member_success = 0
+            member_failed = 0
+            metrics: list[DuckLakeWriteMetrics] = []
+            for member in json_members:
+                ok, write_metrics = _process_member(str(member.path), member.archive_name, result, writer)
+                if ok:
+                    member_success += 1
+                    if write_metrics is not None:
+                        metrics.append(write_metrics)
+                else:
+                    member_failed += 1
 
-        member_success = 0
-        member_failed = 0
-        metrics: list[DuckLakeWriteMetrics] = []
-        for member in json_members:
-            ok, write_metrics = _process_member(str(member.path), member.archive_name, result, writer)
-            if ok:
-                member_success += 1
-                if write_metrics is not None:
-                    metrics.append(write_metrics)
-            else:
-                member_failed += 1
-
-        logger.info(
-            "Reference archive result source_date=%s member_success=%d member_failed=%d",
-            result.identity_key.get("source_date"),
-            member_success,
-            member_failed,
-        )
-
-        if member_failed > 0:
-            logger.warning(
-                "Partial or failed processing success=%d failed=%d",
+            logger.info(
+                "Reference archive result source_date=%s member_success=%d member_failed=%d",
+                result.identity_key.get("source_date"),
                 member_success,
                 member_failed,
             )
+
+            if member_failed > 0:
+                logger.warning(
+                    "Partial or failed processing success=%d failed=%d",
+                    member_success,
+                    member_failed,
+                )
+                writer.upsert_source_object(
+                    {
+                        "source_object_id": soid,
+                        "status": "failed",
+                        "status_reason": f"{member_failed} members failed",
+                    }
+                )
+                return PipelineProcessResult(
+                    success=False,
+                    source_date=str(result.identity_key.get("source_date", "unknown")),
+                    write_metrics=tuple(metrics),
+                )
+            if member_success == 0:
+                logger.error("No reference files were successfully processed")
+                writer.upsert_source_object(
+                    {
+                        "source_object_id": soid,
+                        "status": "failed",
+                        "status_reason": "no members processed",
+                    }
+                )
+                return PipelineProcessResult(
+                    success=False, source_date=str(result.identity_key.get("source_date", "unknown"))
+                )
+
+            writer.upsert_source_object(
+                {
+                    "source_object_id": soid,
+                    "status": "ingested",
+                    "ingested_at": datetime.now(UTC),
+                    "status_reason": None,
+                }
+            )
             return PipelineProcessResult(
-                success=False,
+                success=True,
                 source_date=str(result.identity_key.get("source_date", "unknown")),
                 write_metrics=tuple(metrics),
             )
-        if member_success == 0:
-            logger.error("No reference files were successfully processed")
-            return PipelineProcessResult(
-                success=False, source_date=str(result.identity_key.get("source_date", "unknown"))
+    except Exception:
+        logger.exception("Failed to process %s", result.identity_key)
+        try:
+            writer.upsert_source_object(
+                {
+                    "source_object_id": soid,
+                    "status": "failed",
+                    "status_reason": "see log for details",
+                }
             )
+        except Exception:
+            pass
         return PipelineProcessResult(
-            success=True,
+            success=False,
             source_date=str(result.identity_key.get("source_date", "unknown")),
-            write_metrics=tuple(metrics),
         )
 
 
