@@ -36,9 +36,9 @@ The stack is defined by the two tables below.
 | Layer | Tool | Justification |
 |---|---|---|
 | **Orchestration** | Airflow | Industry-standard DAG orchestrator for ingestion, dbt, and ML jobs. |
-| **Ingestion** | Python + dlt | Lightweight, code-first ingestion approach for everef.net archives and the ESI API. See ADR-004. |
-| **Storage** | DuckLake over Parquet files | Shared analytical storage holds DuckLake data files, contracts, artifacts, and logs. DuckLake catalog metadata is durable state and should use PostgreSQL in production-style deployments. See ADR-006 and ADR-007. |
-| **Compute** | DuckDB (local or transient only) | Embedded analytical engine used for local development and single-writer batch jobs. DuckDB databases are scratch state, not cluster-shared persistent storage. See ADR-006. |
+| **Ingestion** | Python + dlt | Lightweight, code-first ingestion approach for everef.net archives and the ESI API. See ADR-004 and ADR-005. |
+| **Storage** | DuckLake over Parquet files | Shared analytical storage holds DuckLake data files, contracts, artifacts, and logs. DuckLake catalog metadata is durable state and should use PostgreSQL in production-style deployments. See ADR-007 and ADR-008. |
+| **Compute** | DuckDB (local or transient only) | Embedded analytical engine used for local development and single-writer batch jobs. DuckDB databases are scratch state, not cluster-shared persistent storage. See ADR-007. |
 | **Transformation** | dbt | SQL-first transformation with built-in lineage, testing, and documentation; reads DuckLake-backed raw table state from local/transient DuckDB compute and can materialize final curated DuckLake tables directly. |
 | **BI** | Evidence OSS | Static BI and case-study site built from markdown, SQL, and version-controlled data outputs; self-hosted builds fit the portfolio publishing model without adding another durable analytics store. |
 | **ML Experiment Tracking** | MLflow | Tracks experiments, parameters, metrics, and model artifacts; integrates cleanly with Python training scripts and serves as the model registry. |
@@ -53,7 +53,7 @@ The stack is defined by the two tables below.
 
 | Tool | Reason for Exclusion |
 |---|---|
-| **Airbyte** | Removed after evaluation. The project has two well-defined source types, does not need Airbyte's platform overhead, and is moving toward explicit single-writer dataset publication rather than syncs into a mutable destination warehouse. See ADR-004. |
+| **Airbyte** | Removed after evaluation. The project has two well-defined source types, does not need Airbyte's platform overhead, and is moving toward explicit single-writer dataset publication rather than syncs into a mutable destination warehouse. See ADR-004 and ADR-005. |
 | **Great Expectations** | Overlaps with dbt tests. dbt tests cover schema, business logic, freshness, and custom assertions sufficiently for this project's scope. |
 | **DVC** | DuckLake tables, catalog metadata, contracts, manifests, and MLflow already cover persisted analytical data and model artifacts. DVC would add a parallel versioning system with no clear incremental benefit at this scale. |
 | **Tableau** | Evidence OSS is the sole BI and case-study publishing surface. Tableau would duplicate the reporting layer and split effort across two presentation stacks. |
@@ -69,8 +69,8 @@ The stack is defined by the two tables below.
 
 - 2026-04-13 - Storage and compute were separated
   - The earlier taxonomy implicitly treated DuckDB as both storage and compute.
-    Following ADR-006, the stack now distinguishes shared storage from local or
-    transient compute. This was later refined by ADR-007 so DuckLake tables are the
+    Following ADR-007, the stack now distinguishes shared storage from local or
+    transient compute. This was later refined by ADR-008 so DuckLake tables are the
     canonical analytical table contract and Parquet is the physical file format.
     DuckDB remains in the stack as a local analytical engine only.
 
@@ -79,7 +79,7 @@ The stack is defined by the two tables below.
   - GitHub Actions and GHCR are recorded as the CI and image-publishing path.
 
 - 2026-05-10 - Refine storage contract for DuckLake
-  - ADR-007 adopts DuckLake as the canonical analytical table format. Parquet remains
+  - ADR-008 adopts DuckLake as the canonical analytical table format. Parquet remains
     the physical data file format rather than the table contract.
 
 - 2026-05-12 - Split image publishing from self-hosted validation runners

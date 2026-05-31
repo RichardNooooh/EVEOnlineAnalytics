@@ -81,6 +81,14 @@ primary keys, and validation belong to `ingest.contracts.market_history`. The dl
 should wire those boundaries together and stream chunks rather than own client behavior
 or contract definitions.
 
+Everef archive discovery intentionally does not rely on `dlt.sources.filesystem`
+wildcard or recursive HTTP listing as its canonical path. Exact file access works, but
+wildcard discovery can return incomplete `fsspec` size metadata and recursive listing
+does not traverse the endpoint reliably. Everef acquisition remains custom because it
+requires deterministic URL construction, explicit HTTP probe metadata, endpoint-specific
+archive parsing, source-specific validation, late-revision handling, and DuckLake
+publication semantics.
+
 ## Local Development/Demo Runtime
 
 The repository includes a local Docker Compose Airflow + dlt runtime as a
@@ -204,5 +212,5 @@ See also:
 - `docs/data_lifecycle.md`
 - `docs/storage_layout.md`
 - `docs/data_dictionary.md`
-- `docs/adr/adr-006-parquet-system-of-record.md`
-- `docs/adr/adr-007-ducklake-canonical-table-format.md`
+- `docs/adr/adr-007-parquet-system-of-record.md`
+- `docs/adr/adr-008-ducklake-canonical-table-format.md`

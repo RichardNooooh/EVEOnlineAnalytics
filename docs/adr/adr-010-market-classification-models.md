@@ -6,7 +6,7 @@ tags:
 amended: []
 ---
 
-# ADR-009 - Classification Models over Regression for Market Analysis
+# ADR-010 - Classification Models over Regression for Market Analysis
 
 ## Context
 

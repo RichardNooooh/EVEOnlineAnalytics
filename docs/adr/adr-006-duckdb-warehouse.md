@@ -6,10 +6,10 @@ tags:
 amended:
   - 2026-04-13
   - 2026-05-10
-superseded_by: ADR-006
+superseded_by: ADR-007
 ---
 
-# ADR-005 - Superseded: DuckDB as Primary Warehouse
+# ADR-006 - Superseded: DuckDB as Primary Warehouse
 
 ## Context
 
@@ -19,12 +19,12 @@ embedded, fast, and simple to operate.
 
 ## Original Decision
 
-ADR-005 originally established DuckDB as the primary warehouse, with a shared writable
+ADR-006 originally established DuckDB as the primary warehouse, with a shared writable
 `.duckdb` file placed on NFS-backed persistent storage.
 
 ## Current Status
 
-This ADR is superseded by ADR-006 and refined further by ADR-007.
+This ADR is superseded by ADR-007 and refined further by ADR-008.
 
 The repository no longer treats a cluster-shared writable DuckDB file as the system of
 record. The current contract is:
@@ -48,11 +48,11 @@ single-writer publication rules.
 
 ## Amendments
 
-- 2026-04-13 - Superseded by ADR-006
-  - ADR-006 replaces the shared DuckDB warehouse contract with a single-writer dataset
+- 2026-04-13 - Superseded by ADR-007
+  - ADR-007 replaces the shared DuckDB warehouse contract with a single-writer dataset
     publication architecture. DuckDB remains in the stack only as local or transient
     compute, not as cluster-shared writable storage.
 
-- 2026-05-10 - Refined by ADR-007
-  - ADR-007 adopts DuckLake as the canonical lakehouse table format. Parquet remains
+- 2026-05-10 - Refined by ADR-008
+  - ADR-008 adopts DuckLake as the canonical lakehouse table format. Parquet remains
     the physical data file format underneath DuckLake.
