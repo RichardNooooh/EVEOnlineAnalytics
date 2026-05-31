@@ -38,6 +38,8 @@ observability, and deployment wiring that satisfies those requirements.
 - Production-style or mounted/shared DuckLake catalogs must use PostgreSQL.
 - No runtime may depend on a cluster-shared writable `.duckdb` file.
 - Publication is single-writer for the relevant dataset or partition scope.
+- PostgreSQL advisory locks keyed by publication scope enforce single-writer
+  publication semantics; Airflow DAG-level `max_active_runs=1` is only an outer guard.
 
 ### Durable mounts
 
