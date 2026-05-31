@@ -107,9 +107,11 @@ class TestProcessMember:
         result = make_cache_result(str(tarball_path))
 
         writer = MagicMock()
-        ok = _process_member(str(member_path), "types.json", result, writer)
+        writer.write.return_value = MagicMock(replaced_rows=0)
+        ok, metrics = _process_member(str(member_path), "types.json", result, writer)
 
         assert ok is True
+        assert metrics is writer.write.return_value
         writer.write.assert_called_once()
         call_kwargs = writer.write.call_args.kwargs
         assert call_kwargs["table"].value == "raw_reference_types"
@@ -121,9 +123,10 @@ class TestProcessMember:
 
         result = make_cache_result(str(tmp_path / "archive.tar.xz"))
         writer = MagicMock()
-        ok = _process_member(str(member_path), "unknown.json", result, writer)
+        ok, metrics = _process_member(str(member_path), "unknown.json", result, writer)
 
         assert ok is True
+        assert metrics is None
         writer.write.assert_not_called()
 
     def test_handles_parse_error(self, tmp_path: Path) -> None:
@@ -132,7 +135,8 @@ class TestProcessMember:
 
         result = make_cache_result(str(tmp_path / "archive.tar.xz"))
         writer = MagicMock()
-        ok = _process_member(str(member_path), "types.json", result, writer)
+        ok, metrics = _process_member(str(member_path), "types.json", result, writer)
 
         assert ok is False
+        assert metrics is None
         writer.write.assert_not_called()

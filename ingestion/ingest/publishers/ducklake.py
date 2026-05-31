@@ -45,6 +45,16 @@ class DuckLakeTableTarget:
     table: str
 
 
+@dataclass(frozen=True)
+class DuckLakeWriteMetrics:
+    table: RawDuckLakeTable
+    mode: DuckLakeWriterMode
+    attempted_rows: int
+    inserted_rows: int
+    matched_rows: int
+    replaced_rows: int
+
+
 class RawDuckLakeTable(StrEnum):
     MARKET_HISTORY = "raw_market_history"
     MARKET_ORDERS = "raw_market_orders"
@@ -270,6 +280,81 @@ def _validate_replace_table_arguments(key_columns: Sequence[str]) -> None:
         raise ValueError("REPLACE_TABLE does not accept key_columns")
 
 
+def _target_exists(con: duckdb.DuckDBPyConnection, *, alias: str, target: DuckLakeTableTarget) -> bool:
+    exists = con.execute(
+        """
+        SELECT COUNT(*)
+        FROM duckdb_tables()
+        WHERE database_name = ?
+            AND schema_name = ?
+            AND table_name = ?
+        """,
+        [alias, target.schema, target.table],
+    ).fetchone()
+    return bool(exists and exists[0])
+
+
+def _count_target_rows(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    alias: str,
+    target: DuckLakeTableTarget,
+    quoted_target: str,
+) -> int:
+    if not _target_exists(con, alias=alias, target=target):
+        return 0
+    row = con.execute(f"SELECT COUNT(*) FROM {quoted_target}").fetchone()
+    return int(row[0])
+
+
+def _count_source_rows_with_matches(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    quoted_target: str,
+    quoted_source: str,
+    key_columns: Sequence[str],
+) -> int:
+    conditions = " AND ".join(
+        f"target.{_quote_identifier(key)} = source.{_quote_identifier(key)}" for key in key_columns
+    )
+    row = con.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM {quoted_source} AS source
+        WHERE EXISTS (
+            SELECT 1
+            FROM {quoted_target} AS target
+            WHERE {conditions}
+        )
+        """
+    ).fetchone()
+    return int(row[0])
+
+
+def _count_source_rows_without_matches(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    quoted_target: str,
+    quoted_source: str,
+    key_columns: Sequence[str],
+) -> int:
+    conditions = " AND ".join(
+        f"target.{_quote_identifier(key)} = source.{_quote_identifier(key)}" for key in key_columns
+    )
+    row = con.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM {quoted_source} AS source
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM {quoted_target} AS target
+            WHERE {conditions}
+        )
+        """
+    ).fetchone()
+    return int(row[0])
+
+
 class DuckLakeWriter:
     """Context-managed writer for raw DuckLake tables.
 
@@ -312,6 +397,7 @@ class DuckLakeWriter:
 
         self._attach = config or _build_default_attach_config()
         self._con: duckdb.DuckDBPyConnection | None = None
+        self._write_history: list[DuckLakeWriteMetrics] = []
 
     def __enter__(self) -> DuckLakeWriter:
         self._con = duckdb.connect()
@@ -333,6 +419,10 @@ class DuckLakeWriter:
         self._con.close()
         self._con = None
 
+    @property
+    def write_history(self) -> tuple[DuckLakeWriteMetrics, ...]:
+        return tuple(self._write_history)
+
     def write(
         self,
         arrow_table: pa.Table,
@@ -340,7 +430,7 @@ class DuckLakeWriter:
         table: RawDuckLakeTable,
         mode: DuckLakeWriterMode,
         key_columns: Sequence[str] = (),
-    ) -> None:
+    ) -> DuckLakeWriteMetrics:
         """Write rows to a raw DuckLake table.
 
         `INSERT_MISSING_KEYS` inserts only previously unseen keys after asserting matched
@@ -378,6 +468,7 @@ class DuckLakeWriter:
         )
 
         quoted_target = _quote_table_target(self._attach.alias, _target_for(table))
+        target = _target_for(table)
 
         if mode is DuckLakeWriterMode.REPLACE_TABLE and len(arrow_table) == 0:
             raise ValueError("REPLACE_TABLE requires a non-empty arrow_table")
@@ -386,19 +477,38 @@ class DuckLakeWriter:
             quoted_source = _quote_identifier(source_name)
             if mode is DuckLakeWriterMode.REPLACE_TABLE:
                 _validate_replace_table_arguments(key_columns)
+                replaced_rows = _count_target_rows(
+                    con,
+                    alias=self._attach.alias,
+                    target=target,
+                    quoted_target=quoted_target,
+                )
                 con.execute(
                     f"""
                     CREATE OR REPLACE TABLE {quoted_target} AS
                     SELECT * FROM {quoted_source}
                     """
                 )
+                metrics = DuckLakeWriteMetrics(
+                    table=table,
+                    mode=mode,
+                    attempted_rows=len(arrow_table),
+                    inserted_rows=len(arrow_table),
+                    matched_rows=0,
+                    replaced_rows=replaced_rows,
+                )
+                self._write_history.append(metrics)
                 logger.debug(
-                    "DuckLake write complete table=%s attempted_rows=%d key_columns=%s",
+                    "DuckLake write complete table=%s mode=%s attempted_rows=%d inserted_rows=%d matched_rows=%d replaced_rows=%d key_columns=%s",
                     table.value,
-                    len(arrow_table),
+                    mode.value,
+                    metrics.attempted_rows,
+                    metrics.inserted_rows,
+                    metrics.matched_rows,
+                    metrics.replaced_rows,
                     list(key_columns),
                 )
-                return
+                return metrics
 
             _validate_key_columns(arrow_table, key_columns)
             con.execute(
@@ -427,6 +537,19 @@ class DuckLakeWriter:
                         key_columns=key_columns,
                     )
 
+                matched_rows = _count_source_rows_with_matches(
+                    con,
+                    quoted_target=quoted_target,
+                    quoted_source=quoted_source,
+                    key_columns=key_columns,
+                )
+                inserted_rows = _count_source_rows_without_matches(
+                    con,
+                    quoted_target=quoted_target,
+                    quoted_source=quoted_source,
+                    key_columns=key_columns,
+                )
+
                 # DuckDB MERGE USING (columns) is an equi-join shorthand replacing ON.
                 # Insert-only semantics are intentional (key_columns replaces merge_keys):
                 # matched rows carry identical data (Everef sources), so WHEN MATCHED
@@ -439,12 +562,25 @@ class DuckLakeWriter:
                     WHEN NOT MATCHED THEN INSERT BY NAME
                     """
                 )
+                metrics = DuckLakeWriteMetrics(
+                    table=table,
+                    mode=mode,
+                    attempted_rows=len(arrow_table),
+                    inserted_rows=inserted_rows,
+                    matched_rows=matched_rows,
+                    replaced_rows=0,
+                )
+                self._write_history.append(metrics)
                 logger.debug(
-                    "DuckLake write complete table=%s attempted_rows=%d key_columns=%s",
+                    "DuckLake write complete table=%s mode=%s attempted_rows=%d inserted_rows=%d matched_rows=%d replaced_rows=%d key_columns=%s",
                     table.value,
-                    len(arrow_table),
+                    mode.value,
+                    metrics.attempted_rows,
+                    metrics.inserted_rows,
+                    metrics.matched_rows,
+                    metrics.replaced_rows,
                     list(key_columns),
                 )
-                return
+                return metrics
 
             raise ValueError(f"Unsupported DuckLake writer mode: {mode}")
