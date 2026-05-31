@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import logging.config
 import os
+from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Final
 
@@ -48,6 +49,50 @@ def log_runtime_context() -> None:
 
     context_fields = " ".join(f"{name}={value}" for name, value in context.items())
     logger.info("runtime_context %s", context_fields)
+
+
+def log_cli_dispatch(*, provider: str | None, subcommand: str | None, pipeline_module: str | None) -> None:
+    logger.info(
+        "cli_dispatch provider=%s subcommand=%s pipeline_module=%s",
+        provider or "-",
+        subcommand or "-",
+        pipeline_module or "-",
+    )
+
+
+def log_cli_run_start(
+    *, provider: str | None, subcommand: str | None, pipeline_module: str | None, config: object
+) -> None:
+    parts = [
+        f"provider={provider or '-'}",
+        f"subcommand={subcommand or '-'}",
+        f"pipeline_module={pipeline_module or '-'}",
+    ]
+    for name, value in _iter_loggable_config_fields(config):
+        parts.append(f"{name}={value}")
+    logger.info("cli_run_start %s", " ".join(parts))
+
+
+def _iter_loggable_config_fields(config: object) -> list[tuple[str, object]]:
+    if not is_dataclass(config):
+        return []
+
+    allowed_fields = {
+        "start_date",
+        "end_date",
+        "data_root",
+        "raw_root",
+        "ducklake_metadata_schema",
+    }
+    collected: list[tuple[str, object]] = []
+    for field in fields(config):
+        value = getattr(config, field.name)
+        if is_dataclass(value):
+            collected.extend(_iter_loggable_config_fields(value))
+            continue
+        if field.name in allowed_fields and value is not None:
+            collected.append((field.name, value))
+    return collected
 
 
 def _resolve_log_level_name() -> tuple[str, str | None]:

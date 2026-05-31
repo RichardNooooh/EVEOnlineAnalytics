@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import bz2
+import logging
 import pathlib
 from datetime import UTC, date, datetime
 
@@ -63,6 +64,18 @@ class TestBuildCacheObjects:
             "https://data.everef.net/market-history/2026/market-history-2026-06-15.csv.bz2"
         )
         assert objects[0].identity_key == {"source_date": "2026-06-15"}
+
+    def test_logs_daily_archive_queue(self, caplog: pytest.LogCaptureFixture) -> None:
+        logger = logging.getLogger("ingest.sources.everef")
+        logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(logging.INFO, logger=logger.name):
+                _build_cache_objects(date(2026, 1, 1), date(2026, 1, 2))
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert "Queued daily archive source_date=2026-01-01" in caplog.text
+        assert "Queued daily archive source_date=2026-01-02" in caplog.text
 
 
 class TestReadCsvToArrow:
