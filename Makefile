@@ -3,11 +3,17 @@
 LOCAL_AIRFLOW_ENV := infra/local/.env
 LOCAL_AIRFLOW_VERSIONS := infra/local/versions.txt
 LOCAL_COMPOSE := docker compose --env-file $(LOCAL_AIRFLOW_ENV) --env-file $(LOCAL_AIRFLOW_VERSIONS) -f infra/local/compose.yml
-INGESTION_IMAGE ?= eve-market-ingestion:local
+
+ifneq ($(wildcard $(LOCAL_AIRFLOW_ENV)),)
+include $(LOCAL_AIRFLOW_ENV)
+endif
+
+EVE_MARKET_INGESTION_IMAGE ?= eve-market-ingestion:local
+INGESTION_IMAGE ?= $(EVE_MARKET_INGESTION_IMAGE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help python-format python-format-check sql-format sql-lint ingestion-image ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke local-data-permissions-fix local-bi-up local-bi-down local-bi-smoke local-transform-bi-smoke
+.PHONY: help python-format python-format-check sql-format sql-lint ingestion-image ingestion-image-rebuild ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke local-data-permissions-fix local-bi-up local-bi-down local-bi-smoke local-transform-bi-smoke
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -26,6 +32,9 @@ sql-lint: ## Lint transformation SQL with SQLFluff
 
 ingestion-image: ## Build ingestion job image
 	docker build -f ingestion/Dockerfile -t $(INGESTION_IMAGE) ingestion
+
+ingestion-image-rebuild: ## Rebuild ingestion job image without cache
+	docker build --pull --no-cache -f ingestion/Dockerfile -t $(INGESTION_IMAGE) ingestion
 
 ingestion-image-smoke: ingestion-image ## Smoke check ingestion job image entrypoint
 	docker run --rm $(INGESTION_IMAGE) --help
