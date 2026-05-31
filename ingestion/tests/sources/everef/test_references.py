@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import tarfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from ingest.sources.everef.references import (
     _build_cache_objects,
@@ -39,9 +39,33 @@ class TestBuildCacheObject:
 
 
 class TestParseJsonToTable:
-    def test_parses_array(self, tmp_path: Path) -> None:
+    def test_parses_keyed_object(self, tmp_path: Path) -> None:
         member_path = tmp_path / "types.json"
-        data = [{"type_id": 1, "name": "foo"}, {"type_id": 2, "name": "bar"}]
+        data = {
+            "1": {
+                "type_id": 1,
+                "name": {"en": "foo", "de": "fuu"},
+                "description": {"en": "foo desc"},
+                "group_id": 10,
+                "category_id": 20,
+                "market_group_id": 30,
+                "published": True,
+                "mass": 99.0,
+                "packaged_volume": 10.0,
+                "portion_size": 1,
+                "volume": 5.0,
+                "icon_id": 40,
+                "meta_group_id": 50,
+            },
+            "2": {
+                "type_id": 2,
+                "name": {"en": "bar"},
+                "group_id": 11,
+                "category_id": 21,
+                "published": False,
+                "portion_size": 1,
+            },
+        }
         member_path.write_text(json.dumps(data))
 
         result = make_cache_result(
@@ -51,12 +75,29 @@ class TestParseJsonToTable:
 
         assert len(table) == 2
         assert "type_id" in table.column_names
-        assert "name" in table.column_names
-        assert "type_id" in table.column_names
+        assert "name_en" in table.column_names
+        assert "description_en" in table.column_names
+        assert "group_id" in table.column_names
+        assert table.column("name_en")[0].as_py() == "foo"
+        assert table.column("description_en")[0].as_py() == "foo desc"
+        assert table.column("market_group_id")[0].as_py() == 30
+        assert table.column("published")[1].as_py() is False
+        assert "mass" not in table.column_names
+        assert "packaged_volume" not in table.column_names
+        assert "portion_size" not in table.column_names
 
     def test_adds_provenance(self, tmp_path: Path) -> None:
         member_path = tmp_path / "regions.json"
-        data = [{"region_id": 10000001, "name": "The Forge"}]
+        data = {
+            "10000001": {
+                "region_id": 10000001,
+                "name": {"en": "The Forge"},
+                "description": {"en": "Trade hub region"},
+                "universe_id": "eve",
+                "faction_id": 500001,
+                "wormhole_class_id": 7,
+            }
+        }
         member_path.write_text(json.dumps(data))
 
         result = make_cache_result(
@@ -78,25 +119,76 @@ class TestParseJsonToTable:
 
     def test_empty_list_returns_empty_table(self, tmp_path: Path) -> None:
         member_path = tmp_path / "empty.json"
-        member_path.write_text("[]")
+        member_path.write_text("{}")
 
         result = make_cache_result(str(tmp_path / "archive.tar.xz"))
         table = _parse_json_to_table(str(member_path), result, "empty.json")
 
         assert table.num_rows == 0
 
-    def test_non_list_returns_empty_table(self, tmp_path: Path) -> None:
+    def test_non_keyed_object_returns_empty_table(self, tmp_path: Path) -> None:
         member_path = tmp_path / "obj.json"
-        member_path.write_text('{"key": "value"}')
+        member_path.write_text("[]")
 
         result = make_cache_result(str(tmp_path / "archive.tar.xz"))
         table = _parse_json_to_table(str(member_path), result, "obj.json")
 
         assert table.num_rows == 0
 
+    def test_market_groups_projection(self, tmp_path: Path) -> None:
+        member_path = tmp_path / "market_groups.json"
+        data = {
+            "1857": {
+                "market_group_id": 1857,
+                "name": {"en": "Minerals"},
+                "description": {"en": "Mined goods"},
+                "parent_group_id": 533,
+                "has_types": True,
+                "icon_id": 404,
+                "child_market_group_ids": [1, 2],
+                "type_ids": [34],
+            }
+        }
+        member_path.write_text(json.dumps(data))
+
+        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
+        table = _parse_json_to_table(str(member_path), result, "market_groups.json")
+
+        assert table.num_rows == 1
+        assert table.column("market_group_id")[0].as_py() == 1857
+        assert table.column("name_en")[0].as_py() == "Minerals"
+        assert table.column("parent_group_id")[0].as_py() == 533
+        assert table.column("has_types")[0].as_py() is True
+        assert "child_market_group_ids" not in table.column_names
+        assert "type_ids" not in table.column_names
+
+    def test_warns_on_id_mismatch(self, tmp_path: Path) -> None:
+        member_path = tmp_path / "types.json"
+        member_path.write_text(
+            json.dumps(
+                {"1": {"type_id": 2, "name": {"en": "foo"}, "group_id": 10, "category_id": 20, "published": True}}
+            )
+        )
+
+        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
+        with patch("ingest.sources.everef.references.logger.warning") as mock_warning:
+            table = _parse_json_to_table(str(member_path), result, "types.json")
+
+        assert table.num_rows == 1
+        mock_warning.assert_any_call(
+            "Reference id mismatch archive_member=%s record_key=%s id_field=%s record_id=%r",
+            "types.json",
+            "1",
+            "type_id",
+            2,
+        )
+
 
 class TestProcessMember:
-    TYPES_DATA = [{"type_id": 1, "name": "foo"}, {"type_id": 2, "name": "bar"}]
+    TYPES_DATA = {
+        "1": {"type_id": 1, "name": {"en": "foo"}, "group_id": 10, "category_id": 20, "published": True},
+        "2": {"type_id": 2, "name": {"en": "bar"}, "group_id": 11, "category_id": 21, "published": True},
+    }
 
     def test_processes_known_file(self, tmp_path: Path) -> None:
         member_path = tmp_path / "types.json"
@@ -113,9 +205,11 @@ class TestProcessMember:
         assert ok is True
         assert metrics is writer.write.return_value
         writer.write.assert_called_once()
+        written_table = writer.write.call_args.args[0]
         call_kwargs = writer.write.call_args.kwargs
         assert call_kwargs["table"].value == "raw_reference_types"
         assert call_kwargs["mode"].value == "replace_table"
+        assert "name_en" in written_table.column_names
 
     def test_skips_unknown_file(self, tmp_path: Path) -> None:
         member_path = tmp_path / "unknown.json"

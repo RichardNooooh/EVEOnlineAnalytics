@@ -61,6 +61,7 @@ class RawDuckLakeTable(StrEnum):
     FUZZWORK_ORDERS = "raw_fuzzwork_orders"
     REFERENCE_CATEGORIES = "raw_reference_categories"
     REFERENCE_GROUPS = "raw_reference_groups"
+    REFERENCE_MARKET_GROUPS = "raw_reference_market_groups"
     REFERENCE_REGIONS = "raw_reference_regions"
     REFERENCE_TYPES = "raw_reference_types"
 

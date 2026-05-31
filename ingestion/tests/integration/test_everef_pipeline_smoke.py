@@ -46,9 +46,17 @@ def _write_fuzzwork_file(path: Path) -> None:
 def _write_reference_archive(path: Path) -> None:
     staging = path.parent / "staging"
     staging.mkdir(exist_ok=True)
-    (staging / "types.json").write_text(json.dumps([{"type_id": 1, "name": "foo"}]))
+    (staging / "types.json").write_text(
+        json.dumps({"1": {"type_id": 1, "name": {"en": "foo"}, "group_id": 10, "category_id": 20, "published": True}})
+    )
+    (staging / "market_groups.json").write_text(
+        json.dumps(
+            {"1857": {"market_group_id": 1857, "name": {"en": "Minerals"}, "parent_group_id": 533, "has_types": True}}
+        )
+    )
     with tarfile.open(path, "w:xz") as archive:
         archive.add(staging / "types.json", arcname="types.json")
+        archive.add(staging / "market_groups.json", arcname="market_groups.json")
 
 
 @pytest.mark.integration

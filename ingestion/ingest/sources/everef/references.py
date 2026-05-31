@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import pyarrow as pa
 
@@ -19,6 +21,87 @@ _REFERENCE_TABLES: dict[str, RawDuckLakeTable] = {
     "regions": RawDuckLakeTable.REFERENCE_REGIONS,
     "groups": RawDuckLakeTable.REFERENCE_GROUPS,
     "categories": RawDuckLakeTable.REFERENCE_CATEGORIES,
+    "market_groups": RawDuckLakeTable.REFERENCE_MARKET_GROUPS,
+}
+
+_REFERENCE_ID_FIELDS: dict[str, str] = {
+    "types": "type_id",
+    "regions": "region_id",
+    "groups": "group_id",
+    "categories": "category_id",
+    "market_groups": "market_group_id",
+}
+
+
+def _english_text(value: object) -> str | None:
+    if not isinstance(value, Mapping):
+        return None
+    english_value = value.get("en")
+    return english_value if isinstance(english_value, str) else None
+
+
+def _project_type_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "type_id": record.get("type_id"),
+        "name_en": _english_text(record.get("name")),
+        "description_en": _english_text(record.get("description")),
+        "group_id": record.get("group_id"),
+        "category_id": record.get("category_id"),
+        "market_group_id": record.get("market_group_id"),
+        "published": record.get("published"),
+        "volume": record.get("volume"),
+        "icon_id": record.get("icon_id"),
+        "meta_group_id": record.get("meta_group_id"),
+    }
+
+
+def _project_group_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "group_id": record.get("group_id"),
+        "name_en": _english_text(record.get("name")),
+        "category_id": record.get("category_id"),
+        "published": record.get("published"),
+        "icon_id": record.get("icon_id"),
+    }
+
+
+def _project_category_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "category_id": record.get("category_id"),
+        "name_en": _english_text(record.get("name")),
+        "published": record.get("published"),
+        "icon_id": record.get("icon_id"),
+    }
+
+
+def _project_region_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "region_id": record.get("region_id"),
+        "name_en": _english_text(record.get("name")),
+        "description_en": _english_text(record.get("description")),
+        "universe_id": record.get("universe_id"),
+        "faction_id": record.get("faction_id"),
+        "wormhole_class_id": record.get("wormhole_class_id"),
+    }
+
+
+def _project_market_group_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "market_group_id": record.get("market_group_id"),
+        "name_en": _english_text(record.get("name")),
+        "description_en": _english_text(record.get("description")),
+        "parent_group_id": record.get("parent_group_id"),
+        "has_types": record.get("has_types"),
+        "icon_id": record.get("icon_id"),
+    }
+
+
+_REFERENCE_PROJECTORS: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
+    "types": _project_type_record,
+    "regions": _project_region_record,
+    "groups": _project_group_record,
+    "categories": _project_category_record,
+    "market_groups": _project_market_group_record,
 }
 
 
@@ -35,11 +118,54 @@ def _parse_json_to_table(member_path: str, result: CacheResult, archive_name: st
     with open(member_path) as f:
         data = json.load(f)
 
-    if not isinstance(data, list) or not data:
-        logger.warning("Empty or non-list JSON in archive member=%s", archive_name)
+    filename = archive_name.removesuffix(".json")
+    projector = _REFERENCE_PROJECTORS.get(filename)
+    id_field = _REFERENCE_ID_FIELDS.get(filename)
+    if projector is None or id_field is None:
+        logger.warning("No projection configured for archive member=%s", archive_name)
         return pa.Table.from_pydict({})
 
-    table = pa.Table.from_pylist(data)
+    if not isinstance(data, dict) or not data:
+        logger.warning("Empty or non-keyed JSON in archive member=%s", archive_name)
+        return pa.Table.from_pydict({})
+
+    rows: list[dict[str, Any]] = []
+    mismatch_count = 0
+    for record_key, record_value in data.items():
+        if not isinstance(record_value, Mapping):
+            logger.warning(
+                "Skipping non-object reference record archive_member=%s record_key=%s",
+                archive_name,
+                record_key,
+            )
+            continue
+
+        record_id = record_value.get(id_field)
+        if record_id is None or str(record_id) != str(record_key):
+            mismatch_count += 1
+            logger.warning(
+                "Reference id mismatch archive_member=%s record_key=%s id_field=%s record_id=%r",
+                archive_name,
+                record_key,
+                id_field,
+                record_id,
+            )
+
+        rows.append(projector(record_value))
+
+    if not rows:
+        logger.warning("No projected rows in archive member=%s", archive_name)
+        return pa.Table.from_pydict({})
+
+    if mismatch_count > 0:
+        logger.warning(
+            "Reference invariant warnings archive_member=%s id_field=%s mismatch_count=%d",
+            archive_name,
+            id_field,
+            mismatch_count,
+        )
+
+    table = pa.Table.from_pylist(rows)
     return add_provenance(
         table,
         result,
