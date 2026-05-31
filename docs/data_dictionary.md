@@ -60,7 +60,18 @@ Expected contract elements:
 - publication behavior uses idempotent insert-missing-key semantics so replay of the
   same snapshot does not duplicate rows
 
-The same snapshot-oriented publication model also applies to `raw_fuzzwork_orders`.
+### `raw_fuzzwork_orders`
+
+Durable DuckLake-backed representation of Fuzzwork order-set snapshots.
+
+Expected contract elements:
+
+- order-set identifier
+- snapshot timestamp
+- order row fields preserved from the source TSV snapshot
+- dataset class is snapshot-oriented
+- publication behavior uses idempotent insert-missing-key semantics so replay of the
+  same snapshot does not duplicate rows
 
 ### Reference Tables
 
