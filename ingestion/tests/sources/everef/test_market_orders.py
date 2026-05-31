@@ -47,21 +47,27 @@ class TestListSnapshots:
         ]
 
     def test_empty_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
-        logger.addHandler(caplog.handler)
         client = MagicMock()
         client.fetch_text.return_value = "<html></html>"
-        filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, client)
-        logger.removeHandler(caplog.handler)
+        logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(logging.WARNING, logger=logger.name):
+                filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, client)
+        finally:
+            logger.removeHandler(caplog.handler)
         assert filenames == []
         assert "No snapshots discovered" in caplog.text
         assert "prefix=market-orders/history" in caplog.text
 
     def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
-        logger.addHandler(caplog.handler)
         client = MagicMock()
         client.fetch_text.return_value = "<html>bad</html>"
-        filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, client)
-        logger.removeHandler(caplog.handler)
+        logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(logging.WARNING, logger=logger.name):
+                filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, client)
+        finally:
+            logger.removeHandler(caplog.handler)
         assert filenames == []
         assert "No snapshots discovered" in caplog.text
         assert "prefix=market-orders/history" in caplog.text
@@ -205,7 +211,6 @@ class TestReadCsvToArrow:
         assert table.column("_source_local_path")[0].as_py() == str(csv_path)
 
     def test_zero_row_warning(self, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
-        logger.addHandler(caplog.handler)
         path = tmp_path / "empty.csv.bz2"
         with bz2.open(path, "wt") as f:
             f.write("order_id,type_id\n")
@@ -215,8 +220,12 @@ class TestReadCsvToArrow:
             identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
             source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
         )
-        table = read_csv_to_arrow(result)
-        logger.removeHandler(caplog.handler)
+        logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(logging.WARNING, logger=logger.name):
+                table = read_csv_to_arrow(result)
+        finally:
+            logger.removeHandler(caplog.handler)
         assert len(table) == 0
         assert "Zero-row CSV file" in caplog.text
 

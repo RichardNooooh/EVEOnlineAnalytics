@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
 
@@ -11,11 +12,12 @@ from ingest.cache.primitives import UpdateMode
 
 @pytest.fixture
 def ref() -> RawObjectRef:
+    suffix = uuid4().hex
     return RawObjectRef(
         source_name="test",
         dataset_name="test_ds",
-        identity_hash="hash-pub",
-        identity_key={"k": "v"},
+        identity_hash=f"hash-pub-{suffix}",
+        identity_key={"k": suffix},
         update_mode=UpdateMode.SNAPSHOT,
     )
 
