@@ -76,8 +76,8 @@ configuration and publication-specific storage/catalog policy live at the ingest
 publisher boundary.
 
 For Everef ingestion, URL construction, source-date iteration, and HTTP probe metadata
-belong to the canonical client module `ingest.clients.everef`. Market-history schema,
-primary keys, and validation belong to `ingest.contracts.market_history`. The dlt source
+belong to the canonical client module `eve_ingest.clients.everef`. Market-history schema,
+primary keys, and validation belong to `eve_ingest.contracts.market_history`. The dlt source
 should wire those boundaries together and stream chunks rather than own client behavior
 or contract definitions.
 

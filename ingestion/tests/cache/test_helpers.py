@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from ingest.cache.client_types import RevalidationMetadata
-from ingest.cache.helpers import merge_revalidation
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
+from eve_ingest.raw_objects.helpers import merge_revalidation
 
 
 class TestMergeRevalidation:

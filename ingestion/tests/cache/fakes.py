@@ -6,10 +6,10 @@ from dataclasses import replace
 from datetime import datetime
 from uuid import uuid4
 
-from ingest.cache.client_types import RevalidationMetadata
-from ingest.cache.helpers import merge_revalidation
-from ingest.cache.ledger.runtime import LedgerTx
-from ingest.cache.ledger.types import (
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
+from eve_ingest.raw_objects.helpers import merge_revalidation
+from eve_ingest.raw_objects.ledger.repository import LedgerTx
+from eve_ingest.raw_objects.ledger.models import (
     CurrentRawObjectState,
     PublicationContext,
     RawObjectEntry,

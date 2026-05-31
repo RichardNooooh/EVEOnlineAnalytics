@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY README.md ./
 # COPY .dlt/config.toml ./.dlt/config.toml
-COPY ingest ./ingest
+COPY eve_ingest ./eve_ingest
 # COPY main.py ./main.py
 
 RUN --mount=type=cache,target=/root/.cache/uv \

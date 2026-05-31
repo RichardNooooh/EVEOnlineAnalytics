@@ -4,10 +4,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from ingest.cache.client_types import RevalidationMetadata
-from ingest.cache.ledger import RawObjectLedger
-from ingest.cache.ledger.types import RawObjectRef
-from ingest.cache.primitives import UpdateMode
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
+from eve_ingest.raw_objects.ledger import RawObjectLedger
+from eve_ingest.raw_objects.ledger.models import RawObjectRef
+from eve_ingest.raw_objects.primitives import UpdateMode
 
 
 @pytest.mark.integration

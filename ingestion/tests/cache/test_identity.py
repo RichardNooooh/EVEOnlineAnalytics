@@ -4,7 +4,7 @@ import hashlib
 
 import pytest
 
-from ingest.cache.identity import (
+from eve_ingest.raw_objects.identity import (
     canonical_identity_json,
     hash_identity_key,
     normalize_source_path,
@@ -12,7 +12,7 @@ from ingest.cache.identity import (
     resolve_identity_key,
     validate_identity_key,
 )
-from ingest.cache.primitives import IdentityKey, IdentityScalar
+from eve_ingest.raw_objects.primitives import IdentityKey, IdentityScalar
 
 
 # ── normalize_source_relative_path ─────────────────────────────────

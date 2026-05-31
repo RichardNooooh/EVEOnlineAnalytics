@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from ingest.cache import CacheObject
-from ingest.cli.config import EverefCliConfig, EverefReferencesCliConfig
-from ingest.sources.everef import fuzzwork_orders, market_history, market_orders, references
+from eve_ingest.raw_objects import CacheObject
+from eve_ingest.cli.config import EverefCliConfig, EverefReferencesCliConfig
+from eve_ingest.sources.everef import fuzzwork_orders, market_history, market_orders, reference_data
 from tests.sources.everef.conftest import install_pipeline_fakes, make_cache_result, make_everef_pipeline_config
 
 
@@ -182,7 +182,7 @@ def test_references_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     )
     con, mock_pubtrack = install_pipeline_fakes(monkeypatch, [fake_result])
     monkeypatch.setattr(
-        references,
+        reference_data,
         "_build_cache_objects",
         lambda: [
             CacheObject(
@@ -194,6 +194,6 @@ def test_references_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
 
-    assert references.run_pipeline(config) == 0
+    assert reference_data.run_pipeline(config) == 0
     mock_pubtrack.mark_published_many.assert_called_once()
     assert con.closed is True

@@ -5,11 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
-from ingest.cli.builders import build_everef_config
-from ingest.cli.parser import build_parser
-from ingest.logging import configure_logging
-from ingest.main import main
-from ingest.util import (
+from eve_ingest.cli.config_builders import build_everef_config
+from eve_ingest.cli.parser import build_parser
+from eve_ingest.logging_config import configure_logging
+from eve_ingest.__main__ import main
+from eve_ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
@@ -146,22 +146,22 @@ def test_main_propagates_non_zero_handler_return(monkeypatch) -> None:
 
             return _Args()
 
-    monkeypatch.setattr("ingest.main.build_parser", lambda: _FakeParser())
+    monkeypatch.setattr("eve_ingest.__main__.build_parser", lambda: _FakeParser())
 
     assert main(["ignored"]) == 1
 
 
 def test_main_logs_cli_dispatch(monkeypatch, caplog: pytest.LogCaptureFixture) -> None:
-    monkeypatch.setattr("ingest.main.configure_logging", lambda: None)
-    monkeypatch.setattr("ingest.main.log_runtime_context", lambda: None)
-    ingest_logger = logging.getLogger("ingest")
+    monkeypatch.setattr("eve_ingest.__main__.configure_logging", lambda: None)
+    monkeypatch.setattr("eve_ingest.__main__.log_runtime_context", lambda: None)
+    ingest_logger = logging.getLogger("eve_ingest")
 
     class _FakeParser:
         def parse_args(self, argv: list[str]):
             class _Args:
                 command = "everef"
                 sub_command = "market-history"
-                pipeline_module = "ingest.sources.everef.market_history"
+                pipeline_module = "eve_ingest.sources.everef.market_history"
 
                 @staticmethod
                 def handler(args, parser) -> int:
@@ -169,23 +169,23 @@ def test_main_logs_cli_dispatch(monkeypatch, caplog: pytest.LogCaptureFixture) -
 
             return _Args()
 
-    monkeypatch.setattr("ingest.main.build_parser", lambda: _FakeParser())
+    monkeypatch.setattr("eve_ingest.__main__.build_parser", lambda: _FakeParser())
 
     ingest_logger.addHandler(caplog.handler)
     try:
-        with caplog.at_level(logging.INFO, logger="ingest"):
+        with caplog.at_level(logging.INFO, logger="eve_ingest"):
             assert main(["ignored"]) == 0
     finally:
         ingest_logger.removeHandler(caplog.handler)
 
     assert (
-        "cli_dispatch provider=everef subcommand=market-history pipeline_module=ingest.sources.everef.market_history"
+        "cli_dispatch provider=everef subcommand=market-history pipeline_module=eve_ingest.sources.everef.market_history"
         in caplog.text
     )
 
 
 def test_parser_logs_cli_run_start(caplog: pytest.LogCaptureFixture) -> None:
-    ingest_logger = logging.getLogger("ingest")
+    ingest_logger = logging.getLogger("eve_ingest")
     parser = build_parser()
     args = parser.parse_args(
         [
@@ -202,13 +202,13 @@ def test_parser_logs_cli_run_start(caplog: pytest.LogCaptureFixture) -> None:
     try:
         with patch("importlib.import_module") as import_module:
             import_module.return_value.run_pipeline.return_value = 0
-            with caplog.at_level(logging.INFO, logger="ingest"):
+            with caplog.at_level(logging.INFO, logger="eve_ingest"):
                 assert args.handler(args, parser) == 0
     finally:
         ingest_logger.removeHandler(caplog.handler)
 
     assert (
-        "cli_run_start provider=everef subcommand=market-history pipeline_module=ingest.sources.everef.market_history"
+        "cli_run_start provider=everef subcommand=market-history pipeline_module=eve_ingest.sources.everef.market_history"
         in caplog.text
     )
     assert "start_date=2025-01-01" in caplog.text
@@ -221,7 +221,7 @@ def test_configure_logging_warns_on_invalid_env_level(monkeypatch, capsys) -> No
 
     configure_logging(force=True)
 
-    logging.getLogger("ingest.test").info("info still logs")
+    logging.getLogger("eve_ingest.test").info("info still logs")
 
     captured = capsys.readouterr()
     assert "Invalid INGEST_LOG_LEVEL='BANANA'; falling back to INFO" in captured.err

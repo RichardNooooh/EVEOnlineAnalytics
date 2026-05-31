@@ -4,12 +4,9 @@ import duckdb
 import pyarrow as pa
 import pytest
 
-from ingest.publishers.ducklake import (
-    DuckLakeAttachConfig,
-    DuckLakeWriter,
-    DuckLakeWriterMode,
-    RawDuckLakeTable,
-)
+from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
+from eve_ingest.ducklake.writer import DuckLakeWriter
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeTable
 
 
 class _KeepConnection:
@@ -33,9 +30,9 @@ class _KeepConnection:
 def shared_con(monkeypatch):
     """Real in-memory DuckDB connection that is NOT closed on writer exit."""
     con = _KeepConnection()
-    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
     monkeypatch.setattr(
-        "ingest.publishers.ducklake._attach_ducklake",
+        "eve_ingest.ducklake.writer._attach_ducklake",
         lambda c, config: None,
     )
     yield con._con

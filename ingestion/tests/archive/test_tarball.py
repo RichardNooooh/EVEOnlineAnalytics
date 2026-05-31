@@ -5,7 +5,7 @@ import tarfile
 
 import pytest
 
-from ingest.archive.tarball import ExtractedTarball, ExtractedTarMember
+from eve_ingest.archives.tarball import ExtractedTarball, ExtractedTarMember
 
 
 def make_tarball(path: Path, files: dict[str, str]) -> Path:
