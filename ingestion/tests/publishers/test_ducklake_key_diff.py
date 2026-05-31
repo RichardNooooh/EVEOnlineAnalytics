@@ -4,7 +4,7 @@ import duckdb
 import pyarrow as pa
 import pytest
 
-from ingest.publishers.ducklake import _assert_matched_key_rows_identical, _temporary_arrow_view
+from eve_ingest.ducklake.writer import _assert_matched_key_rows_identical, _temporary_arrow_view
 
 
 @pytest.fixture

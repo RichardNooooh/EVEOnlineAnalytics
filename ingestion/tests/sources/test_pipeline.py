@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from ingest.cache import CacheObject, CacheResult, UpdateMode
-from ingest.cli.config import EverefReferencesCliConfig
-from ingest.publishers.ducklake import DuckLakeWriteMetrics, DuckLakeWriterMode, RawDuckLakeTable
-from ingest.sources.pipeline import PipelineProcessResult, run_pipeline
+from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
+from eve_ingest.cli.config import EverefReferencesCliConfig
+from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics, DuckLakeWriterMode, RawDuckLakeTable
+from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult, run_pipeline
 from tests.sources.everef.conftest import make_cache_result, make_everef_pipeline_config
 
 
@@ -47,9 +47,9 @@ class _FakeWriter:
 def test_run_pipeline_logs_summary_and_day_summary(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr("ingest.sources.pipeline.Cache", _FakeCache)
-    monkeypatch.setattr("ingest.sources.pipeline.DuckLakeWriter", _FakeWriter)
-    pipeline_logger = logging.getLogger("ingest.sources.pipeline")
+    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", _FakeCache)
+    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", _FakeWriter)
+    pipeline_logger = logging.getLogger("eve_ingest.workflows.raw_file_workflow")
 
     config = make_everef_pipeline_config(
         EverefReferencesCliConfig,
@@ -80,7 +80,7 @@ def test_run_pipeline_logs_summary_and_day_summary(
 
     pipeline_logger.addHandler(caplog.handler)
     try:
-        with caplog.at_level(logging.INFO, logger="ingest.sources.pipeline"):
+        with caplog.at_level(logging.INFO, logger="eve_ingest.workflows.raw_file_workflow"):
             exit_code = run_pipeline(
                 dataset_name="market-history",
                 update_mode=UpdateMode.MUTABLE,

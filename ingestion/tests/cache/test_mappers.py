@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from ingest.cache.ledger.mappers import (
+from eve_ingest.raw_objects.ledger.row_mappers import (
     entity_to_row,
     normalize_ledger_url,
     raw_object_publication_values,
@@ -12,14 +12,14 @@ from ingest.cache.ledger.mappers import (
     raw_object_values,
     raw_object_version_values,
 )
-from ingest.cache.client_types import RevalidationMetadata
-from ingest.cache.ledger.types import (
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
+from eve_ingest.raw_objects.ledger.models import (
     PublicationContext,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
 )
-from ingest.cache.primitives import UpdateMode
+from eve_ingest.raw_objects.primitives import UpdateMode
 
 
 @pytest.mark.parametrize(
@@ -175,7 +175,7 @@ class TestEntityToRow:
 
     def test_entity_to_row_with_overrides(self) -> None:
         entry = _entry()
-        from ingest.cache.ledger.column_maps import RAW_OBJECT_COLUMNS
+        from eve_ingest.raw_objects.ledger.columns import RAW_OBJECT_COLUMNS
 
         result = entity_to_row(entry, RAW_OBJECT_COLUMNS, overrides={"source_name": "override"})
         assert result["source_name"] == "override"

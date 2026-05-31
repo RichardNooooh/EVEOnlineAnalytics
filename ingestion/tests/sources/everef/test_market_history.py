@@ -7,8 +7,8 @@ from datetime import date
 
 import pytest
 
-from ingest.sources.everef.market_history import _build_cache_objects
-from ingest.sources.everef.util import parse_csv_to_arrow
+from eve_ingest.sources.everef.market_history import _build_cache_objects
+from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow
 from tests.sources.everef.conftest import make_cache_result
 
 _ORIGINAL_COLS = [
@@ -55,7 +55,7 @@ class TestBuildCacheObjects:
         assert objects[0].identity_key == {"source_date": "2026-06-15"}
 
     def test_logs_daily_archive_queue(self, caplog: pytest.LogCaptureFixture) -> None:
-        logger = logging.getLogger("ingest.sources.everef")
+        logger = logging.getLogger("eve_ingest.sources.everef")
         logger.addHandler(caplog.handler)
         try:
             with caplog.at_level(logging.INFO, logger=logger.name):

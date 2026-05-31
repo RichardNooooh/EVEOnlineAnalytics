@@ -4,10 +4,10 @@ from datetime import UTC, datetime
 from dataclasses import replace
 from pathlib import Path
 
-from ingest.cache import Cache, CacheObject, GetMode, UpdateMode
-from ingest.cache.client_types import ModifiedRead, ReadStatus, RevalidationMetadata
-from ingest.cache.ledger import RawObjectLedger
-from ingest.cache.ledger import runtime as ledger_runtime
+from eve_ingest.raw_objects import Cache, CacheObject, GetMode, UpdateMode
+from eve_ingest.raw_objects.http_models import ModifiedRead, ReadStatus, RevalidationMetadata
+from eve_ingest.raw_objects.ledger import RawObjectLedger
+from eve_ingest.raw_objects.ledger import repository as ledger_runtime
 
 
 class FakeClient:
