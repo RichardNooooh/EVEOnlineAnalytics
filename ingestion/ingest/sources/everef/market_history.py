@@ -4,7 +4,7 @@ from datetime import date
 
 from ingest.cache import CacheObject, UpdateMode
 from ingest.cli.config import EverefCliConfig
-from ingest.publishers.ducklake import RawDuckLakeTable
+from ingest.publishers.ducklake import DuckLakeWriterMode, RawDuckLakeTable
 from ingest.sources.everef.util import build_deterministic_objects, process_result
 from ingest.sources.pipeline import run_pipeline as _run_pipeline
 
@@ -30,6 +30,7 @@ def run_pipeline(config: EverefCliConfig) -> int:
             r,
             w,
             table_key=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
             key_columns=_KEY_COLUMNS,
         ),
     )

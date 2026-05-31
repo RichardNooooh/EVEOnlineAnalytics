@@ -55,6 +55,12 @@ class RawDuckLakeTable(StrEnum):
     REFERENCE_TYPES = "raw_reference_types"
 
 
+class DuckLakeWriterMode(StrEnum):
+    INSERT_MISSING_KEYS = "insert_missing_keys"
+    ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS = "assert_partition_coverage_insert_missing_keys"
+    REPLACE_TABLE = "replace_table"
+
+
 def build_ducklake_attach_config_from_url(
     postgres_url: str,
     *,
@@ -120,7 +126,7 @@ def _quote_table_target(alias: str, target: DuckLakeTableTarget) -> str:
 
 def _build_key_columns_clause(key_columns: Sequence[str]) -> str:
     if not key_columns:
-        raise ValueError("key_columns must not be empty when merge behavior is requested")
+        raise ValueError("key_columns must not be empty when writer mode requires keys")
     return ", ".join(_quote_identifier(key) for key in key_columns)
 
 
@@ -197,8 +203,7 @@ def _assert_matched_key_rows_identical(
     try:
         differing = con.execute(query).fetchall()
     except Exception:
-        logger.warning("Could not query target for key validation", exc_info=True)
-        return
+        raise ValueError("Could not query target for key validation")
 
     if differing:
         examples = ", ".join(
@@ -251,17 +256,31 @@ def _assert_target_rows_missing_from_source(
         raise ValueError(f"Target has rows for source_date(s) absent from the newly downloaded source file: {examples}")
 
 
+def _validate_key_columns(arrow_table: pa.Table, key_columns: Sequence[str]) -> None:
+    if not key_columns:
+        raise ValueError("key_columns must not be empty when writer mode requires keys")
+
+    missing_key_columns = [key for key in key_columns if key not in arrow_table.column_names]
+    if missing_key_columns:
+        raise ValueError("key_columns must exist in arrow_table columns: " + ", ".join(missing_key_columns))
+
+
+def _validate_replace_table_arguments(key_columns: Sequence[str]) -> None:
+    if key_columns:
+        raise ValueError("REPLACE_TABLE does not accept key_columns")
+
+
 class DuckLakeWriter:
     """Context-managed writer for raw DuckLake tables.
 
     Example:
         ```python
         import pyarrow as pa
-        from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
+        from ingest.publishers.ducklake import DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
 
         rows = pa.table({"type_id": [34], "date": ["2026-01-01"]})
         with DuckLakeWriter() as writer:
-            writer.write(rows, table=RawDuckLakeTable.MARKET_HISTORY)
+            writer.write(rows, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
         ```
 
     Example with explicit attach config:
@@ -272,7 +291,12 @@ class DuckLakeWriter:
             metadata_schema="eve_market",
         )
         with DuckLakeWriter(config) as writer:
-            writer.write(rows, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["order_id"])
+            writer.write(
+                rows,
+                table=RawDuckLakeTable.MARKET_ORDERS,
+                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+                key_columns=["order_id"],
+            )
         ```
     """
 
@@ -314,19 +338,27 @@ class DuckLakeWriter:
         arrow_table: pa.Table,
         *,
         table: RawDuckLakeTable,
+        mode: DuckLakeWriterMode,
         key_columns: Sequence[str] = (),
     ) -> None:
         """Write rows to a raw DuckLake table.
 
-        Without `key_columns`, rows append by column name. With `key_columns`, rows are
-        inserted only when no target row already matches those keys.
+        `INSERT_MISSING_KEYS` inserts only previously unseen keys after asserting matched
+        rows are identical. `ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS` adds the
+        current market-history source-date coverage assertion. `REPLACE_TABLE` replaces
+        the whole target table from the incoming Arrow table.
 
         Example:
             ```python
-            writer.write(arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
+            writer.write(
+                arrow_table,
+                mode=DuckLakeWriterMode.REPLACE_TABLE,
+                table=RawDuckLakeTable.MARKET_HISTORY,
+            )
             writer.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_ORDERS,
+                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
                 key_columns=["order_id"],
             )
             ```
@@ -336,29 +368,49 @@ class DuckLakeWriter:
         if con is None:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
 
-        missing_key_columns = [key for key in key_columns if key not in arrow_table.column_names]
-        if missing_key_columns:
-            raise ValueError("key_columns must exist in arrow_table columns: " + ", ".join(missing_key_columns))
-
         logger.debug(
             "Writing to DuckLake table=%s rows=%d columns=%d key_columns=%s mode=%s",
             table.value,
             len(arrow_table),
             len(arrow_table.column_names),
             list(key_columns),
-            "merge" if key_columns else "append",
+            mode.value,
         )
 
         quoted_target = _quote_table_target(self._attach.alias, _target_for(table))
+
+        if mode is DuckLakeWriterMode.REPLACE_TABLE and len(arrow_table) == 0:
+            raise ValueError("REPLACE_TABLE requires a non-empty arrow_table")
+
         with _temporary_arrow_view(con, arrow_table) as source_name:
             quoted_source = _quote_identifier(source_name)
+            if mode is DuckLakeWriterMode.REPLACE_TABLE:
+                _validate_replace_table_arguments(key_columns)
+                con.execute(
+                    f"""
+                    CREATE OR REPLACE TABLE {quoted_target} AS
+                    SELECT * FROM {quoted_source}
+                    """
+                )
+                logger.debug(
+                    "DuckLake write complete table=%s attempted_rows=%d key_columns=%s",
+                    table.value,
+                    len(arrow_table),
+                    list(key_columns),
+                )
+                return
+
+            _validate_key_columns(arrow_table, key_columns)
             con.execute(
                 f"""
                 CREATE TABLE IF NOT EXISTS {quoted_target} AS
                 SELECT * FROM {quoted_source} WHERE FALSE
                 """
             )
-            if key_columns:
+            if mode in {
+                DuckLakeWriterMode.INSERT_MISSING_KEYS,
+                DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            }:
                 _assert_matched_key_rows_identical(
                     con,
                     arrow_table,
@@ -366,13 +418,14 @@ class DuckLakeWriter:
                     quoted_source=quoted_source,
                     key_columns=key_columns,
                 )
-                _assert_target_rows_missing_from_source(
-                    con,
-                    arrow_table,
-                    quoted_target=quoted_target,
-                    quoted_source=quoted_source,
-                    key_columns=key_columns,
-                )
+                if mode is DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS:
+                    _assert_target_rows_missing_from_source(
+                        con,
+                        arrow_table,
+                        quoted_target=quoted_target,
+                        quoted_source=quoted_source,
+                        key_columns=key_columns,
+                    )
 
                 # DuckDB MERGE USING (columns) is an equi-join shorthand replacing ON.
                 # Insert-only semantics are intentional (key_columns replaces merge_keys):
@@ -394,16 +447,4 @@ class DuckLakeWriter:
                 )
                 return
 
-            con.execute(
-                f"""
-                INSERT INTO {quoted_target} BY NAME
-                SELECT *
-                FROM {quoted_source}
-                """
-            )
-            logger.debug(
-                "DuckLake write complete table=%s attempted_rows=%d key_columns=%s",
-                table.value,
-                len(arrow_table),
-                list(key_columns),
-            )
+            raise ValueError(f"Unsupported DuckLake writer mode: {mode}")
