@@ -7,7 +7,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from ingest.publishers.ducklake import DuckLakeAttachConfig, DuckLakeWriter, RawDuckLakeTable
+from ingest.publishers.ducklake import DuckLakeAttachConfig, DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
 from ingest.sources.everef.market_history import _KEY_COLUMNS
 from ingest.sources.everef.util import process_result, read_csv_to_arrow
 from tests.sources.everef.conftest import make_cache_result
@@ -70,10 +70,22 @@ def test_process_result_writes_and_merges_history_rows(shared_con, tmp_path: Pat
     assert table.column("_source_market_date")[0].as_py() == "2026-01-01"
 
     with DuckLakeWriter(_ATTACH) as writer:
-        assert process_result(result, writer, table_key=RawDuckLakeTable.MARKET_HISTORY, key_columns=_KEY_COLUMNS)
+        assert process_result(
+            result,
+            writer,
+            table_key=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=_KEY_COLUMNS,
+        )
 
     with DuckLakeWriter(_ATTACH) as writer:
-        assert process_result(result, writer, table_key=RawDuckLakeTable.MARKET_HISTORY, key_columns=_KEY_COLUMNS)
+        assert process_result(
+            result,
+            writer,
+            table_key=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=_KEY_COLUMNS,
+        )
 
     rows = shared_con.execute(
         f'SELECT average, "date", region_id, type_id FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}"'

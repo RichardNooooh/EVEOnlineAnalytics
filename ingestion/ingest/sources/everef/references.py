@@ -8,17 +8,17 @@ import pyarrow as pa
 from ingest.archive.tarball import ExtractedTarball
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefReferencesCliConfig
-from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
+from ingest.publishers.ducklake import DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
 from ingest.sources.everef.util import EVEREF_BASE, add_provenance
 from ingest.sources.pipeline import run_pipeline as _run_pipeline
 
 logger = logging.getLogger("ingest.sources.everef")
 
-_REFERENCE_TABLES: dict[str, tuple[RawDuckLakeTable, str]] = {
-    "types": (RawDuckLakeTable.REFERENCE_TYPES, "type_id"),
-    "regions": (RawDuckLakeTable.REFERENCE_REGIONS, "region_id"),
-    "groups": (RawDuckLakeTable.REFERENCE_GROUPS, "group_id"),
-    "categories": (RawDuckLakeTable.REFERENCE_CATEGORIES, "category_id"),
+_REFERENCE_TABLES: dict[str, RawDuckLakeTable] = {
+    "types": RawDuckLakeTable.REFERENCE_TYPES,
+    "regions": RawDuckLakeTable.REFERENCE_REGIONS,
+    "groups": RawDuckLakeTable.REFERENCE_GROUPS,
+    "categories": RawDuckLakeTable.REFERENCE_CATEGORIES,
 }
 
 
@@ -59,7 +59,7 @@ def _process_member(member_path: str, archive_name: str, result: CacheResult, wr
         logger.warning("Skipping unknown reference file archive_member=%s", archive_name)
         return True
 
-    table_key, key_column = table_info
+    table_key = table_info
 
     try:
         table = _parse_json_to_table(member_path, result, archive_name)
@@ -67,17 +67,16 @@ def _process_member(member_path: str, archive_name: str, result: CacheResult, wr
             logger.warning("Zero-row table for archive_member=%s", archive_name)
             return True
 
-        writer.write(table, table=table_key, key_columns=[key_column])
+        writer.write(table, table=table_key, mode=DuckLakeWriterMode.REPLACE_TABLE)
         logger.info(
-            "Published reference table=%s rows=%d archive_member=%s key_column=%s",
+            "Published reference table=%s rows=%d archive_member=%s",
             table_key.value,
             table.num_rows,
             archive_name,
-            key_column,
         )
         return True
-    except Exception as e:
-        logger.exception("Failed to process archive_member=%s: %s", archive_name, e)
+    except Exception:
+        logger.exception("Failed to process archive_member=%s", archive_name)
         return False
 
 

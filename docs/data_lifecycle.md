@@ -23,6 +23,36 @@ contract; Parquet files are the physical storage below that table format.
 - current implemented curated BI marts are `curated_daily_prices` and
   `curated_trade_volume`
 
+## Dataset Semantics
+
+Writers publish against dataset contracts, not just table names. The current raw layer
+distinguishes two publication classes:
+
+- snapshot datasets capture observed states at a point in time and retain prior
+  snapshots as valid published history
+- authoritative datasets treat an explicit source scope as the accepted truth and may
+  replace or reassert that scope when the source republishes it
+
+Current examples:
+
+- `market_orders` and `fuzzwork_orders` are snapshot-oriented datasets
+- `market_history` is authoritative at source-market-date scope
+- `references` is authoritative at latest-full-extract scope
+
+## Writer Modes
+
+Writer behavior should follow dataset semantics and publication scope.
+
+- snapshot-oriented publication uses idempotent insert-missing-key behavior so repeated
+  processing of the same snapshot does not duplicate rows
+- source-partition-authoritative publication validates the covered partition scope and
+  preserves an explicit replacement boundary for that source partition
+- full-extract-authoritative publication replaces the visible table contents for the
+  relevant published table when a new latest extract is accepted
+
+These are publication-contract concepts. The docs intentionally avoid binding the
+contract to a specific internal writer API.
+
 ## Publication Lifecycle
 
 ### 1. Extract
@@ -53,6 +83,14 @@ The writer commits the validated change into the canonical DuckLake table state.
 sources that can revise prior files, the replacement scope must be explicit, such as the
 Everef market-history source `date`.
 
+Current raw publication semantics:
+
+- `market_orders` and `fuzzwork_orders` publish snapshot data with idempotent
+  insert-missing-key semantics
+- `market_history` publishes source-date-authoritative data and currently applies
+  assert-partition-coverage plus insert-missing semantics for each source date
+- `references` publishes latest full extracts using full-table replacement semantics
+
 For ingestion jobs, DuckLake destination configuration is part of the publisher
 boundary: the publisher resolves the catalog, storage path, and publication guardrails
 before committing data.
@@ -78,6 +116,10 @@ The architecture expects source corrections and replay.
 - backfills may replace or republish prior partitions
 - DuckLake table state must make the visible replacement scope explicit
 - supplemental manifests may record publication metadata where useful
+
+Snapshot datasets follow a different correction shape: replay may republish a previously
+seen snapshot idempotently, but later snapshots do not implicitly retract rows observed
+in earlier snapshots.
 
 ## Single-Writer Rules
 

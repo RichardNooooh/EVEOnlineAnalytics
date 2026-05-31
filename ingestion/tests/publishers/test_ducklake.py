@@ -5,6 +5,7 @@ import pytest
 from ingest.publishers.ducklake import (
     DuckLakeAttachConfig,
     DuckLakeWriter,
+    DuckLakeWriterMode,
     RawDuckLakeTable,
 )
 
@@ -98,20 +99,24 @@ def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
     assert "custom_metadata" in attach_call[0]
 
 
-def test_writer_appends_by_name(monkeypatch) -> None:
+def test_writer_replaces_table(monkeypatch) -> None:
     con = FakeConnection()
     arrow_table = pa.table({"b": [2], "a": [1]})
 
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
-        writer.write(arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
+        writer.write(
+            arrow_table,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.REPLACE_TABLE,
+        )
 
     queries = _queries(con)
 
     assert con.arrow_tables == [arrow_table]
     assert len(con.relation.view_names) == 1
-    assert any(query.lstrip().startswith("INSERT INTO ") and "BY NAME" in query for query in queries)
+    assert any(query.lstrip().startswith("CREATE OR REPLACE TABLE ") for query in queries)
     assert not any("MERGE INTO" in query for query in queries)
     assert any("DROP VIEW IF EXISTS" in query for query in queries)
     assert con.closed is True
@@ -127,6 +132,7 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
         writer.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
             key_columns=["id"],
         )
 
@@ -142,6 +148,11 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
 @pytest.mark.parametrize(
     ("key_columns", "arrow_table", "error_message"),
     [
+        (
+            [],
+            pa.table({"id": [1], "value": [10]}),
+            "key_columns must not be empty when writer mode requires keys",
+        ),
         (
             ["item id"],
             pa.table({"item id": [1], "value": [10]}),
@@ -169,6 +180,7 @@ def test_writer_rejects_invalid_inputs(
             writer.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
                 key_columns=key_columns,
             )
 
@@ -180,12 +192,13 @@ def test_writer_requires_with_block() -> None:
         writer.write(
             pa.table({"id": [1]}),
             table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.REPLACE_TABLE,
         )
 
 
 def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
     con = FakeConnection()
-    con.raise_on_execute = "INSERT INTO"
+    con.raise_on_execute = "CREATE OR REPLACE TABLE"
 
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
 
@@ -194,23 +207,47 @@ def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
             writer.write(
                 pa.table({"id": [1]}),
                 table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.REPLACE_TABLE,
             )
 
     assert any("DROP VIEW IF EXISTS" in query for query in _queries(con))
     assert con.closed is True
 
 
-def test_writer_handles_empty_arrow_table(monkeypatch) -> None:
+def test_replace_table_rejects_empty_arrow_table_without_writing(monkeypatch) -> None:
     con = FakeConnection()
     arrow_table = pa.table({"id": pa.array([], type=pa.int64())})
 
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
-        writer.write(arrow_table, table=RawDuckLakeTable.MARKET_HISTORY)
+        with pytest.raises(ValueError, match="REPLACE_TABLE requires a non-empty arrow_table"):
+            writer.write(
+                arrow_table,
+                table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.REPLACE_TABLE,
+            )
 
-    assert con.arrow_tables == [arrow_table]
-    assert any(query.lstrip().startswith("INSERT INTO ") for query in _queries(con))
+    assert con.arrow_tables == []
+    assert not any(query.lstrip().startswith("CREATE OR REPLACE TABLE ") for query in _queries(con))
+
+
+def test_replace_table_rejects_key_columns(monkeypatch) -> None:
+    con = FakeConnection()
+    arrow_table = pa.table({"id": [1]})
+
+    monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        with pytest.raises(ValueError, match="REPLACE_TABLE does not accept key_columns"):
+            writer.write(
+                arrow_table,
+                table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.REPLACE_TABLE,
+                key_columns=["id"],
+            )
+
+    assert not any(query.lstrip().startswith("CREATE OR REPLACE TABLE ") for query in _queries(con))
 
 
 def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
@@ -221,8 +258,13 @@ def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
     monkeypatch.setattr("ingest.publishers.ducklake.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
-        writer.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY)
-        writer.write(table_b, table=RawDuckLakeTable.MARKET_ORDERS)
+        writer.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
+        writer.write(
+            table_b,
+            table=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+            key_columns=["order_id"],
+        )
 
     assert con.arrow_tables == [table_a, table_b]
     queries = _queries(con)

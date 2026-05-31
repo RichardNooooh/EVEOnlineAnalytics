@@ -11,6 +11,7 @@ from ingest.publishers.ducklake import (
     _quote_identifier,
     DuckLakeAttachConfig,
     DuckLakeWriter,
+    DuckLakeWriterMode,
     RawDuckLakeTable,
     build_ducklake_attach_config_from_url,
 )
@@ -41,14 +42,12 @@ def test_ducklake_writer_attaches_to_postgres(attach_config: DuckLakeAttachConfi
 
 
 @pytest.mark.integration
-def test_write_without_key_columns_inserts_rows(
-    attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
-) -> None:
+def test_replace_table_writes_rows(attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection) -> None:
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_HISTORY)
 
     table = pa.table({"type_id": [34, 35], "date": ["2026-01-01", "2026-01-02"]})
     with DuckLakeWriter(attach_config) as writer:
-        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY)
+        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
     rows = raw_con.execute(
         f"SELECT * FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history ORDER BY type_id"
@@ -66,12 +65,22 @@ def test_write_with_key_columns_does_insert_if_not_exists(
 
     table = pa.table({"order_id": [1, 2], "price": [100.0, 200.0]})
     with DuckLakeWriter(attach_config) as writer:
-        writer.write(table, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["order_id"])
+        writer.write(
+            table,
+            table=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+            key_columns=["order_id"],
+        )
 
     # Insert same order_ids again with identical prices — should be no-ops
     duplicate = pa.table({"order_id": [1, 2], "price": [100.0, 200.0]})
     with DuckLakeWriter(attach_config) as writer:
-        writer.write(duplicate, table=RawDuckLakeTable.MARKET_ORDERS, key_columns=["order_id"])
+        writer.write(
+            duplicate,
+            table=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+            key_columns=["order_id"],
+        )
 
     rows = raw_con.execute(
         f"SELECT * FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_orders ORDER BY order_id"
@@ -87,7 +96,12 @@ def test_publish_arrow_table_one_shot(attach_config: DuckLakeAttachConfig, raw_c
 
     table = pa.table({"type_id": [42], "date": ["2026-06-01"]})
     with DuckLakeWriter(attach_config) as writer:
-        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, key_columns=["type_id"])
+        writer.write(
+            table,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
+        )
 
     rows = raw_con.execute(
         f"SELECT * FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history WHERE type_id = 42"
@@ -103,7 +117,7 @@ def test_written_data_queryable_through_duckdb(
 
     table = pa.table({"type_id": [1, 2, 3], "date": ["2026-01-01"] * 3})
     with DuckLakeWriter(attach_config) as writer:
-        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY)
+        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
     count = raw_con.execute(
         f"SELECT count(*) FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history"
@@ -123,7 +137,7 @@ def test_write_auto_creates_schema_and_table(
 
     table = pa.table({"type_id": [1, 2, 3], "date": ["2026-01-01"] * 3})
     with DuckLakeWriter(attach_config) as writer:
-        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY)
+        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
     con = duckdb.connect()
     _attach_ducklake(con, config=attach_config)

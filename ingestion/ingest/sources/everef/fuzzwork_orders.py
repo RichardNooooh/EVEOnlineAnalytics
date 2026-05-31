@@ -9,7 +9,7 @@ import pyarrow.csv as pac
 
 from ingest.cache import CacheObject, CacheResult, UpdateMode
 from ingest.cli.config import EverefCliConfig
-from ingest.publishers.ducklake import DuckLakeWriter, RawDuckLakeTable
+from ingest.publishers.ducklake import DuckLakeWriter, DuckLakeWriterMode, RawDuckLakeTable
 from ingest.sources.everef.util import build_listed_objects, read_csv_to_arrow
 from ingest.sources.pipeline import run_pipeline as _run_pipeline
 
@@ -61,10 +61,15 @@ def _process_result(result: CacheResult, writer: DuckLakeWriter) -> bool:
         n = len(table)
         snapshot_time = str(result.identity_key["snapshot_time"])
         table = table.append_column("snapshot_time", pa.array([snapshot_time] * n, type=pa.utf8()))
-        writer.write(table, table=RawDuckLakeTable.FUZZWORK_ORDERS, key_columns=_KEY_COLUMNS)
+        writer.write(
+            table,
+            table=RawDuckLakeTable.FUZZWORK_ORDERS,
+            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+            key_columns=_KEY_COLUMNS,
+        )
         return True
-    except Exception as e:
-        logger.exception("Failed to process %s: %s", result.identity_key, e)
+    except Exception:
+        logger.exception("Failed to process %s", result.identity_key)
         return False
 
 

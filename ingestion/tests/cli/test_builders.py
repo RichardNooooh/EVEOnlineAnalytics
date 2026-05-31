@@ -133,6 +133,23 @@ def test_main_surfaces_parser_and_validation_errors(
     assert expected_message in captured.err
 
 
+def test_main_propagates_non_zero_handler_return(monkeypatch) -> None:
+    monkeypatch.setenv("INGEST_LOG_LEVEL", "CRITICAL")
+
+    class _FakeParser:
+        def parse_args(self, argv: list[str]):
+            class _Args:
+                @staticmethod
+                def handler(args, parser) -> int:
+                    return 1
+
+            return _Args()
+
+    monkeypatch.setattr("ingest.main.build_parser", lambda: _FakeParser())
+
+    assert main(["ignored"]) == 1
+
+
 def test_configure_logging_warns_on_invalid_env_level(monkeypatch, capsys) -> None:
     monkeypatch.setenv("INGEST_LOG_LEVEL", "banana")
 
