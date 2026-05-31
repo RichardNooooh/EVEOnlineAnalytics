@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
@@ -117,6 +118,10 @@ def install_pipeline_fakes(
 ) -> tuple[FakeConnection, MagicMock]:
     mock_pubtrack = MagicMock()
 
+    @contextmanager
+    def fake_hold_publication_scope_locks(*, catalog_url: str, publication_scopes: tuple[str, ...]):
+        yield
+
     class FakeCache:
         def __init__(self, *args: object, **kwargs: object) -> None:
             pass
@@ -138,4 +143,8 @@ def install_pipeline_fakes(
     con = FakeConnection()
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
+    monkeypatch.setattr(
+        "eve_ingest.workflows.raw_file_workflow._hold_publication_scope_locks",
+        fake_hold_publication_scope_locks,
+    )
     return con, mock_pubtrack

@@ -3,11 +3,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import psycopg
 import pytest
 
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger.models import PublicationContext, RawObjectRef
 from eve_ingest.raw_objects.primitives import UpdateMode
+from eve_ingest.workflows.raw_file_workflow import (
+    PublicationScopeLockError,
+    _hold_publication_scope_locks,
+    _postgresql_uri,
+    _publication_scope_lock_key,
+)
 
 
 @pytest.fixture
@@ -125,3 +132,23 @@ def test_mark_published_many_inserts_multiple_rows(pg_url: str) -> None:
         assert tx.publications.is_published(ref=ref1, sha256="s1") is True
         assert tx.publications.is_published(ref=ref2, sha256="s2") is True
     ledger.close()
+
+
+@pytest.mark.integration
+def test_hold_publication_scope_locks_times_out_on_contention(pg_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    publication_scope = "raw:market_history:source_date=2026-01-01"
+    connection = psycopg.connect(_postgresql_uri(pg_url), autocommit=True)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_lock(%s)", (_publication_scope_lock_key(publication_scope),))
+
+        monkeypatch.setattr(
+            "eve_ingest.workflows.raw_file_workflow._PUBLICATION_SCOPE_LOCK_WAIT_TIMEOUT_SECONDS",
+            0.1,
+        )
+
+        with pytest.raises(PublicationScopeLockError, match=publication_scope):
+            with _hold_publication_scope_locks(catalog_url=pg_url, publication_scopes=(publication_scope,)):
+                pytest.fail("lock acquisition should have timed out")
+    finally:
+        connection.close()
