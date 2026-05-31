@@ -1,18 +1,38 @@
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
 from collections import defaultdict
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Protocol
+
+import psycopg
+from sqlalchemy.engine import make_url
 
 from eve_ingest.raw_objects import Cache, CacheObject, CacheResult, GetMode, UpdateMode
 from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
 from eve_ingest.ducklake.writer import DuckLakeWriter
 from eve_ingest.ducklake.attach_config import build_ducklake_attach_config_from_url
 from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics
+from eve_ingest.raw_objects.ledger.models import PublicationContext
 
 logger = logging.getLogger(__name__)
+
+_PUBLICATION_SCOPE_DATASETS = {
+    "market-orders": "market_orders",
+    "fuzzwork-orders": "fuzzwork_orders",
+    "market-history": "market_history",
+    "reference-data": "references",
+}
+_PUBLICATION_SCOPE_LOCK_WAIT_TIMEOUT_SECONDS = 60
+# TODO: Consider making the advisory-lock wait configurable via a CLI flag or env var.
+
+
+class PublicationScopeLockError(RuntimeError):
+    """Raised when publication-scope single-writer lock acquisition times out."""
 
 
 class _PipelineConfig(Protocol):
@@ -87,22 +107,38 @@ def run_pipeline(
         per_day_success: dict[str, int] = defaultdict(int)
         per_day_failed: dict[str, int] = defaultdict(int)
         per_day_metrics: dict[str, DuckLakeWriteMetrics] = {}
-        with DuckLakeWriter(attach_config) as writer:
-            for result in results:
-                outcome = process_one(result, writer)
-                source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
-                if outcome.success:
-                    success += 1
-                    successful_results.append(result)
-                    per_day_success[source_date] += 1
-                else:
-                    failed += 1
-                    per_day_failed[source_date] += 1
-                for metric in outcome.write_metrics:
-                    per_day_metrics[source_date] = _merge_metrics(per_day_metrics.get(source_date), metric)
+        for publication_scope, scope_results in _group_results_by_publication_scope(
+            dataset_name=dataset_name,
+            results=results,
+        ).items():
+            with (
+                _hold_publication_scope_locks(
+                    catalog_url=config.ducklake.ducklake_catalog,
+                    publication_scopes=(publication_scope,),
+                ),
+                DuckLakeWriter(attach_config) as writer,
+            ):
+                scope_successful_results: list[CacheResult] = []
+                for result in scope_results:
+                    outcome = process_one(result, writer)
+                    source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
+                    if outcome.success:
+                        success += 1
+                        successful_results.append(result)
+                        scope_successful_results.append(result)
+                        per_day_success[source_date] += 1
+                    else:
+                        failed += 1
+                        per_day_failed[source_date] += 1
+                    for metric in outcome.write_metrics:
+                        per_day_metrics[source_date] = _merge_metrics(per_day_metrics.get(source_date), metric)
 
-        if successful_results:
-            cache.pubtrack.mark_published_many(successful_results)
+                if scope_successful_results:
+                    _mark_successful_results_published(
+                        publication_scope=publication_scope,
+                        successful_results=scope_successful_results,
+                        cache=cache,
+                    )
 
         if success and failed:
             logger.warning(
@@ -134,6 +170,83 @@ def run_pipeline(
     )
 
     return exit_code
+
+
+@contextmanager
+def _hold_publication_scope_locks(*, catalog_url: str, publication_scopes: tuple[str, ...]):
+    if not publication_scopes:
+        yield
+        return
+
+    connection = psycopg.connect(_postgresql_uri(catalog_url), autocommit=True)
+    try:
+        timeout_ms = int(_PUBLICATION_SCOPE_LOCK_WAIT_TIMEOUT_SECONDS * 1000)
+        with connection.cursor() as cursor:
+            cursor.execute("select set_config('statement_timeout', %s, false)", (str(timeout_ms),))
+            try:
+                for publication_scope in publication_scopes:
+                    cursor.execute("select pg_advisory_lock(%s)", (_publication_scope_lock_key(publication_scope),))
+            except psycopg.errors.QueryCanceled as exc:
+                raise PublicationScopeLockError(
+                    f"Timed out waiting for publication scope lock after {_PUBLICATION_SCOPE_LOCK_WAIT_TIMEOUT_SECONDS} "
+                    f"seconds: {publication_scope}"
+                ) from exc
+            finally:
+                cursor.execute("select set_config('statement_timeout', '0', false)")
+        yield
+    finally:
+        connection.close()
+
+
+def _group_results_by_publication_scope(
+    *,
+    dataset_name: str,
+    results: list[CacheResult],
+) -> dict[str, list[CacheResult]]:
+    grouped: dict[str, list[CacheResult]] = defaultdict(list)
+    for result in results:
+        grouped[_build_publication_scope(dataset_name=dataset_name, identity_key=result.identity_key)].append(result)
+    return {publication_scope: grouped[publication_scope] for publication_scope in sorted(grouped)}
+
+
+def _build_publication_scope(*, dataset_name: str, identity_key: dict[str, object]) -> str:
+    if dataset_name == "reference-data":
+        return "raw:references:full_extract"
+
+    publication_dataset_name = _PUBLICATION_SCOPE_DATASETS.get(dataset_name)
+    if publication_dataset_name is None:
+        raise ValueError(f"Unsupported publication-scope dataset: {dataset_name}")
+
+    source_date = identity_key.get("source_date")
+    if not isinstance(source_date, str) or not source_date:
+        raise ValueError(f"Missing source_date for publication scope dataset: {dataset_name}")
+
+    return f"raw:{publication_dataset_name}:source_date={source_date}"
+
+
+def _mark_successful_results_published(
+    *, publication_scope: str, successful_results: list[CacheResult], cache: Cache
+) -> None:
+    publisher_run_id = os.environ.get("AIRFLOW_CTX_RUN_ID") or None
+    cache.pubtrack.mark_published_many(
+        successful_results,
+        context=PublicationContext(
+            publication_scope=publication_scope,
+            publisher_run_id=publisher_run_id,
+        ),
+    )
+
+
+def _postgresql_uri(url: str) -> str:
+    parsed = make_url(url)
+    if parsed.drivername.startswith("postgresql"):
+        parsed = parsed.set(drivername="postgresql")
+    return parsed.render_as_string(hide_password=False)
+
+
+def _publication_scope_lock_key(publication_scope: str) -> int:
+    digest = hashlib.blake2b(publication_scope.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="big", signed=True)
 
 
 def _count_by_source_date(objects: list[CacheObject] | list[CacheResult]) -> dict[str, int]:

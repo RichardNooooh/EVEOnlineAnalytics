@@ -124,6 +124,8 @@ in earlier snapshots.
 ## Single-Writer Rules
 
 - only one writer may publish a given dataset scope at a time
+- PostgreSQL advisory locks keyed by publication scope enforce that rule during
+  publication; Airflow `max_active_runs=1` is only an outer guard for backfill DAGs
 - readers may be concurrent
 - unpublished temporary output must not be treated as visible state
 - retry logic must preserve idempotent publication semantics

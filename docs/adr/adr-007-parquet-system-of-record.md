@@ -36,6 +36,9 @@ The current contract is:
   PostgreSQL.
 - Published DuckLake table state is the persisted analytical source of truth.
 - Each dataset publication has a **single writer** for the affected publication scope.
+- PostgreSQL advisory locks keyed by publication scope enforce that single-writer
+  rule; scheduler-level limits such as Airflow `max_active_runs=1` are outer guards
+  rather than the source of truth.
 - Writers publish through DuckLake table commits or merge/delete-insert semantics (refined
   by ADR-008 amendment: insert-new-by-key is the current practice) rather
   than mutating shared DuckDB database state in place.

@@ -84,6 +84,7 @@ def build_backfill_dag(
         schedule=None,
         start_date=datetime(2026, 1, 1),
         catchup=False,
+        max_active_runs=1,
         tags=tags,
         params={
             "start_date": Param("2025-01-01", type="string"),

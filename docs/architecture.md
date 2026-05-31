@@ -151,6 +151,10 @@ Examples of publication scope:
 Readers may be concurrent. Writers must not concurrently mutate the same published
 scope.
 
+PostgreSQL advisory locks keyed by publication scope enforce that single-writer
+contract. Airflow `max_active_runs=1` on backfill DAGs is only an outer guard, not the
+source of truth.
+
 ## Publication Semantics
 
 Ingestion and transform jobs publish by changing DuckLake table state, not by exposing
