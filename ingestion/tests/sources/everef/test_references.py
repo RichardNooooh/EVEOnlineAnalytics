@@ -68,10 +68,7 @@ class TestParseJsonToTable:
         }
         member_path.write_text(json.dumps(data))
 
-        result = make_cache_result(
-            str(tmp_path / "archive.tar.xz"), content_length=128, last_modified="2026-01-02T11:01:55Z"
-        )
-        table = _parse_json_to_table(str(member_path), result, "types.json")
+        table = _parse_json_to_table(str(member_path), "types.json")
 
         assert len(table) == 2
         assert "type_id" in table.column_names
@@ -86,7 +83,7 @@ class TestParseJsonToTable:
         assert "packaged_volume" not in table.column_names
         assert "portion_size" not in table.column_names
 
-    def test_adds_provenance(self, tmp_path: Path) -> None:
+    def test_parses_without_provenance(self, tmp_path: Path) -> None:
         member_path = tmp_path / "regions.json"
         data = {
             "10000001": {
@@ -100,29 +97,19 @@ class TestParseJsonToTable:
         }
         member_path.write_text(json.dumps(data))
 
-        result = make_cache_result(
-            str(tmp_path / "archive.tar.xz"),
-            content_length=128,
-            last_modified="2026-01-02T11:01:55Z",
-            source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
-        )
-        table = _parse_json_to_table(str(member_path), result, "regions.json")
+        table = _parse_json_to_table(str(member_path), "regions.json")
 
-        assert "_source_url" in table.column_names
-        assert "_source_archive_member" in table.column_names
-        assert "_ingested_at" in table.column_names
-        assert table.column("_source_archive_member")[0].as_py() == "regions.json"
-        assert table.column("_source_url")[0].as_py() == (
-            "https://data.everef.net/reference-data/reference-data-latest.tar.xz"
-        )
-        assert table.column("_source_sha256")[0].as_py() == "abc123"
+        assert "region_id" in table.column_names
+        assert "name_en" in table.column_names
+        assert "_source_url" not in table.column_names
+        assert "_source_archive_member" not in table.column_names
+        assert "_ingested_at" not in table.column_names
 
     def test_empty_list_returns_empty_table(self, tmp_path: Path) -> None:
         member_path = tmp_path / "empty.json"
         member_path.write_text("{}")
 
-        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
-        table = _parse_json_to_table(str(member_path), result, "empty.json")
+        table = _parse_json_to_table(str(member_path), "empty.json")
 
         assert table.num_rows == 0
 
@@ -130,8 +117,7 @@ class TestParseJsonToTable:
         member_path = tmp_path / "obj.json"
         member_path.write_text("[]")
 
-        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
-        table = _parse_json_to_table(str(member_path), result, "obj.json")
+        table = _parse_json_to_table(str(member_path), "obj.json")
 
         assert table.num_rows == 0
 
@@ -151,8 +137,7 @@ class TestParseJsonToTable:
         }
         member_path.write_text(json.dumps(data))
 
-        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
-        table = _parse_json_to_table(str(member_path), result, "market_groups.json")
+        table = _parse_json_to_table(str(member_path), "market_groups.json")
 
         assert table.num_rows == 1
         assert table.column("market_group_id")[0].as_py() == 1857
@@ -170,9 +155,8 @@ class TestParseJsonToTable:
             )
         )
 
-        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
         with patch("ingest.sources.everef.references.logger.warning") as mock_warning:
-            table = _parse_json_to_table(str(member_path), result, "types.json")
+            table = _parse_json_to_table(str(member_path), "types.json")
 
         assert table.num_rows == 1
         mock_warning.assert_any_call(
