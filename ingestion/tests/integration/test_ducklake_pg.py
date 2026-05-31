@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
 import duckdb
 import pyarrow as pa
@@ -20,7 +21,13 @@ from ingest.publishers.ducklake import (
 @pytest.fixture
 def attach_config(pg_url: str, tmp_path: Path) -> DuckLakeAttachConfig:
     data_path = str(tmp_path / "ducklake")
-    return build_ducklake_attach_config_from_url(pg_url, data_path=data_path)
+    suffix = uuid4().hex
+    return build_ducklake_attach_config_from_url(
+        pg_url,
+        data_path=data_path,
+        metadata_schema=f"test_{suffix}",
+        alias=f"ducklake_{suffix}",
+    )
 
 
 @pytest.fixture
@@ -122,7 +129,7 @@ def test_written_data_queryable_through_duckdb(
     count = raw_con.execute(
         f"SELECT count(*) FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history"
     ).fetchone()[0]
-    assert count >= 3
+    assert count == 3
 
 
 @pytest.mark.integration
@@ -130,11 +137,6 @@ def test_write_auto_creates_schema_and_table(
     attach_config: DuckLakeAttachConfig,
 ) -> None:
     """write() should succeed with no pre-existing schema or table."""
-    con = duckdb.connect()
-    _attach_ducklake(con, config=attach_config)
-    _drop_table(con, attach_config, RawDuckLakeTable.MARKET_HISTORY)
-    con.close()
-
     table = pa.table({"type_id": [1, 2, 3], "date": ["2026-01-01"] * 3})
     with DuckLakeWriter(attach_config) as writer:
         writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
