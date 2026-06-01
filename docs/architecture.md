@@ -151,9 +151,22 @@ Examples of publication scope:
 Readers may be concurrent. Writers must not concurrently mutate the same published
 scope.
 
-PostgreSQL advisory locks keyed by publication scope enforce that single-writer
-contract. Airflow `max_active_runs=1` on backfill DAGs is only an outer guard, not the
-source of truth.
+PostgreSQL advisory locks over stable DuckLake lock domains enforce that single-writer
+contract. `PublicationContext.publication_scope` remains the semantic published-slice
+name for auditability, while physical lock domains serialize writes against shared raw
+tables and dataset-scoped provenance tables. Airflow `max_active_runs=1` on backfill DAGs
+is only an outer guard, not the source of truth.
+
+Mounted/shared or otherwise multi-client DuckLake use requires a PostgreSQL catalog.
+Local SQLite catalogs remain limited to local smoke tests because shared multi-client
+publication depends on durable catalog state plus PostgreSQL advisory locking.
+
+Relevant DuckLake references:
+
+- Transactions: <https://ducklake.select/docs/stable/duckdb/advanced_features/transactions.html>
+- Conflict resolution: <https://ducklake.select/docs/stable/duckdb/advanced_features/conflict_resolution.html>
+- Choosing a catalog database: <https://ducklake.select/docs/stable/duckdb/usage/choosing_a_catalog_database.html>
+- Recommended maintenance: <https://ducklake.select/docs/stable/duckdb/maintenance/recommended_maintenance.html>
 
 ## Publication Semantics
 

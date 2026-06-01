@@ -52,13 +52,17 @@ or ingestion tests.
 
 - Python + dlt for source-specific extraction and publication.
 - Publish through DuckLake table commits or merge/delete semantics.
-- Preserve single-writer publication for the dataset scope.
+- Preserve single-writer publication for the actual DuckLake mutation domain being
+  changed, not just for a semantic dataset label.
 - Distinguish snapshot datasets from authoritative datasets.
 - Snapshot datasets publish observed states from discrete source snapshots; rows absent
   from a later snapshot are not implied deletions of earlier published snapshots.
 - Authoritative datasets publish the latest accepted truth for an explicit source scope,
   such as a source date or a full reference extract; the publication scope must stay
   explicit in contracts and logs.
+- When adding a new source or writer, declare all of the following up front in code and
+  docs: semantic publication scope, physical raw/provenance tables mutated, writer
+  idempotency mode, and the advisory lock domain(s) that serialize those mutations.
 - Choose writer behavior from dataset semantics, not from a generic key list alone.
 - Current ingestion semantics:
   - `market_orders` and `fuzzwork_orders` are snapshot-oriented and use idempotent
@@ -67,6 +71,12 @@ or ingestion tests.
     assert-partition-coverage plus insert-missing semantics for each source date.
   - `references` ingests the latest full extracts and uses full-table replacement
     semantics per published reference table.
+  - Raw-file provenance is dataset-scoped via `raw_market_history_objects`,
+    `raw_market_orders_objects`, `raw_fuzzwork_orders_objects`, and
+    `raw_reference_objects`; do not reuse the retired shared `raw_source_objects`
+    contract.
+- Maintenance or bootstrap work that mutates shared DuckLake metadata/table state must
+  not overlap normal writers for the same lock domain set.
 - Primary dev/execution path is `infra/local/compose.yml` Docker Compose stack.
   Direct `uv run` on host is deprecated.
 - Use local SQLite DuckLake catalogs only for local development and smoke tests.
