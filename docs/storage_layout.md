@@ -50,10 +50,13 @@ for `dlt` runtime state rather than shared NFS or DuckLake durable storage paths
 
 Planned table naming convention:
 
-- `raw_source_objects`
 - `raw_market_history`
 - `raw_market_orders`
 - `raw_fuzzwork_orders`
+- `raw_market_history_objects`
+- `raw_market_orders_objects`
+- `raw_fuzzwork_orders_objects`
+- `raw_reference_objects`
 - `curated_daily_prices`
 - `curated_trade_volume`
 - `feat_item_daily`
@@ -118,6 +121,8 @@ Current raw dataset expectations:
   Everef daily file
 - reference tables are authoritative latest extracts and replace the previously visible
   full-table contents when republished
+- raw provenance is dataset-scoped and should be bootstrapped explicitly before first
+  shared publication into a raw DuckLake catalog/schema
 
 This distinction matters for both physical organization and publication safety. A later
 market-order snapshot should not be interpreted as a deletion set for earlier snapshots,
