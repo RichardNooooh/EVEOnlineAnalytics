@@ -108,7 +108,7 @@ def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
 
 def test_writer_replaces_table(monkeypatch) -> None:
     con = FakeConnection()
-    con.fetchone_results = [(0,), (0,)]
+    con.fetchone_results = [(1,), (0,)]
     arrow_table = pa.table({"b": [2], "a": [1]})
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
@@ -124,7 +124,11 @@ def test_writer_replaces_table(monkeypatch) -> None:
 
     assert con.arrow_tables == [arrow_table]
     assert len(con.relation.view_names) == 1
-    assert any(query.lstrip().startswith("CREATE OR REPLACE TABLE ") for query in queries)
+    assert "BEGIN" in queries
+    assert any(query.lstrip().startswith("DELETE FROM ") for query in queries)
+    assert any(query.lstrip().startswith("INSERT INTO ") and "BY NAME" in query for query in queries)
+    assert "COMMIT" in queries
+    assert not any(query.lstrip().startswith("CREATE OR REPLACE TABLE ") for query in queries)
     assert not any("MERGE INTO" in query for query in queries)
     assert any("DROP VIEW IF EXISTS" in query for query in queries)
     assert con.closed is True
@@ -267,8 +271,8 @@ def test_writer_requires_with_block() -> None:
 
 def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
     con = FakeConnection()
-    con.fetchone_results = [(0,)]
-    con.raise_on_execute = "CREATE OR REPLACE TABLE"
+    con.fetchone_results = [(1,), (0,)]
+    con.raise_on_execute = "INSERT INTO"
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
@@ -281,6 +285,7 @@ def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
             )
 
     assert any("DROP VIEW IF EXISTS" in query for query in _queries(con))
+    assert "ROLLBACK" in _queries(con)
     assert con.closed is True
 
 
@@ -318,6 +323,28 @@ def test_replace_table_rejects_key_columns(monkeypatch) -> None:
             )
 
     assert not any(query.lstrip().startswith("CREATE OR REPLACE TABLE ") for query in _queries(con))
+
+
+def test_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        with writer.transaction():
+            with writer.transaction():
+                writer.upsert_source_object(
+                    {
+                        "source_object_id": "soid-1",
+                        "status": "parsed",
+                    },
+                    table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,
+                )
+
+    queries = _queries(con)
+    assert queries.count("BEGIN") == 1
+    assert queries.count("COMMIT") == 1
+    assert "ROLLBACK" not in queries
 
 
 def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import random
+import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
@@ -21,6 +23,84 @@ from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult
 from eve_ingest.util import file_size
 
 logger = logging.getLogger("eve_ingest.sources.everef")
+
+_RETRYABLE_INSERT_MODES = {
+    DuckLakeWriterMode.INSERT_MISSING_KEYS,
+    DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+}
+_DUCKLAKE_CONFLICT_MAX_ATTEMPTS = 3
+_DUCKLAKE_CONFLICT_BASE_DELAY_SECONDS = 0.2
+_DUCKLAKE_CONFLICT_JITTER_SECONDS = 0.1
+
+
+def _is_retryable_ducklake_conflict(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        ("ducklake_snapshot" in message and ("primary key" in message or "constraint" in message))
+        or ("snapshot_id" in message and ("primary key" in message or "constraint" in message))
+        or ("ducklake" in message and "conflicting changes" in message)
+    )
+
+
+def _publish_transactional_rows_with_retry(
+    writer: DuckLakeWriter,
+    *,
+    table: pa.Table,
+    row_count: int,
+    soid: str,
+    provenance_table,
+    table_key: RawDuckLakeTable,
+    mode: DuckLakeWriterMode,
+    key_columns: list[str],
+    source_date_str: str,
+):
+    for attempt in range(1, _DUCKLAKE_CONFLICT_MAX_ATTEMPTS + 1):
+        try:
+            with writer.transaction():
+                writer.upsert_source_object(
+                    {
+                        "source_object_id": soid,
+                        "status": "parsed",
+                        "parsed_at": datetime.now(UTC),
+                    },
+                    table=provenance_table,
+                )
+
+                metrics = writer.write(
+                    table,
+                    table=table_key,
+                    mode=mode,
+                    key_columns=key_columns,
+                )
+
+                writer.upsert_source_object(
+                    {
+                        "source_object_id": soid,
+                        "status": "ingested",
+                        "ingested_at": datetime.now(UTC),
+                        "row_count": row_count,
+                        "status_reason": None,
+                    },
+                    table=provenance_table,
+                )
+                return metrics
+        except Exception as exc:
+            should_retry = mode in _RETRYABLE_INSERT_MODES and _is_retryable_ducklake_conflict(exc)
+            if not should_retry or attempt >= _DUCKLAKE_CONFLICT_MAX_ATTEMPTS:
+                raise
+            delay_seconds = (_DUCKLAKE_CONFLICT_BASE_DELAY_SECONDS * attempt) + random.uniform(
+                0.0, _DUCKLAKE_CONFLICT_JITTER_SECONDS
+            )
+            logger.warning(
+                "Retrying DuckLake insert-style publication after conflict source_date=%s table=%s mode=%s attempt=%d max_attempts=%d sleep_seconds=%.3f",
+                source_date_str,
+                table_key.value,
+                mode.value,
+                attempt + 1,
+                _DUCKLAKE_CONFLICT_MAX_ATTEMPTS,
+                delay_seconds,
+            )
+            time.sleep(delay_seconds)
 
 
 def parse_csv_to_arrow(
@@ -91,15 +171,6 @@ def publish_file_backed_rows(
         table = parse_table(result)
         n = len(table)
 
-        writer.upsert_source_object(
-            {
-                "source_object_id": soid,
-                "status": "parsed",
-                "parsed_at": datetime.now(UTC),
-            },
-            table=provenance_table,
-        )
-
         table = table.append_column(
             "source_object_id",
             pa.array([soid] * n, type=pa.utf8()),
@@ -114,22 +185,16 @@ def publish_file_backed_rows(
                 pa.array([snapshot_ts] * n, type=pa.timestamp("us", tz="UTC")),
             )
 
-        metrics = writer.write(
-            table,
-            table=table_key,
+        metrics = _publish_transactional_rows_with_retry(
+            writer,
+            table=table,
+            row_count=n,
+            soid=soid,
+            provenance_table=provenance_table,
+            table_key=table_key,
             mode=mode,
             key_columns=key_columns,
-        )
-
-        writer.upsert_source_object(
-            {
-                "source_object_id": soid,
-                "status": "ingested",
-                "ingested_at": datetime.now(UTC),
-                "row_count": n,
-                "status_reason": None,
-            },
-            table=provenance_table,
+            source_date_str=source_date_str,
         )
 
         extra_context = log_context or {}

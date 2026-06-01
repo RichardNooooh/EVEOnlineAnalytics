@@ -145,7 +145,7 @@ def test_replace_table_overwrites_existing_rows(shared_con):
         f'SELECT type_id, "date" FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}" ORDER BY type_id'
     ).fetchall()
 
-    assert result == [(1, "2026-01-02")]
+    assert result == [(1, date(2026, 1, 2))]
 
 
 @pytest.mark.integration
