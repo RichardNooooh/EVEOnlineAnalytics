@@ -21,6 +21,7 @@ The checked-in ADRs document the major analytics-repository design choices for
 - DuckDB as local/transient compute rather than shared durable storage
 - DuckLake as the canonical analytical table format over Parquet data files
 - raw source-file ledger backend selection for local and deployed ingestion runs
+- DuckLake publication lock domains and explicit raw bootstrap
 - ML problem framing and deferred streaming scope
 
 ## Reading Order

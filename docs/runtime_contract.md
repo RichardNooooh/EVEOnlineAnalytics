@@ -38,8 +38,11 @@ observability, and deployment wiring that satisfies those requirements.
 - Production-style or mounted/shared DuckLake catalogs must use PostgreSQL.
 - No runtime may depend on a cluster-shared writable `.duckdb` file.
 - Publication is single-writer for the relevant dataset or partition scope.
-- PostgreSQL advisory locks keyed by publication scope enforce single-writer
-  publication semantics; Airflow DAG-level `max_active_runs=1` is only an outer guard.
+- PostgreSQL advisory locks over stable DuckLake lock domains enforce single-writer
+  publication semantics; semantic publication scopes remain ledger-facing names, and
+  Airflow DAG-level `max_active_runs=1` is only an outer guard.
+- Raw DuckLake schema and dataset-scoped provenance tables must be bootstrapped
+  explicitly before first writer use in a new catalog/schema.
 
 ### Durable mounts
 

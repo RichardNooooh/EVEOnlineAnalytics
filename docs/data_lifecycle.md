@@ -90,6 +90,8 @@ Current raw publication semantics:
 - `market_history` publishes source-date-authoritative data and currently applies
   assert-partition-coverage plus insert-missing semantics for each source date
 - `references` publishes latest full extracts using full-table replacement semantics
+- raw provenance is published into dataset-scoped support tables instead of a shared
+  cross-dataset provenance table
 
 For ingestion jobs, DuckLake destination configuration is part of the publisher
 boundary: the publisher resolves the catalog, storage path, and publication guardrails
@@ -124,8 +126,10 @@ in earlier snapshots.
 ## Single-Writer Rules
 
 - only one writer may publish a given dataset scope at a time
-- PostgreSQL advisory locks keyed by publication scope enforce that rule during
-  publication; Airflow `max_active_runs=1` is only an outer guard for backfill DAGs
+- PostgreSQL advisory locks over fixed DuckLake lock domains enforce that rule during
+  publication; semantic publication scopes remain the published-slice names recorded in
+  the raw-object publication ledger, and Airflow `max_active_runs=1` is only an outer
+  guard for backfill DAGs
 - readers may be concurrent
 - unpublished temporary output must not be treated as visible state
 - retry logic must preserve idempotent publication semantics
@@ -133,6 +137,8 @@ in earlier snapshots.
   PostgreSQL; local SQLite catalogs are limited to local smoke tests
 - durable state remains DuckLake data plus PostgreSQL-backed services, not container
   runtime scratch
+- raw DuckLake schema and dataset-scoped provenance tables are bootstrapped explicitly,
+  not lazily during normal writer entry
 
 ## Curated dbt Lifecycle
 
