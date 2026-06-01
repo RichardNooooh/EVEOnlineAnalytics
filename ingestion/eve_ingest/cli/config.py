@@ -20,6 +20,7 @@ class RawFilesCliConfig:
 class DuckLakeCliConfig:
     ducklake_catalog: str
     ducklake_metadata_schema: str
+    lock_wait_timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -35,4 +36,10 @@ class EverefCliConfig:
 class EverefReferencesCliConfig:
     data_root: str
     raw_files: RawFilesCliConfig
+    ducklake: DuckLakeCliConfig
+
+
+@dataclass(frozen=True)
+class DuckLakeBootstrapCliConfig:
+    data_root: str
     ducklake: DuckLakeCliConfig

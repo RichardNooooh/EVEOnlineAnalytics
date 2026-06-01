@@ -105,6 +105,7 @@ def make_everef_pipeline_config(config_cls: type[Any], tmp_path: Any, **kwargs: 
         ducklake=DuckLakeCliConfig(
             ducklake_catalog="postgresql://fake:fake@localhost:5432/fake",
             ducklake_metadata_schema="test_schema",
+            lock_wait_timeout_seconds=60.0,
         ),
         **kwargs,
     )
@@ -119,7 +120,14 @@ def install_pipeline_fakes(
     mock_pubtrack = MagicMock()
 
     @contextmanager
-    def fake_hold_publication_scope_locks(*, catalog_url: str, publication_scopes: tuple[str, ...]):
+    def fake_hold_publication_domain_locks(
+        *,
+        dataset_name: str,
+        catalog_url: str,
+        publication_scopes: tuple[str, ...],
+        source_date: str | None,
+        timeout_seconds: float,
+    ):
         yield
 
     class FakeCache:
@@ -142,9 +150,10 @@ def install_pipeline_fakes(
 
     con = FakeConnection()
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_scope_locks",
-        fake_hold_publication_scope_locks,
+        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
+        fake_hold_publication_domain_locks,
     )
     return con, mock_pubtrack

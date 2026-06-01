@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from eve_ingest.cli.config import (
+    DuckLakeBootstrapCliConfig,
     DuckLakeCliConfig,
     EverefCliConfig,
     EverefReferencesCliConfig,
@@ -47,7 +48,18 @@ def build_everef_references_config(args: argparse.Namespace) -> EverefReferences
 
 
 def build_ducklake_config(args: argparse.Namespace) -> DuckLakeCliConfig:
+    timeout_seconds = float(args.ducklake_lock_wait_timeout_seconds)
+    if timeout_seconds <= 0:
+        raise ValueError("ducklake_lock_wait_timeout_seconds must be greater than 0")
     return DuckLakeCliConfig(
         ducklake_catalog=args.ducklake_catalog,
         ducklake_metadata_schema=args.ducklake_metadata_schema,
+        lock_wait_timeout_seconds=timeout_seconds,
+    )
+
+
+def build_ducklake_bootstrap_config(args: argparse.Namespace) -> DuckLakeBootstrapCliConfig:
+    return DuckLakeBootstrapCliConfig(
+        data_root=args.data_root,
+        ducklake=build_ducklake_config(args),
     )

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 from collections import defaultdict
@@ -9,13 +8,16 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
-import psycopg
-from sqlalchemy.engine import make_url
-
 from eve_ingest.raw_objects import Cache, CacheObject, CacheResult, GetMode, UpdateMode
 from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
 from eve_ingest.ducklake.writer import DuckLakeWriter
 from eve_ingest.ducklake.attach_config import build_ducklake_attach_config_from_url
+from eve_ingest.ducklake.locks import (
+    DuckLakeLockContext,
+    DuckLakeLockTimeoutError,
+    ducklake_lock_domains_for_publication_scope,
+    hold_ducklake_lock_domains,
+)
 from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics
 from eve_ingest.raw_objects.ledger.models import PublicationContext
 
@@ -27,11 +29,15 @@ _PUBLICATION_SCOPE_DATASETS = {
     "market-history": "market_history",
     "reference-data": "references",
 }
-_PUBLICATION_SCOPE_LOCK_WAIT_TIMEOUT_SECONDS = 60
-# TODO: Consider making the advisory-lock wait configurable via a CLI flag or env var.
+
+_LOCK_CONTEXT_TABLES = {
+    "market-orders": "raw_market_orders",
+    "fuzzwork-orders": "raw_fuzzwork_orders",
+    "market-history": "raw_market_history",
+}
 
 
-class PublicationScopeLockError(RuntimeError):
+class PublicationScopeLockError(DuckLakeLockTimeoutError):
     """Raised when publication-scope single-writer lock acquisition times out."""
 
 
@@ -112,9 +118,12 @@ def run_pipeline(
             results=results,
         ).items():
             with (
-                _hold_publication_scope_locks(
+                _hold_publication_domain_locks(
+                    dataset_name=dataset_name,
                     catalog_url=config.ducklake.ducklake_catalog,
                     publication_scopes=(publication_scope,),
+                    source_date=_publication_scope_source_date(publication_scope, scope_results),
+                    timeout_seconds=config.ducklake.lock_wait_timeout_seconds,
                 ),
                 DuckLakeWriter(attach_config) as writer,
             ):
@@ -173,29 +182,38 @@ def run_pipeline(
 
 
 @contextmanager
-def _hold_publication_scope_locks(*, catalog_url: str, publication_scopes: tuple[str, ...]):
-    if not publication_scopes:
-        yield
-        return
+def _hold_publication_domain_locks(
+    *,
+    dataset_name: str,
+    catalog_url: str,
+    publication_scopes: tuple[str, ...],
+    source_date: str | None,
+    timeout_seconds: float,
+):
+    # Publication scopes remain the semantic audit key. Lock domains are the physical
+    # serialization key derived from those scopes.
+    lock_domains: list[str] = []
+    for publication_scope in publication_scopes:
+        lock_domains.extend(ducklake_lock_domains_for_publication_scope(publication_scope))
 
-    connection = psycopg.connect(_postgresql_uri(catalog_url), autocommit=True)
     try:
-        timeout_ms = int(_PUBLICATION_SCOPE_LOCK_WAIT_TIMEOUT_SECONDS * 1000)
-        with connection.cursor() as cursor:
-            cursor.execute("select set_config('statement_timeout', %s, false)", (str(timeout_ms),))
-            try:
-                for publication_scope in publication_scopes:
-                    cursor.execute("select pg_advisory_lock(%s)", (_publication_scope_lock_key(publication_scope),))
-            except psycopg.errors.QueryCanceled as exc:
-                raise PublicationScopeLockError(
-                    f"Timed out waiting for publication scope lock after {_PUBLICATION_SCOPE_LOCK_WAIT_TIMEOUT_SECONDS} "
-                    f"seconds: {publication_scope}"
-                ) from exc
-            finally:
-                cursor.execute("select set_config('statement_timeout', '0', false)")
-        yield
-    finally:
-        connection.close()
+        with hold_ducklake_lock_domains(
+            catalog_url=catalog_url,
+            lock_domains=lock_domains,
+            timeout_seconds=timeout_seconds,
+            context=DuckLakeLockContext(
+                dataset=dataset_name,
+                publication_scope=publication_scopes[0]
+                if len(publication_scopes) == 1
+                else ",".join(publication_scopes),
+                table=_LOCK_CONTEXT_TABLES.get(dataset_name),
+                source_date=source_date,
+                airflow_run_id=os.environ.get("AIRFLOW_CTX_RUN_ID") or None,
+            ),
+        ):
+            yield
+    except DuckLakeLockTimeoutError as exc:
+        raise PublicationScopeLockError(str(exc)) from exc
 
 
 def _group_results_by_publication_scope(
@@ -224,6 +242,17 @@ def _build_publication_scope(*, dataset_name: str, identity_key: dict[str, objec
     return f"raw:{publication_dataset_name}:source_date={source_date}"
 
 
+def _publication_scope_source_date(publication_scope: str, scope_results: list[CacheResult]) -> str | None:
+    if ":source_date=" in publication_scope:
+        return publication_scope.rsplit("=", 1)[-1]
+
+    if not scope_results:
+        return None
+
+    source_date = scope_results[0].identity_key.get("source_date")
+    return source_date if isinstance(source_date, str) and source_date else None
+
+
 def _mark_successful_results_published(
     *, publication_scope: str, successful_results: list[CacheResult], cache: Cache
 ) -> None:
@@ -235,18 +264,6 @@ def _mark_successful_results_published(
             publisher_run_id=publisher_run_id,
         ),
     )
-
-
-def _postgresql_uri(url: str) -> str:
-    parsed = make_url(url)
-    if parsed.drivername.startswith("postgresql"):
-        parsed = parsed.set(drivername="postgresql")
-    return parsed.render_as_string(hide_password=False)
-
-
-def _publication_scope_lock_key(publication_scope: str) -> int:
-    digest = hashlib.blake2b(publication_scope.encode("utf-8"), digest_size=8).digest()
-    return int.from_bytes(digest, byteorder="big", signed=True)
 
 
 def _count_by_source_date(objects: list[CacheObject] | list[CacheResult]) -> dict[str, int]:

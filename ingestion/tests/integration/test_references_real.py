@@ -8,8 +8,8 @@ import duckdb
 import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
-from eve_ingest.ducklake.writer import DuckLakeWriter
-from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
 from eve_ingest.sources.everef.reference_data import _process_references_result
 from tests.sources.everef.conftest import make_cache_result
 
@@ -40,6 +40,11 @@ _ATTACH = DuckLakeAttachConfig(
     metadata_schema="memory",
     alias="memory",
 )
+
+
+@pytest.fixture(autouse=True)
+def bootstrapped(shared_con) -> None:
+    bootstrap_raw_ducklake(_ATTACH)
 
 
 def _make_tarball(path: Path, files: dict[str, str]) -> Path:
@@ -136,9 +141,9 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
     for col in type_cols:
         assert not col.startswith("_source"), f"Reference table should not have provenance column: {col}"
 
-    # Verify raw_source_objects has an entry for the archive
+    # Verify dataset-scoped provenance has an entry for the archive
     so_entries = shared_con.execute(
-        f'SELECT source_object_id, source_system, endpoint, status FROM "memory"."raw"."{RawDuckLakeTable.RAW_SOURCE_OBJECTS.value}"'
+        f'SELECT source_object_id, source_system, endpoint, status FROM "memory"."raw"."{RawDuckLakeProvenanceTable.REFERENCE_OBJECTS.value}"'
     ).fetchall()
     assert len(so_entries) == 1
     assert so_entries[0][1] == "everef"
@@ -166,6 +171,6 @@ def test_process_references_result_marks_failed_on_archive_error(shared_con, tmp
     assert outcome.success is False
 
     rows = shared_con.execute(
-        f'SELECT endpoint, status, status_reason FROM "memory"."raw"."{RawDuckLakeTable.RAW_SOURCE_OBJECTS.value}" ORDER BY endpoint, status'
+        f'SELECT endpoint, status, status_reason FROM "memory"."raw"."{RawDuckLakeProvenanceTable.REFERENCE_OBJECTS.value}" ORDER BY endpoint, status'
     ).fetchall()
     assert ("reference_data", "failed", "see log for details") in rows

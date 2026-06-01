@@ -10,7 +10,12 @@ import pyarrow.csv as pac
 
 from eve_ingest.raw_objects import CacheResult
 from eve_ingest.ducklake.writer import DuckLakeWriter
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeTable, compute_source_object_id
+from eve_ingest.ducklake.raw_tables import (
+    DuckLakeWriterMode,
+    RawDuckLakeTable,
+    compute_source_object_id,
+    provenance_table_for_data_table,
+)
 from eve_ingest.sources.everef.provenance import build_source_object_metadata
 from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult
 from eve_ingest.util import file_size
@@ -71,6 +76,7 @@ def publish_file_backed_rows(
 ) -> PipelineProcessResult:
     source_date_str = str(result.identity_key.get("source_date", "unknown"))
     soid = compute_source_object_id(source_system, endpoint, result.version.source_url)
+    provenance_table = provenance_table_for_data_table(table_key)
 
     try:
         metadata = build_source_object_metadata(
@@ -80,7 +86,7 @@ def publish_file_backed_rows(
             source_market_date=source_market_date,
             snapshot_ts=snapshot_ts,
         )
-        writer.upsert_source_object(metadata)
+        writer.upsert_source_object(metadata, table=provenance_table)
 
         table = parse_table(result)
         n = len(table)
@@ -90,7 +96,8 @@ def publish_file_backed_rows(
                 "source_object_id": soid,
                 "status": "parsed",
                 "parsed_at": datetime.now(UTC),
-            }
+            },
+            table=provenance_table,
         )
 
         table = table.append_column(
@@ -121,7 +128,8 @@ def publish_file_backed_rows(
                 "ingested_at": datetime.now(UTC),
                 "row_count": n,
                 "status_reason": None,
-            }
+            },
+            table=provenance_table,
         )
 
         extra_context = log_context or {}
@@ -159,7 +167,8 @@ def publish_file_backed_rows(
                     "source_object_id": soid,
                     "status": "failed",
                     "status_reason": "see log for details",
-                }
+                },
+                table=provenance_table,
             )
         except Exception:
             pass

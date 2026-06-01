@@ -3,12 +3,14 @@ import argparse
 from eve_ingest.logging_config import log_cli_run_start
 
 from eve_ingest.cli.config_builders import (
+    build_ducklake_bootstrap_config,
     build_everef_config,
     build_everef_references_config,
 )
 from eve_ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,
+    DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
     DEFAULT_RAW_LEDGER_URL,
 )
@@ -58,6 +60,29 @@ def _run_pipeline(
     )
 
     return module.run_pipeline(config)
+
+
+def _run_bootstrap(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> int:
+    from eve_ingest.ducklake.bootstrap import run_raw_bootstrap
+
+    config_builder = getattr(args, "config_builder", None)
+    if config_builder is None:
+        parser.error("config_builder not set")
+    try:
+        config = config_builder(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    log_cli_run_start(
+        provider=getattr(args, "command", None),
+        subcommand=getattr(args, "sub_command", None),
+        pipeline_module="eve_ingest.ducklake.bootstrap",
+        config=config,
+    )
+    return run_raw_bootstrap(config)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -134,6 +159,32 @@ def build_parser() -> argparse.ArgumentParser:
         pipeline_module="eve_ingest.sources.everef.reference_data",
     )
 
+    ducklake_parser = subparsers.add_parser(
+        "ducklake",
+        help="Run DuckLake maintenance commands.",
+    )
+    ducklake_parser.set_defaults(handler=_provider_has_no_commands)
+    ducklake_subparsers = ducklake_parser.add_subparsers(dest="sub_command")
+    ducklake_subparsers.required = False
+
+    ducklake_bootstrap_parser = ducklake_subparsers.add_parser(
+        "bootstrap",
+        help="Bootstrap DuckLake schemas and support tables.",
+    )
+    ducklake_bootstrap_parser.set_defaults(handler=_provider_has_no_commands)
+    ducklake_bootstrap_subparsers = ducklake_bootstrap_parser.add_subparsers(dest="bootstrap_target")
+    ducklake_bootstrap_subparsers.required = False
+
+    ducklake_bootstrap_raw_parser = ducklake_bootstrap_subparsers.add_parser(
+        "raw",
+        help="Bootstrap the raw DuckLake schema and provenance tables.",
+        parents=[shared_parents["runtime"], shared_parents["ducklake"]],
+    )
+    ducklake_bootstrap_raw_parser.set_defaults(
+        handler=_run_bootstrap,
+        config_builder=build_ducklake_bootstrap_config,
+    )
+
     esi_parser = subparsers.add_parser(
         "esi",
         help="Run ESI ingestion commands.",
@@ -180,6 +231,11 @@ def _build_shared_parents() -> dict[str, argparse.ArgumentParser]:
         "--ducklake-metadata-schema",
         default=DEFAULT_DUCKLAKE_METADATA_SCHEMA,
         help="DuckLake metadata schema name.",
+    )
+    ducklake_parent.add_argument(
+        "--ducklake-lock-wait-timeout-seconds",
+        default=DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS,
+        help="DuckLake advisory lock wait timeout in seconds.",
     )
 
     return {
