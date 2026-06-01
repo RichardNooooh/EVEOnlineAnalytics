@@ -215,7 +215,7 @@ def _count_target_rows(
     return int(row[0])
 
 
-def _ensure_insert_target_exists(
+def _ensure_bootstrapped_target_exists(
     con: duckdb.DuckDBPyConnection,
     *,
     alias: str,
@@ -225,7 +225,7 @@ def _ensure_insert_target_exists(
         return
     raise RuntimeError(
         f"Missing bootstrapped raw table {target.schema}.{target.table}. "
-        "Run `eve-ingest ducklake bootstrap raw` before insert-style publication."
+        "Run `eve-ingest ducklake bootstrap raw` before publication."
     )
 
 
@@ -320,6 +320,7 @@ class DuckLakeWriter:
         self._attach = config or _build_default_attach_config()
         self._con: duckdb.DuckDBPyConnection | None = None
         self._write_history: list[DuckLakeWriteMetrics] = []
+        self._transaction_depth = 0
 
     def __enter__(self) -> DuckLakeWriter:
         self._con = duckdb.connect()
@@ -397,18 +398,20 @@ class DuckLakeWriter:
             quoted_source = _quote_identifier(source_name)
             if mode is DuckLakeWriterMode.REPLACE_TABLE:
                 _validate_replace_table_arguments(key_columns)
-                replaced_rows = _count_target_rows(
+                _ensure_bootstrapped_target_exists(
                     con,
                     alias=self._attach.alias,
                     target=target,
-                    quoted_target=quoted_target,
                 )
-                con.execute(
-                    f"""
-                    CREATE OR REPLACE TABLE {quoted_target} AS
-                    SELECT * FROM {quoted_source}
-                    """
-                )
+                replaced_rows = int(con.execute(f"SELECT COUNT(*) FROM {quoted_target}").fetchone()[0])
+                with self.transaction():
+                    con.execute(f"DELETE FROM {quoted_target}")
+                    con.execute(
+                        f"""
+                        INSERT INTO {quoted_target} BY NAME
+                        SELECT * FROM {quoted_source}
+                        """
+                    )
                 metrics = DuckLakeWriteMetrics(
                     table=table,
                     mode=mode,
@@ -435,7 +438,7 @@ class DuckLakeWriter:
                 DuckLakeWriterMode.INSERT_MISSING_KEYS,
                 DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
             }:
-                _ensure_insert_target_exists(
+                _ensure_bootstrapped_target_exists(
                     con,
                     alias=self._attach.alias,
                     target=target,
@@ -510,14 +513,22 @@ class DuckLakeWriter:
         if con is None:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
 
-        con.execute("BEGIN")
+        outermost = self._transaction_depth == 0
+        if outermost:
+            con.execute("BEGIN")
+        self._transaction_depth += 1
         try:
             yield
         except Exception:
-            con.execute("ROLLBACK")
+            self._transaction_depth -= 1
+            if outermost:
+                self._transaction_depth = 0
+                con.execute("ROLLBACK")
             raise
         else:
-            con.execute("COMMIT")
+            self._transaction_depth -= 1
+            if outermost:
+                con.execute("COMMIT")
 
     def upsert_source_object(self, data: dict, *, table: RawDuckLakeProvenanceTable) -> None:
         con = self._con
