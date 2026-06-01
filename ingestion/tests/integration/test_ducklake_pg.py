@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
@@ -45,18 +46,17 @@ def test_ducklake_writer_attaches_to_postgres(attach_config: DuckLakeAttachConfi
 @pytest.mark.integration
 def test_replace_table_writes_rows(attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection) -> None:
     bootstrap_raw_ducklake(attach_config)
-    _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_HISTORY)
 
     table = pa.table({"type_id": [34, 35], "date": ["2026-01-01", "2026-01-02"]})
     with DuckLakeWriter(attach_config) as writer:
         writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
     rows = raw_con.execute(
-        f"SELECT * FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history ORDER BY type_id"
+        f'SELECT type_id, "date" FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history ORDER BY type_id'
     ).fetchall()
     assert len(rows) == 2
-    assert rows[0] == (34, "2026-01-01")
-    assert rows[1] == (35, "2026-01-02")
+    assert rows[0] == (34, date(2026, 1, 1))
+    assert rows[1] == (35, date(2026, 1, 2))
 
 
 @pytest.mark.integration
