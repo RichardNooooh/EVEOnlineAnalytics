@@ -8,7 +8,7 @@ import duckdb
 import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
-from eve_ingest.ducklake.writer import DuckLakeWriter
+from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
 from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
 from eve_ingest.sources.everef.market_history import _process_result
 from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow
@@ -41,6 +41,11 @@ _ATTACH = DuckLakeAttachConfig(
     metadata_schema="memory",
     alias="memory",
 )
+
+
+@pytest.fixture(autouse=True)
+def bootstrapped(shared_con) -> None:
+    bootstrap_raw_ducklake(_ATTACH)
 
 
 def _write_history_file(path: Path) -> None:
