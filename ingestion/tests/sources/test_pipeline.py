@@ -78,8 +78,8 @@ def test_run_pipeline_logs_summary_and_day_summary(
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", _FakeCache)
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", _FakeWriter)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_scope_locks",
-        lambda *, catalog_url, publication_scopes: _FakeLock(),
+        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
+        lambda *, dataset_name, catalog_url, publication_scopes, source_date, timeout_seconds: _FakeLock(),
     )
     pipeline_logger = logging.getLogger("eve_ingest.workflows.raw_file_workflow")
 
@@ -184,13 +184,18 @@ def test_run_pipeline_locks_per_scope_and_threads_publication_context(monkeypatc
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", _FakeWriter)
 
-    def hold_scope_locks(*, catalog_url, publication_scopes):
-        captured.scopes.append(publication_scopes)
+    def hold_scope_locks(*, dataset_name, catalog_url, publication_scopes, source_date):
+        captured.scopes.append((dataset_name, publication_scopes, source_date))
         return _FakeLock()
 
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_scope_locks",
-        hold_scope_locks,
+        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
+        lambda *, dataset_name, catalog_url, publication_scopes, source_date, timeout_seconds: hold_scope_locks(
+            dataset_name=dataset_name,
+            catalog_url=catalog_url,
+            publication_scopes=publication_scopes,
+            source_date=source_date,
+        ),
     )
     monkeypatch.setenv("AIRFLOW_CTX_RUN_ID", "airflow-run-123")
 
@@ -213,8 +218,8 @@ def test_run_pipeline_locks_per_scope_and_threads_publication_context(monkeypatc
 
     assert exit_code == 0
     assert captured.scopes == [
-        ("raw:market_history:source_date=2026-01-01",),
-        ("raw:market_history:source_date=2026-01-02",),
+        ("market-history", ("raw:market_history:source_date=2026-01-01",), "2026-01-01"),
+        ("market-history", ("raw:market_history:source_date=2026-01-02",), "2026-01-02"),
     ]
     assert captured.pubtrack is not None
     assert len(captured.pubtrack.calls) == 2
@@ -252,8 +257,10 @@ def test_run_pipeline_fails_whole_run_on_publication_lock_contention(monkeypatch
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", _FakeWriter)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_scope_locks",
-        lambda *, catalog_url, publication_scopes: (_ for _ in ()).throw(PublicationScopeLockError("busy")),
+        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
+        lambda *, dataset_name, catalog_url, publication_scopes, source_date, timeout_seconds: (_ for _ in ()).throw(
+            PublicationScopeLockError("busy")
+        ),
     )
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)

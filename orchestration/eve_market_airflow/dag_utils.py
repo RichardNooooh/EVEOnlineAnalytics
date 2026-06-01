@@ -47,6 +47,10 @@ def ducklake_catalog_url() -> str:
     )
 
 
+def ducklake_lock_wait_timeout_seconds() -> str:
+    return os.environ.get("EVE_MARKET_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS", "60")
+
+
 def build_backfill_dag(
     *,
     dag_id: str,
@@ -74,6 +78,8 @@ def build_backfill_dag(
             ducklake_catalog_url(),
             "--ducklake-metadata-schema",
             "eve_market",
+            "--ducklake-lock-wait-timeout-seconds",
+            ducklake_lock_wait_timeout_seconds(),
         ]
     )
 
@@ -84,6 +90,8 @@ def build_backfill_dag(
         schedule=None,
         start_date=datetime(2026, 1, 1),
         catchup=False,
+        # Scheduler-level serialization reduces accidental overlap, but the writer-side
+        # PostgreSQL advisory lock domains remain the concurrency source of truth.
         max_active_runs=1,
         tags=tags,
         params={

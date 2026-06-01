@@ -5,8 +5,8 @@ import logging
 import pyarrow as pa
 import pytest
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
-from eve_ingest.ducklake.writer import DuckLakeWriter
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeTable
+from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.sources.everef.provenance import parse_last_modified_timestamp
 
 
@@ -79,10 +79,7 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     assert "LOAD ducklake" in queries
     assert attach_call[0].lstrip().startswith("ATTACH ")
     assert attach_call[1] is None  # all params inlined
-    assert any(
-        f'CREATE TABLE IF NOT EXISTS "ducklake"."raw"."{RawDuckLakeTable.RAW_SOURCE_OBJECTS.value}"' in query
-        for query in queries
-    )
+    assert not any("CREATE SCHEMA IF NOT EXISTS" in query for query in queries)
 
 
 def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
@@ -155,6 +152,25 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
     assert merge_queries[0].lstrip().startswith("MERGE INTO ")
     assert "USING (" in merge_queries[0]
     assert "WHEN NOT MATCHED THEN INSERT BY NAME" in merge_queries[0]
+
+
+def test_writer_insert_modes_require_bootstrapped_table(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [(0,)]
+    arrow_table = pa.table({"id": [1], "value": [10]})
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        with pytest.raises(RuntimeError, match="eve-ingest ducklake bootstrap raw"):
+            writer.write(
+                arrow_table,
+                table=RawDuckLakeTable.MARKET_ORDERS,
+                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+                key_columns=["id"],
+            )
+
+    assert not any("CREATE TABLE IF NOT EXISTS" in query for query in _queries(con))
 
 
 def test_writer_returns_write_metrics(monkeypatch) -> None:
@@ -311,6 +327,9 @@ def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
     table_b = pa.table({"order_id": [10]})
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
+
+    bootstrap_raw_ducklake()
 
     with DuckLakeWriter() as writer:
         writer.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
@@ -342,20 +361,37 @@ def test_upsert_source_object_uses_merge(monkeypatch) -> None:
                 "source_url": "https://example.com/file.csv.bz2",
                 "status": "failed",
                 "status_reason": "boom",
-            }
+            },
+            table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
         )
         writer.upsert_source_object(
             {
                 "source_object_id": "soid-1",
                 "status": "ingested",
                 "status_reason": None,
-            }
+            },
+            table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
         )
 
     merge_queries = [call for call in con.calls if call[0].lstrip().startswith("MERGE INTO")]
     assert len(merge_queries) == 2
     assert "source.source_object_id" in merge_queries[0][0]
     assert merge_queries[1][1] == ["soid-1", "ingested", None]
+
+
+def test_bootstrap_raw_ducklake_creates_all_raw_and_provenance_tables(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    bootstrap_raw_ducklake()
+
+    queries = _queries(con)
+    assert any("CREATE SCHEMA IF NOT EXISTS" in query for query in queries)
+    for table in RawDuckLakeTable:
+        assert any(f'"{table.value}"' in query for query in queries)
+    for table in RawDuckLakeProvenanceTable:
+        assert any(f'"{table.value}"' in query for query in queries)
 
 
 def test_parse_last_modified_timestamp_supports_iso_and_http_date() -> None:

@@ -9,6 +9,7 @@ DEFAULT_DUCKLAKE_CATALOG = os.environ.get(
     "EVE_DUCKLAKE_CATALOG",
     "postgresql://airflow:airflow-local-only@postgres:5432/airflow",
 )
+DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS = float(os.environ.get("EVE_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS", "60"))
 DEFAULT_RAW_LEDGER_URL = os.environ.get(
     "EVE_RAW_LEDGER_URL",
     "postgresql://raw_files:password@postgres:5432/raw_files",

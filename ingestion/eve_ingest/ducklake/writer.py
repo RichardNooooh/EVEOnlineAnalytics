@@ -14,8 +14,12 @@ from eve_ingest.ducklake.raw_tables import (
     DuckLakeTableTarget,
     DuckLakeWriteMetrics,
     DuckLakeWriterMode,
+    RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
     _target_for,
+    provenance_target_for,
+    raw_table_column_definitions,
+    source_object_column_definitions,
 )
 
 logger = logging.getLogger("eve_ingest.ducklake")
@@ -171,6 +175,9 @@ def _validate_key_columns(arrow_table: pa.Table, key_columns: Sequence[str]) -> 
     if not key_columns:
         raise ValueError("key_columns must not be empty when writer mode requires keys")
 
+    for key in key_columns:
+        _quote_identifier(key)
+
     missing_key_columns = [key for key in key_columns if key not in arrow_table.column_names]
     if missing_key_columns:
         raise ValueError("key_columns must exist in arrow_table columns: " + ", ".join(missing_key_columns))
@@ -206,6 +213,20 @@ def _count_target_rows(
         return 0
     row = con.execute(f"SELECT COUNT(*) FROM {quoted_target}").fetchone()
     return int(row[0])
+
+
+def _ensure_insert_target_exists(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    alias: str,
+    target: DuckLakeTableTarget,
+) -> None:
+    if _target_exists(con, alias=alias, target=target):
+        return
+    raise RuntimeError(
+        f"Missing bootstrapped raw table {target.schema}.{target.table}. "
+        "Run `eve-ingest ducklake bootstrap raw` before insert-style publication."
+    )
 
 
 def _count_source_rows_with_matches(
@@ -303,9 +324,6 @@ class DuckLakeWriter:
     def __enter__(self) -> DuckLakeWriter:
         self._con = duckdb.connect()
         _attach_ducklake(self._con, config=self._attach)
-        schema_name = f"{_quote_identifier(self._attach.alias)}.{_quote_identifier(DEFAULT_RAW_SCHEMA)}"
-        self._con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
-        self._ensure_support_tables()
         logger.info(
             "DuckLake writer attached alias=%s metadata_schema=%s data_path=%s raw_schema=%s",
             self._attach.alias,
@@ -413,16 +431,15 @@ class DuckLakeWriter:
                 return metrics
 
             _validate_key_columns(arrow_table, key_columns)
-            con.execute(
-                f"""
-                CREATE TABLE IF NOT EXISTS {quoted_target} AS
-                SELECT * FROM {quoted_source} WHERE FALSE
-                """
-            )
             if mode in {
                 DuckLakeWriterMode.INSERT_MISSING_KEYS,
                 DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
             }:
+                _ensure_insert_target_exists(
+                    con,
+                    alias=self._attach.alias,
+                    target=target,
+                )
                 _assert_matched_key_rows_identical(
                     con,
                     arrow_table,
@@ -487,13 +504,27 @@ class DuckLakeWriter:
 
             raise ValueError(f"Unsupported DuckLake writer mode: {mode}")
 
-    def upsert_source_object(self, data: dict) -> None:
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
         con = self._con
         if con is None:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
 
-        quoted_target = _quote_table_target(self._attach.alias, _target_for(RawDuckLakeTable.RAW_SOURCE_OBJECTS))
-        self._ensure_support_tables()
+        con.execute("BEGIN")
+        try:
+            yield
+        except Exception:
+            con.execute("ROLLBACK")
+            raise
+        else:
+            con.execute("COMMIT")
+
+    def upsert_source_object(self, data: dict, *, table: RawDuckLakeProvenanceTable) -> None:
+        con = self._con
+        if con is None:
+            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+
+        quoted_target = _quote_table_target(self._attach.alias, provenance_target_for(table))
 
         columns = list(data.keys())
         col_list = ", ".join(_quote_identifier(c) for c in columns)
@@ -515,31 +546,33 @@ class DuckLakeWriter:
             values,
         )
 
-    def _ensure_support_tables(self) -> None:
-        con = self._con
-        if con is None:
-            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
 
-        quoted_target = _quote_table_target(self._attach.alias, _target_for(RawDuckLakeTable.RAW_SOURCE_OBJECTS))
-        con.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS {quoted_target} (
-                source_object_id VARCHAR NOT NULL,
-                source_system VARCHAR NOT NULL,
-                endpoint VARCHAR NOT NULL,
-                source_url VARCHAR NOT NULL,
-                storage_uri VARCHAR,
-                source_market_date DATE,
-                snapshot_ts TIMESTAMP,
-                last_modified TIMESTAMP,
-                content_length BIGINT,
-                sha256 VARCHAR,
-                downloaded_at TIMESTAMP,
-                parsed_at TIMESTAMP,
-                ingested_at TIMESTAMP,
-                status VARCHAR NOT NULL,
-                status_reason VARCHAR,
-                row_count BIGINT
+def bootstrap_raw_ducklake(config: DuckLakeAttachConfig | None = None) -> None:
+    attach = config or _build_default_attach_config()
+    con = duckdb.connect()
+    try:
+        _attach_ducklake(con, config=attach)
+        schema_name = f"{_quote_identifier(attach.alias)}.{_quote_identifier(DEFAULT_RAW_SCHEMA)}"
+        con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+        for table in RawDuckLakeTable:
+            quoted_target = _quote_table_target(attach.alias, _target_for(table))
+            table_column_sql = ",\n                    ".join(raw_table_column_definitions(table))
+            con.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {quoted_target} (
+                    {table_column_sql}
+                )
+                """
             )
-            """
-        )
+        column_sql = ",\n                ".join(source_object_column_definitions())
+        for table in RawDuckLakeProvenanceTable:
+            quoted_target = _quote_table_target(attach.alias, provenance_target_for(table))
+            con.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {quoted_target} (
+                    {column_sql}
+                )
+                """
+            )
+    finally:
+        con.close()

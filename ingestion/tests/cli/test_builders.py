@@ -12,6 +12,7 @@ from eve_ingest.__main__ import main
 from eve_ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,
+    DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
     DEFAULT_RAW_LEDGER_URL,
     DEFAULT_RAW_ROOT,
@@ -39,6 +40,7 @@ def test_market_history_uses_runtime_defaults() -> None:
     assert config.raw_files.raw_ledger_url == DEFAULT_RAW_LEDGER_URL
     assert config.ducklake.ducklake_catalog == DEFAULT_DUCKLAKE_CATALOG
     assert config.ducklake.ducklake_metadata_schema == DEFAULT_DUCKLAKE_METADATA_SCHEMA
+    assert config.ducklake.lock_wait_timeout_seconds == DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS
 
 
 @pytest.mark.parametrize(
@@ -78,6 +80,19 @@ def test_market_history_uses_runtime_defaults() -> None:
                 "sqlite:///:memory:",
             ],
             "raw_ledger_url must be a PostgreSQL URL",
+        ),
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-01-01",
+                "--end-date",
+                "2025-01-31",
+                "--ducklake-lock-wait-timeout-seconds",
+                "0",
+            ],
+            "ducklake_lock_wait_timeout_seconds must be greater than 0",
         ),
     ],
 )
