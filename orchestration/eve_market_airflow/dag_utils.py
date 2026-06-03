@@ -48,7 +48,7 @@ def ducklake_catalog_url() -> str:
 
 
 def ducklake_lock_wait_timeout_seconds() -> str:
-    return os.environ.get("EVE_MARKET_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS", "60")
+    return os.environ.get("EVE_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS", "60")
 
 
 def build_backfill_dag(
@@ -78,14 +78,21 @@ def build_backfill_dag(
             ducklake_catalog_url(),
             "--ducklake-metadata-schema",
             "eve_market",
-            "--ducklake-lock-wait-timeout-seconds",
-            ducklake_lock_wait_timeout_seconds(),
         ]
     )
 
     task_id = f"sync_raw_{command_name.replace('-', '_')}"
 
-    dag_kwargs = dict(
+    params = (
+        {
+            "start_date": Param("2025-01-01", type="string"),
+            "end_date": Param("2025-01-01", type="string"),
+        }
+        if has_date_range
+        else None
+    )
+
+    @dag(
         dag_id=dag_id,
         schedule=None,
         start_date=datetime(2026, 1, 1),
@@ -94,15 +101,8 @@ def build_backfill_dag(
         # PostgreSQL advisory lock domains remain the concurrency source of truth.
         max_active_runs=1,
         tags=tags,
-        params={
-            "start_date": Param("2025-01-01", type="string"),
-            "end_date": Param("2025-01-01", type="string"),
-        }
-        if has_date_range
-        else None,
+        params=params,
     )
-
-    @dag(**dag_kwargs)
     def _backfill():
         DockerOperator(
             task_id=task_id,
@@ -116,6 +116,7 @@ def build_backfill_dag(
                 "EVE_DLT_STATE_DIR": f"{DLT_SCRATCH_ROOT}/dlt",
                 "DLT_DATA_DIR": f"{DLT_SCRATCH_ROOT}/dlt",
                 "DLT_LOCAL_DIR": f"{DLT_SCRATCH_ROOT}/local",
+                "EVE_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS": ducklake_lock_wait_timeout_seconds(),
             },
             mount_tmp_dir=False,
             mounts=[
