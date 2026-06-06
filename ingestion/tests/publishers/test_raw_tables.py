@@ -4,7 +4,6 @@ from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
     provenance_table_for_data_table,
-    reference_provenance_table,
     source_object_column_definitions,
 )
 
@@ -22,7 +21,6 @@ def test_provenance_table_selection_matches_dataset_scope() -> None:
         provenance_table_for_data_table(RawDuckLakeTable.FUZZWORK_ORDERS)
         is RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS
     )
-    assert reference_provenance_table() is RawDuckLakeProvenanceTable.REFERENCE_OBJECTS
 
 
 def test_source_object_schema_definition_is_shared() -> None:

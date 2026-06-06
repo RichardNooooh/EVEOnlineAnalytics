@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from eve_ingest.ducklake.locks import (
-    DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,
     DUCKLAKE_MIGRATION_LOCK_DOMAIN,
     DuckLakeLockContext,
     DuckLakeLockToken,
@@ -15,7 +14,6 @@ from eve_ingest.ducklake.locks import (
     ducklake_lock_domains_for_tables,
     ducklake_lock_key,
     hold_ducklake_lock_domains,
-    maintenance_lock_domains_for_tables,
     ordered_ducklake_lock_domains,
     provenance_table_lock_domain,
     raw_bootstrap_lock_domains,
@@ -58,14 +56,12 @@ def test_lock_domains_follow_fixed_rank_order() -> None:
         (
             "ducklake:support:raw_market_orders_objects",
             "ducklake:raw:raw_market_orders",
-            DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,
             DUCKLAKE_MIGRATION_LOCK_DOMAIN,
         )
     )
 
     assert ordered == (
         DUCKLAKE_MIGRATION_LOCK_DOMAIN,
-        DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,
         "ducklake:raw:raw_market_orders",
         "ducklake:support:raw_market_orders_objects",
     )
@@ -77,13 +73,11 @@ def test_lock_domains_deduplicate_without_changing_rank_order() -> None:
             "ducklake:support:raw_market_orders_objects",
             "ducklake:raw:raw_market_orders",
             "ducklake:raw:raw_market_orders",
-            DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,
             "ducklake:support:raw_market_orders_objects",
         )
     )
 
     assert ordered == (
-        DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,
         "ducklake:raw:raw_market_orders",
         "ducklake:support:raw_market_orders_objects",
     )
@@ -139,7 +133,6 @@ def test_all_raw_publication_domains_include_every_raw_and_support_domain() -> N
     domains = all_raw_publication_lock_domains()
 
     assert DUCKLAKE_MIGRATION_LOCK_DOMAIN not in domains
-    assert DUCKLAKE_MAINTENANCE_LOCK_DOMAIN not in domains
     for table in RawDuckLakeTable:
         assert raw_table_lock_domain(table) in domains
     for table in RawDuckLakeProvenanceTable:
@@ -149,13 +142,6 @@ def test_all_raw_publication_domains_include_every_raw_and_support_domain() -> N
 def test_raw_bootstrap_domains_include_migration_and_all_publication_domains() -> None:
     assert raw_bootstrap_lock_domains() == ordered_ducklake_lock_domains(
         (DUCKLAKE_MIGRATION_LOCK_DOMAIN, *all_raw_publication_lock_domains())
-    )
-
-
-def test_maintenance_domains_are_explicit_affected_domains() -> None:
-    assert maintenance_lock_domains_for_tables(data_tables=(RawDuckLakeTable.MARKET_HISTORY,)) == (
-        DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,
-        "ducklake:raw:raw_market_history",
     )
 
 

@@ -46,10 +46,8 @@ observability, and deployment wiring that satisfies those requirements.
 - Raw DuckLake schema and dataset-scoped provenance tables must be bootstrapped
   explicitly before first writer use in a new catalog/schema.
 - Bootstrap jobs must acquire `ducklake:migration` plus affected raw/support lock domains
-  before raw schema or table DDL.
-- Maintenance jobs that mutate DuckLake metadata or table state must acquire
-  `ducklake:maintenance` plus affected raw/support lock domains; `ducklake:maintenance`
-  alone is not a global writer gate.
+  before raw schema or table DDL; bootstrap operations must be idempotent so reruns
+  can repair missing schemas or support tables safely.
 
 ### Durable mounts
 

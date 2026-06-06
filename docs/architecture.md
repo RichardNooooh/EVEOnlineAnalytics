@@ -166,7 +166,6 @@ Relevant DuckLake references:
 - Transactions: <https://ducklake.select/docs/stable/duckdb/advanced_features/transactions.html>
 - Conflict resolution: <https://ducklake.select/docs/stable/duckdb/advanced_features/conflict_resolution.html>
 - Choosing a catalog database: <https://ducklake.select/docs/stable/duckdb/usage/choosing_a_catalog_database.html>
-- Recommended maintenance: <https://ducklake.select/docs/stable/duckdb/maintenance/recommended_maintenance.html>
 
 ## Publication Semantics
 

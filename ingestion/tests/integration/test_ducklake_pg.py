@@ -11,7 +11,7 @@ import pytest
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig, build_ducklake_attach_config_from_url
 from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
-from eve_ingest.ducklake.writer import DuckLakeWriter, _attach_ducklake, _quote_identifier, bootstrap_raw_ducklake
+from eve_ingest.ducklake.writer import DuckLakeWriter, _attach, _ident, bootstrap_raw_ducklake
 
 
 @pytest.fixture
@@ -29,13 +29,13 @@ def attach_config(pg_url: str, tmp_path: Path) -> DuckLakeAttachConfig:
 @pytest.fixture
 def raw_con(attach_config: DuckLakeAttachConfig) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect()
-    _attach_ducklake(con, config=attach_config)
+    _attach(con, config=attach_config)
     return con
 
 
 def _drop_table(con: duckdb.DuckDBPyConnection, attach_config: DuckLakeAttachConfig, table: RawDuckLakeTable) -> None:
-    alias = _quote_identifier(attach_config.alias)
-    con.execute(f"DROP TABLE IF EXISTS {alias}.raw.{_quote_identifier(table.value)}")
+    alias = _ident(attach_config.alias)
+    con.execute(f"DROP TABLE IF EXISTS {alias}.raw.{_ident(table.value)}")
 
 
 def _test_lock_token() -> DuckLakeLockToken:
@@ -62,7 +62,7 @@ def test_replace_table_writes_rows(attach_config: DuckLakeAttachConfig, raw_con:
         writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
     rows = raw_con.execute(
-        f'SELECT type_id, "date" FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history ORDER BY type_id'
+        f'SELECT type_id, "date" FROM {_ident(attach_config.alias)}.raw.raw_market_history ORDER BY type_id'
     ).fetchall()
     assert len(rows) == 2
     assert rows[0] == (34, date(2026, 1, 1))
@@ -95,7 +95,7 @@ def test_write_with_key_columns_does_insert_if_not_exists(
         )
 
     rows = raw_con.execute(
-        f"SELECT order_id, price FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_orders ORDER BY order_id"
+        f"SELECT order_id, price FROM {_ident(attach_config.alias)}.raw.raw_market_orders ORDER BY order_id"
     ).fetchall()
     assert len(rows) == 2
     assert rows[0] == (1, 100.0)
@@ -116,7 +116,7 @@ def test_publish_arrow_table_one_shot(attach_config: DuckLakeAttachConfig, raw_c
         )
 
     rows = raw_con.execute(
-        f"SELECT * FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history WHERE type_id = 42"
+        f"SELECT * FROM {_ident(attach_config.alias)}.raw.raw_market_history WHERE type_id = 42"
     ).fetchall()
     assert len(rows) == 1
 
@@ -131,9 +131,7 @@ def test_written_data_queryable_through_duckdb(
     with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
-    count = raw_con.execute(
-        f"SELECT count(*) FROM {_quote_identifier(attach_config.alias)}.raw.raw_market_history"
-    ).fetchone()[0]
+    count = raw_con.execute(f"SELECT count(*) FROM {_ident(attach_config.alias)}.raw.raw_market_history").fetchone()[0]
     assert count == 3
 
 
@@ -161,7 +159,7 @@ def test_bootstrap_creates_raw_schema_data_tables_and_provenance_tables(
 ) -> None:
     bootstrap_raw_ducklake(attach_config)
     con = duckdb.connect()
-    _attach_ducklake(con, config=attach_config)
+    _attach(con, config=attach_config)
     tables = {
         row[0]
         for row in con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'raw'").fetchall()

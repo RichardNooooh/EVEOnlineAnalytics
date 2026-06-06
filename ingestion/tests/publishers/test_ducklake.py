@@ -290,6 +290,34 @@ def test_writer_requires_lock_token_for_write(monkeypatch) -> None:
     assert con.arrow_tables == []
 
 
+def test_writer_rejects_declared_mode_mismatch_before_arrow_view_or_mutation(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(
+        lock_token=_test_lock_token(),
+        declared_mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+        dataset_name="market-orders",
+    ) as writer:
+        with pytest.raises(
+            ValueError,
+            match=(
+                "DuckLake writer mode does not match publisher declaration "
+                "dataset=market-orders table=raw_market_orders "
+                "declared_mode=insert_missing_keys requested_mode=replace_table"
+            ),
+        ):
+            writer.write(
+                pa.table({"id": [1]}),
+                table=RawDuckLakeTable.MARKET_ORDERS,
+                mode=DuckLakeWriterMode.REPLACE_TABLE,
+            )
+
+    assert con.arrow_tables == []
+    assert not any(query.lstrip().startswith(("DELETE FROM", "INSERT INTO", "MERGE INTO")) for query in _queries(con))
+
+
 def test_writer_rejects_wrong_lock_token_for_write(monkeypatch) -> None:
     con = FakeConnection()
     token = _test_lock_token(

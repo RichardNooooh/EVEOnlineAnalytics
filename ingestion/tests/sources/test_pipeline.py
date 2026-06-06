@@ -78,9 +78,11 @@ class _FakeCache:
 
 
 class _FakeWriter:
-    def __init__(self, config, *, lock_token) -> None:
+    def __init__(self, config, *, lock_token, declared_mode=None, dataset_name=None) -> None:
         self.config = config
         self.lock_token = lock_token
+        self.declared_mode = declared_mode
+        self.dataset_name = dataset_name
 
     def __enter__(self):
         return self
@@ -172,7 +174,14 @@ def test_run_pipeline_rejects_writer_mode_mismatch_before_marking_published(monk
             captured.pubtrack = self.pubtrack
 
     class FakeWriter(_FakeWriter):
-        def write(self, *args, **kwargs):
+        def write(self, *args, table, mode, **kwargs):
+            if self.declared_mode is not None and mode != self.declared_mode:
+                requested_mode = getattr(mode, "value", str(mode))
+                raise ValueError(
+                    "DuckLake writer mode does not match publisher declaration "
+                    f"dataset={self.dataset_name or '-'} table={table.value} "
+                    f"declared_mode={self.declared_mode.value} requested_mode={requested_mode}"
+                )
             captured.delegate_write_calls += 1
             raise AssertionError("delegate write should not be called for a mode mismatch")
 
@@ -731,10 +740,10 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
             publication_lock.release()
 
     class CountingWriter(_FakeWriter):
-        def __init__(self, config, *, lock_token) -> None:
+        def __init__(self, config, *, lock_token, declared_mode=None, dataset_name=None) -> None:
             nonlocal writer_constructed
             writer_constructed += 1
-            super().__init__(config, lock_token=lock_token)
+            super().__init__(config, lock_token=lock_token, declared_mode=declared_mode, dataset_name=dataset_name)
 
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", SharedCache)
     monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", CountingWriter)
