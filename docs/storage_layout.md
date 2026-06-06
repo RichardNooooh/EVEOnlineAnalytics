@@ -53,6 +53,11 @@ Planned table naming convention:
 - `raw_market_history`
 - `raw_market_orders`
 - `raw_fuzzwork_orders`
+- `raw_reference_categories`
+- `raw_reference_groups`
+- `raw_reference_market_groups`
+- `raw_reference_regions`
+- `raw_reference_types`
 - `raw_market_history_objects`
 - `raw_market_orders_objects`
 - `raw_fuzzwork_orders_objects`

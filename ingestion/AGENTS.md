@@ -63,6 +63,10 @@ or ingestion tests.
 - When adding a new source or writer, declare all of the following up front in code and
   docs: semantic publication scope, physical raw/provenance tables mutated, writer
   idempotency mode, and the advisory lock domain(s) that serialize those mutations.
+- Do not call `DuckLakeWriter.write()` or `DuckLakeWriter.upsert_source_object()` without
+  a valid `DuckLakeLockToken` covering the target raw/provenance table domain.
+- When adding a publisher, declare physical data tables, provenance tables, writer mode,
+  semantic publication scope, and derived lock domains together.
 - Choose writer behavior from dataset semantics, not from a generic key list alone.
 - Current ingestion semantics:
   - `market_orders` and `fuzzwork_orders` are snapshot-oriented and use idempotent
@@ -77,6 +81,10 @@ or ingestion tests.
     contract.
 - Maintenance or bootstrap work that mutates shared DuckLake metadata/table state must
   not overlap normal writers for the same lock domain set.
+- Maintenance semantics are affected-domain based: acquire `ducklake:maintenance` plus
+  affected raw/support domains. `ducklake:maintenance` alone is not a global pause.
+- Raw bootstrap must acquire `ducklake:migration` plus every raw/support domain it may
+  create or alter.
 - Primary dev/execution path is `infra/local/compose.yml` Docker Compose stack.
   Direct `uv run` on host is deprecated.
 - Use local SQLite DuckLake catalogs only for local development and smoke tests.
