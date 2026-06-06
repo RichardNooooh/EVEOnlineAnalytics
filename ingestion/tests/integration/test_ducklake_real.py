@@ -64,7 +64,6 @@ def bootstrapped(shared_con) -> None:
     bootstrap_raw_ducklake(_ATTACH)
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_merge_inserts_new_rows_and_skips_existing(shared_con):
     """Verify MERGE inserts new key rows and skips existing key rows.
@@ -100,7 +99,6 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
     ], f"Expected 3 rows with correct values, got {result}"
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_merge_column_order_independent(shared_con):
     """Verify BY NAME matching means column order doesn't matter."""
@@ -132,7 +130,6 @@ def test_merge_column_order_independent(shared_con):
     ]
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_replace_table_overwrites_existing_rows(shared_con):
     table_a = pa.table({"type_id": [1], "date": ["2026-01-01"]})
@@ -158,7 +155,6 @@ def test_replace_table_overwrites_existing_rows(shared_con):
     assert result == [(1, date(2026, 1, 2))]
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_merge_raises_for_matching_key_with_different_values(shared_con):
     first = pa.table({"order_id": [1], "price": [10.0], "source_market_date": ["2026-01-01"]})
@@ -186,7 +182,6 @@ def test_merge_raises_for_matching_key_with_different_values(shared_con):
     assert rows == [(1, 10.0)]
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_insert_missing_keys_is_idempotent_for_identical_snapshot(shared_con):
     rows = pa.table({"order_id": [1], "price": [10.0], "source_market_date": ["2026-01-01"]})
@@ -213,7 +208,6 @@ def test_insert_missing_keys_is_idempotent_for_identical_snapshot(shared_con):
     assert result == [(1, 10.0)]
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from_source(shared_con):
     first = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
@@ -241,7 +235,6 @@ def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from
     assert rows == [(1, 10.0, date(2026, 1, 1))]
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_insert_missing_keys_allows_partial_source_date_coverage(shared_con):
     first = pa.table({"order_id": [1], "price": [10.0], "source_market_date": ["2026-01-01"]})

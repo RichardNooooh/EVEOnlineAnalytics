@@ -234,7 +234,7 @@ def test_raw_bootstrap_lock_set_blocks_every_writer_domain(pg_url: str) -> None:
                     pytest.fail(f"bootstrap lock set should block writer scope {writer_scope}")
 
 
-def test_ingestion_code_does_not_reference_legacy_raw_source_objects() -> None:
+def test_static_contract_rejects_legacy_raw_source_objects_references() -> None:
     ingestion_root = Path(__file__).resolve().parents[2] / "eve_ingest"
     offenders = sorted(
         str(path.relative_to(ingestion_root.parent))

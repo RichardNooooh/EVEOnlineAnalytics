@@ -23,7 +23,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         return
     skip_integration = pytest.mark.skip(reason="use --run-integration to enable")
     for item in items:
-        if "integration" in item.keywords:
+        if any(item.iter_markers(name="integration")):
             item.add_marker(skip_integration)
 
 

@@ -103,7 +103,9 @@ def test_write_with_key_columns_does_insert_if_not_exists(
 
 
 @pytest.mark.integration
-def test_publish_arrow_table_one_shot(attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection) -> None:
+def test_authoritative_insert_missing_keys_writes_new_market_history_row(
+    attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
+) -> None:
     bootstrap_raw_ducklake(attach_config)
 
     table = pa.table({"type_id": [42], "date": ["2026-06-01"]})
@@ -122,7 +124,7 @@ def test_publish_arrow_table_one_shot(attach_config: DuckLakeAttachConfig, raw_c
 
 
 @pytest.mark.integration
-def test_written_data_queryable_through_duckdb(
+def test_replace_table_rows_are_queryable_through_attached_duckdb(
     attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
 ) -> None:
     bootstrap_raw_ducklake(attach_config)

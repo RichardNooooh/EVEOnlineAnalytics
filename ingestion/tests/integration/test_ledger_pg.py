@@ -32,28 +32,11 @@ def test_schema_bootstraps_on_first_transaction(pg_url: str) -> None:
 
 
 @pytest.mark.integration
-def test_touch_raw_object_creates_new_entry(pg_url: str) -> None:
+def test_touch_raw_object_creates_and_updates_entry(pg_url: str) -> None:
     ref = RawObjectRef(
         source_name="test",
         dataset_name="test_ds",
-        identity_hash="hash-1",
-        identity_key={"k": "v"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    ledger = RawObjectLedger(ledger_url=pg_url)
-    with ledger.transaction() as tx:
-        entry = tx.writer.touch_raw_object(ref=ref, checked_at=datetime.now(UTC))
-        assert entry.ref == ref
-        assert entry.last_checked_at is not None
-    ledger.close()
-
-
-@pytest.mark.integration
-def test_touch_raw_object_updates_existing_entry(pg_url: str) -> None:
-    ref = RawObjectRef(
-        source_name="test",
-        dataset_name="test_ds",
-        identity_hash="hash-2",
+        identity_hash="hash-touch-create-update",
         identity_key={"k": "v"},
         update_mode=UpdateMode.MUTABLE,
     )

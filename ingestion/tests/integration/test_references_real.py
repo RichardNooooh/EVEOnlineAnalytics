@@ -72,7 +72,6 @@ def _make_tarball(path: Path, files: dict[str, str]) -> Path:
     return path
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path) -> None:
     archive_path = tmp_path / "reference-data-latest.tar.xz"
@@ -161,7 +160,6 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
     assert so_entries[0][3] == "ingested"
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_process_references_result_marks_failed_on_archive_error(shared_con, tmp_path: Path) -> None:
     broken_path = tmp_path / "broken-reference-data.tar.xz"
