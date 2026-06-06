@@ -69,7 +69,6 @@ def _write_history_file(path: Path) -> None:
     )
 
 
-@pytest.mark.integration
 @pytest.mark.real_duckdb
 def test_process_result_writes_and_merges_history_rows(shared_con, tmp_path: Path) -> None:
     file_path = tmp_path / "market-history-2026-01-01.csv.bz2"
@@ -88,12 +87,18 @@ def test_process_result_writes_and_merges_history_rows(shared_con, tmp_path: Pat
     assert all(not c.startswith("_source") for c in table.column_names)
 
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        outcome = _process_result(result, writer)
-        assert outcome.success is True
+        first_outcome = _process_result(result, writer)
+        assert first_outcome.success is True
+        assert len(first_outcome.write_metrics) == 1
+        assert first_outcome.write_metrics[0].inserted_rows == 1
+        assert first_outcome.write_metrics[0].matched_rows == 0
 
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        outcome = _process_result(result, writer)
-        assert outcome.success is True
+        second_outcome = _process_result(result, writer)
+        assert second_outcome.success is True
+        assert len(second_outcome.write_metrics) == 1
+        assert second_outcome.write_metrics[0].inserted_rows == 0
+        assert second_outcome.write_metrics[0].matched_rows == 1
 
     rows = shared_con.execute(
         f'SELECT average, "date", region_id, type_id FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}"'
