@@ -41,8 +41,15 @@ observability, and deployment wiring that satisfies those requirements.
 - PostgreSQL advisory locks over stable DuckLake lock domains enforce single-writer
   publication semantics; semantic publication scopes remain ledger-facing names, and
   Airflow DAG-level `max_active_runs=1` is only an outer guard.
+- DuckLake raw data-table and provenance-table mutations require a lock token covering
+  the target physical table domain; semantic publication scope alone is not enough.
 - Raw DuckLake schema and dataset-scoped provenance tables must be bootstrapped
   explicitly before first writer use in a new catalog/schema.
+- Bootstrap jobs must acquire `ducklake:migration` plus affected raw/support lock domains
+  before raw schema or table DDL.
+- Maintenance jobs that mutate DuckLake metadata or table state must acquire
+  `ducklake:maintenance` plus affected raw/support lock domains; `ducklake:maintenance`
+  alone is not a global writer gate.
 
 ### Durable mounts
 

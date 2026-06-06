@@ -49,7 +49,11 @@ The first stable lock domains are:
 - `ducklake:raw:raw_market_history`
 - `ducklake:raw:raw_market_orders`
 - `ducklake:raw:raw_fuzzwork_orders`
-- `ducklake:raw:references`
+- `ducklake:raw:raw_reference_categories`
+- `ducklake:raw:raw_reference_groups`
+- `ducklake:raw:raw_reference_market_groups`
+- `ducklake:raw:raw_reference_regions`
+- `ducklake:raw:raw_reference_types`
 - `ducklake:support:raw_market_history_objects`
 - `ducklake:support:raw_market_orders_objects`
 - `ducklake:support:raw_fuzzwork_orders_objects`
@@ -67,6 +71,29 @@ Lexical ordering is only allowed within the same rank.
 `PublicationContext.publication_scope` remains the semantic published-slice name used by
 the raw-file ledger and publication tracking. It is not replaced by physical lock-domain
 names.
+
+Publisher declarations define the semantic publication scope, mutated raw data tables,
+mutated provenance tables, and writer mode together. Workflow lock domains are derived
+from those declared physical tables. `DuckLakeWriter.write()` and
+`DuckLakeWriter.upsert_source_object()` require a `DuckLakeLockToken` proving the caller
+holds the target table's physical advisory lock domain before mutation.
+
+Raw-file workflows may select candidate cache results before lock acquisition, but they
+must recheck publication markers after acquiring the physical lock domains. Mutable raw
+objects must still match the ledger's current version before publication; stale selected
+versions are skipped instead of being published after a newer accepted version.
+
+Reference full-extract publication acquires every reference raw table domain it mutates
+plus `ducklake:support:raw_reference_objects`. Future table-specific reference publishers
+can acquire only their affected reference raw table domain plus the shared reference
+provenance domain.
+
+Raw bootstrap acquires `ducklake:migration` plus all raw and support domains whose schemas
+or tables it may create or alter.
+
+Maintenance publication exclusion is explicit-domain based: maintenance work must acquire
+`ducklake:maintenance` plus every affected DuckLake raw/support domain. The
+`ducklake:maintenance` domain alone is not a global writer pause.
 
 Raw provenance is now dataset-scoped:
 
@@ -86,7 +113,11 @@ an explicit CLI entrypoint: `eve-ingest ducklake bootstrap raw`.
 ### Positive
 
 - Same-table raw writes remain serialized even when semantic publication scopes differ.
+- Direct writer misuse fails before DuckLake mutation when the caller lacks a matching
+  `DuckLakeLockToken`.
 - Provenance contention narrows to the dataset-local support table.
+- Reference data can later split into table-specific publishers without keeping one broad
+  `references` raw lock domain.
 - Insert-style raw writers no longer perform routine schema or table bootstrap DDL during
   normal entry.
 - Reference-data tarball publication can run as one transaction, making table
@@ -98,12 +129,9 @@ an explicit CLI entrypoint: `eve-ingest ducklake bootstrap raw`.
 - Operators must run raw bootstrap before first publication to a new raw DuckLake
   catalog/schema.
 - The change is intentionally breaking for provenance-table readers.
-- `REPLACE_TABLE` still uses `create or replace table` on the write path in this pass.
-  Raw bootstrap now creates the known reference tables up front, but replace-style
-  writes still rely on DDL semantics until a lower-risk follow-up narrows that path.
 - This pass does not add general optimistic-conflict retries for DuckLake write failures;
   only external advisory serialization is relied on because broader retries were not yet
   proven safe across all writer modes.
-- Maintenance should take the dedicated `ducklake:maintenance` domain and avoid overlap
-  with normal writer windows, even though Airflow-level `max_active_runs` remains only an
-  outer scheduling guard.
+- Maintenance must take the dedicated `ducklake:maintenance` domain plus affected
+  raw/support domains; Airflow-level `max_active_runs` remains only an outer scheduling
+  guard.
