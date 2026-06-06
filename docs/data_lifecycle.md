@@ -130,6 +130,17 @@ in earlier snapshots.
   publication; semantic publication scopes remain the published-slice names recorded in
   the raw-object publication ledger, and Airflow `max_active_runs=1` is only an outer
   guard for backfill DAGs
+- single-writer enforcement is physical-table based: a writer may mutate a DuckLake raw
+  data table or provenance table only while holding a `DuckLakeLockToken` covering that
+  table's advisory lock domain
+- semantic publication scopes are ledger/audit names and are not sufficient authorization
+  to mutate DuckLake tables
+- reference full-extract publication locks all affected reference raw table domains plus
+  `ducklake:support:raw_reference_objects`
+- workflows recheck publication markers after acquiring locks so a waiting same-scope run
+  skips versions already published by an earlier run
+- mutable raw objects must still be the current raw-object ledger version after lock
+  acquisition before they may be published
 - readers may be concurrent
 - unpublished temporary output must not be treated as visible state
 - retry logic must preserve idempotent publication semantics
