@@ -126,7 +126,7 @@ class TestRaisesOutsideLifecycle:
 class TestRejectsPathTraversal:
     def test_rejects_path_traversal(self, tmp_path: Path) -> None:
         malicious = _make_malicious_tarball(tmp_path / "malicious.tar.bz2")
-        with pytest.raises(Exception):
+        with pytest.raises(tarfile.OutsideDestinationError):
             with ExtractedTarball(malicious):
                 pass
         assert not (tmp_path / "escape.json").exists()

@@ -133,7 +133,7 @@ def test_market_history_validation_errors(argv: list[str], error_message: str) -
         ),
     ],
 )
-def test_main_surfaces_parser_and_validation_errors(
+def test_main_surfaces_validation_errors(
     monkeypatch,
     capsys,
     argv: list[str],

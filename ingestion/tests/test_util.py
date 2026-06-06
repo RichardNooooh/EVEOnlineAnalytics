@@ -1,39 +1,42 @@
 from __future__ import annotations
 
+import importlib
 from datetime import date
 
 import pytest
 
 from eve_ingest.util import (
-    DEFAULT_DATA_ROOT,
-    DEFAULT_DUCKLAKE_CATALOG,
-    DEFAULT_DUCKLAKE_METADATA_SCHEMA,
-    DEFAULT_DUCKLAKE_RAW_DATA_PATH,
-    DEFAULT_RAW_LEDGER_URL,
-    DEFAULT_RAW_ROOT,
     iter_dates,
     parse_iso_date,
 )
+import eve_ingest.util as util
 
 
 class TestConstants:
+    @pytest.fixture(autouse=True)
+    def clean_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("EVE_DUCKLAKE_CATALOG", raising=False)
+        monkeypatch.delenv("EVE_RAW_LEDGER_URL", raising=False)
+        monkeypatch.delenv("EVE_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS", raising=False)
+        importlib.reload(util)
+
     def test_default_data_root(self) -> None:
-        assert DEFAULT_DATA_ROOT == "/opt/eve-market/data"
+        assert util.DEFAULT_DATA_ROOT == "/opt/eve-market/data"
 
     def test_default_raw_root(self) -> None:
-        assert DEFAULT_RAW_ROOT == "/opt/eve-market/data/raw"
+        assert util.DEFAULT_RAW_ROOT == "/opt/eve-market/data/raw"
 
     def test_default_ducklake_raw_data_path(self) -> None:
-        assert DEFAULT_DUCKLAKE_RAW_DATA_PATH == "/opt/eve-market/data/datasets/ducklake/raw"
+        assert util.DEFAULT_DUCKLAKE_RAW_DATA_PATH == "/opt/eve-market/data/datasets/ducklake/raw"
 
     def test_default_ducklake_catalog(self) -> None:
-        assert DEFAULT_DUCKLAKE_CATALOG == "postgresql://airflow:airflow-local-only@postgres:5432/airflow"
+        assert util.DEFAULT_DUCKLAKE_CATALOG == "postgresql://airflow:airflow-local-only@postgres:5432/airflow"
 
     def test_default_raw_ledger_url(self) -> None:
-        assert DEFAULT_RAW_LEDGER_URL == "postgresql://raw_files:password@postgres:5432/raw_files"
+        assert util.DEFAULT_RAW_LEDGER_URL == "postgresql://raw_files:password@postgres:5432/raw_files"
 
     def test_default_ducklake_metadata_schema(self) -> None:
-        assert DEFAULT_DUCKLAKE_METADATA_SCHEMA == "eve_market"
+        assert util.DEFAULT_DUCKLAKE_METADATA_SCHEMA == "eve_market"
 
 
 class TestParseIsoDate:

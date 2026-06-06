@@ -172,14 +172,16 @@ class InMemoryPublicationTrackerTx:
         version_id: str,
         context: PublicationContext,
     ) -> None:
-        self._ledger._publications.add((*ref.group_key, ref.identity_hash, sha256))
+        del version_id
+        self._ledger._publications[(*ref.group_key, ref.identity_hash, sha256)] = context
 
     def mark_published_many(
         self,
         publications: list[tuple[RawObjectRef, str, str, PublicationContext]],
     ) -> None:
         for ref, sha256, version_id, ctx in publications:
-            self._ledger._publications.add((*ref.group_key, ref.identity_hash, sha256))
+            del version_id
+            self._ledger._publications[(*ref.group_key, ref.identity_hash, sha256)] = ctx
 
     def is_published(
         self,
@@ -207,8 +209,11 @@ class InMemoryRawObjectLedger:
     def __init__(self) -> None:
         self._raw_objects_by_key: dict[tuple[str, str, str], RawObjectEntry] = {}
         self._versions_by_object_id: dict[str, list[RawObjectVersion]] = {}
-        self._publications: set[tuple[str, str, str, str]] = set()
+        self._publications: dict[tuple[str, str, str, str], PublicationContext] = {}
         self.filter_published_calls = 0
+
+    def publication_context(self, ref: RawObjectRef, sha256: str) -> PublicationContext | None:
+        return self._publications.get((*ref.group_key, ref.identity_hash, sha256))
 
     def close(self) -> None:
         return None

@@ -134,8 +134,11 @@ class TestMarkAndCheck:
     def test_mark_published_with_custom_context(self, ledger):
         ctx = PublicationContext(publication_scope="raw-market-history", publisher_run_id="run-1")
         with PublicationTracker(ledger) as tracker:
-            tracker.mark_published(_result(), context=ctx)
-            assert tracker.is_published(_result())
+            result = _result()
+            tracker.mark_published(result, context=ctx)
+            assert tracker.is_published(result)
+        if isinstance(ledger, InMemoryRawObjectLedger):
+            assert ledger.publication_context(result.raw_object.ref, result.version.sha256) == ctx
 
     def test_mark_published_distinct_results_independent(self, ledger):
         with PublicationTracker(ledger) as tracker:
@@ -179,6 +182,9 @@ class TestMarkMany:
             tracker.mark_published_many(results, context=ctx)
             assert tracker.is_published(results[0])
             assert tracker.is_published(results[1])
+        if isinstance(ledger, InMemoryRawObjectLedger):
+            for result in results:
+                assert ledger.publication_context(result.raw_object.ref, result.version.sha256) == ctx
 
     def test_mark_published_many_different_source_dataset_groups(self, ledger):
         with PublicationTracker(ledger) as tracker:
