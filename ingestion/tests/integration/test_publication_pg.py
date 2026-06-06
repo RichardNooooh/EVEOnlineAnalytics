@@ -30,7 +30,21 @@ def ref() -> RawObjectRef:
 
 
 @pytest.mark.integration
-def test_mark_published_inserts_row(pg_url: str, ref: RawObjectRef) -> None:
+def test_postgres_publication_repository_smoke(pg_url: str, ref: RawObjectRef) -> None:
+    ref1 = RawObjectRef(
+        source_name="test",
+        dataset_name="test_ds",
+        identity_hash=f"hash-f1-{uuid4().hex}",
+        identity_key={"k": "1"},
+        update_mode=UpdateMode.SNAPSHOT,
+    )
+    ref2 = RawObjectRef(
+        source_name="test",
+        dataset_name="test_ds",
+        identity_hash=f"hash-f2-{uuid4().hex}",
+        identity_key={"k": "2"},
+        update_mode=UpdateMode.SNAPSHOT,
+    )
     ledger = RawObjectLedger(ledger_url=pg_url)
     with ledger.transaction() as tx:
         tx.publications.mark_published(
@@ -43,94 +57,24 @@ def test_mark_published_inserts_row(pg_url: str, ref: RawObjectRef) -> None:
                 publisher_run_id="run-1",
             ),
         )
+        tx.publications.mark_published(ref=ref, sha256="abc", version_id="v-1", context=PublicationContext())
+        tx.publications.mark_published_many(
+            [
+                (ref1, "s1", "v-1", PublicationContext()),
+                (ref2, "s2", "v-2", PublicationContext()),
+            ]
+        )
+
         assert tx.publications.is_published(ref=ref, sha256="abc") is True
         assert tx.publications.is_published(ref=ref, sha256="def") is False
-    ledger.close()
-
-
-@pytest.mark.integration
-def test_mark_published_is_idempotent(pg_url: str, ref: RawObjectRef) -> None:
-    ledger = RawObjectLedger(ledger_url=pg_url)
-    ctx = PublicationContext()
-    with ledger.transaction() as tx:
-        tx.publications.mark_published(ref=ref, sha256="abc", version_id="v-1", context=ctx)
-        tx.publications.mark_published(ref=ref, sha256="abc", version_id="v-1", context=ctx)
-        assert tx.publications.is_published(ref=ref, sha256="abc") is True
-    ledger.close()
-
-
-@pytest.mark.integration
-def test_is_published_returns_false_for_unpublished(pg_url: str, ref: RawObjectRef) -> None:
-    ledger = RawObjectLedger(ledger_url=pg_url)
-    with ledger.transaction() as tx:
-        tx.publications.mark_published(
-            ref=ref,
-            sha256="abc",
-            version_id="v-1",
-            context=PublicationContext(),
-        )
-        assert tx.publications.is_published(ref=ref, sha256="abc") is True
-        assert tx.publications.is_published(ref=ref, sha256="xyz") is False
-    ledger.close()
-
-
-@pytest.mark.integration
-def test_filter_published_returns_correct_subset(pg_url: str) -> None:
-    ref1 = RawObjectRef(
-        source_name="test",
-        dataset_name="test_ds",
-        identity_hash="hash-f1",
-        identity_key={"k": "1"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    ref2 = RawObjectRef(
-        source_name="test",
-        dataset_name="test_ds",
-        identity_hash="hash-f2",
-        identity_key={"k": "2"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    ledger = RawObjectLedger(ledger_url=pg_url)
-    ctx = PublicationContext()
-    with ledger.transaction() as tx:
-        tx.publications.mark_published(ref=ref1, sha256="s1", version_id="v-1", context=ctx)
-        tx.publications.mark_published(ref=ref2, sha256="s2", version_id="v-2", context=ctx)
+        assert tx.publications.is_published(ref=ref1, sha256="s1") is True
+        assert tx.publications.is_published(ref=ref2, sha256="s2") is True
 
         published = tx.publications.filter_published(
             group_key=("test", "test_ds"),
-            versions=[("hash-f1", "s1"), ("hash-f2", "s2"), ("hash-f1", "unknown")],
+            versions=[(ref1.identity_hash, "s1"), (ref2.identity_hash, "s2"), (ref1.identity_hash, "unknown")],
         )
-        assert published == {("hash-f1", "s1"), ("hash-f2", "s2")}
-    ledger.close()
-
-
-@pytest.mark.integration
-def test_mark_published_many_inserts_multiple_rows(pg_url: str) -> None:
-    ref1 = RawObjectRef(
-        source_name="test",
-        dataset_name="test_ds",
-        identity_hash="hash-mm1",
-        identity_key={"k": "1"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    ref2 = RawObjectRef(
-        source_name="test",
-        dataset_name="test_ds",
-        identity_hash="hash-mm2",
-        identity_key={"k": "2"},
-        update_mode=UpdateMode.SNAPSHOT,
-    )
-    ctx = PublicationContext()
-    ledger = RawObjectLedger(ledger_url=pg_url)
-    with ledger.transaction() as tx:
-        tx.publications.mark_published_many(
-            [
-                (ref1, "s1", "v-1", ctx),
-                (ref2, "s2", "v-2", ctx),
-            ]
-        )
-        assert tx.publications.is_published(ref=ref1, sha256="s1") is True
-        assert tx.publications.is_published(ref=ref2, sha256="s2") is True
+        assert published == {(ref1.identity_hash, "s1"), (ref2.identity_hash, "s2")}
     ledger.close()
 
 

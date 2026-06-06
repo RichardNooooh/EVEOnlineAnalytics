@@ -59,7 +59,6 @@ def _write_reference_archive(path: Path) -> None:
         archive.add(staging / "market_groups.json", arcname="market_groups.json")
 
 
-@pytest.mark.integration
 def test_market_history_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     file_path = tmp_path / "market-history-2026-01-01.csv.bz2"
     _write_history_file(file_path)
@@ -94,7 +93,6 @@ def test_market_history_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert con.closed is True
 
 
-@pytest.mark.integration
 def test_market_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     file_path = tmp_path / "market-orders-2026-01-01_00-00-00.v3.csv.bz2"
     _write_orders_file(file_path)
@@ -129,7 +127,6 @@ def test_market_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert con.closed is True
 
 
-@pytest.mark.integration
 def test_fuzzwork_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     file_path = tmp_path / "fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz"
     _write_fuzzwork_file(file_path)
@@ -168,7 +165,6 @@ def test_fuzzwork_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert con.closed is True
 
 
-@pytest.mark.integration
 def test_references_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     archive_path = tmp_path / "reference-data-latest.tar.xz"
     _write_reference_archive(archive_path)
