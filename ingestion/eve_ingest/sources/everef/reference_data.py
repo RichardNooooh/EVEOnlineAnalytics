@@ -18,7 +18,6 @@ from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
     compute_source_object_id,
-    reference_provenance_table,
 )
 from eve_ingest.sources.everef.discovery import EVEREF_BASE
 from eve_ingest.sources.everef.provenance import build_source_object_metadata
@@ -228,7 +227,7 @@ def _process_member(
 def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
     source_url = result.version.source_url
     soid = compute_source_object_id("everef", "reference_data", source_url)
-    provenance_table = reference_provenance_table()
+    provenance_table = RawDuckLakeProvenanceTable.REFERENCE_OBJECTS
     failure_metadata = build_source_object_metadata(result, "everef", "reference_data") | {
         "status": "failed",
         "status_reason": "see log for details",

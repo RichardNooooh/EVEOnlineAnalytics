@@ -7,6 +7,10 @@ from typing import Final
 
 from eve_ingest.ducklake.attach_config import DEFAULT_RAW_SCHEMA
 
+############################
+# Data Classes
+############################
+
 
 @dataclass(frozen=True)
 class DuckLakeTableTarget:
@@ -24,6 +28,11 @@ class DuckLakeWriteMetrics:
     inserted_rows: int
     matched_rows: int
     replaced_rows: int
+
+
+############################
+# Enums
+############################
 
 
 class RawDuckLakeTable(StrEnum):
@@ -48,6 +57,11 @@ class RawDuckLakeProvenanceTable(StrEnum):
     MARKET_ORDERS_OBJECTS = "raw_market_orders_objects"
     FUZZWORK_ORDERS_OBJECTS = "raw_fuzzwork_orders_objects"
     REFERENCE_OBJECTS = "raw_reference_objects"
+
+
+############################
+# Table Definitions
+############################
 
 
 _SOURCE_OBJECT_COLUMN_DEFINITIONS: Final[tuple[str, ...]] = (
@@ -172,6 +186,11 @@ _PROVENANCE_TABLES_BY_DATA_TABLE: Final[dict[RawDuckLakeTable, RawDuckLakeProven
 }
 
 
+############################
+# Helpers
+############################
+
+
 def compute_source_object_id(source_system: str, endpoint: str, source_url: str) -> str:
     raw = f"{source_system}|{endpoint}|{source_url}"
     return hashlib.sha256(raw.encode()).hexdigest()
@@ -190,10 +209,6 @@ def provenance_table_for_data_table(table: RawDuckLakeTable) -> RawDuckLakeProve
         return _PROVENANCE_TABLES_BY_DATA_TABLE[table]
     except KeyError as exc:
         raise ValueError(f"No provenance table configured for raw data table: {table.value}") from exc
-
-
-def reference_provenance_table() -> RawDuckLakeProvenanceTable:
-    return RawDuckLakeProvenanceTable.REFERENCE_OBJECTS
 
 
 def source_object_column_definitions() -> tuple[str, ...]:

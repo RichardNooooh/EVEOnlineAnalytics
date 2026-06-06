@@ -7,6 +7,10 @@ from eve_ingest.ducklake.locks import ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.raw_objects.primitives import IdentityKey, UpdateMode
 
+############################
+# Publisher Specs
+############################
+
 
 @dataclass(frozen=True)
 class PublisherSpec:
@@ -32,6 +36,11 @@ class PublisherSpec:
         if len(self.data_tables) == 1:
             return self.data_tables[0].value
         return ",".join(table.value for table in self.data_tables)
+
+
+############################
+# Publication Scope Builders
+############################
 
 
 def source_date_publication_scope(publication_dataset_name: str) -> Callable[[IdentityKey], str]:
