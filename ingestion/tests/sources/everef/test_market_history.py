@@ -4,12 +4,14 @@ import bz2
 import logging
 import pathlib
 from datetime import date
+from unittest.mock import MagicMock
 
+import pyarrow as pa
 import pytest
 
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.raw_objects import UpdateMode
-from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC, _build_cache_objects
+from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC, _build_cache_objects, _process_result
 from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow
 from tests.sources.everef.conftest import make_cache_result
 
@@ -130,3 +132,27 @@ class TestParseCsvToArrow:
         assert "_source_content_length" not in table.column_names
         # Original columns are still present
         assert "average" in table.column_names
+
+
+def test_process_result_uses_authoritative_writer_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = make_cache_result(
+        "/tmp/market-history-2026-01-01.csv.bz2",
+        dataset_name="market-history",
+        identity_key={"source_date": "2026-01-01"},
+        source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
+    )
+    writer = MagicMock()
+    monkeypatch.setattr(
+        "eve_ingest.sources.everef.market_history.parse_csv_to_arrow",
+        lambda result: pa.table({"date": [date(2026, 1, 1)], "region_id": [10000001], "type_id": [34]}),
+    )
+
+    writer.write.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
+
+    outcome = _process_result(result, writer)
+    assert outcome.success is True
+    assert outcome.source_date == "2026-01-01"
+    assert len(outcome.write_metrics) == 1
+    call_kwargs = writer.write.call_args.kwargs
+    assert call_kwargs["mode"] is DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS
+    assert call_kwargs["key_columns"] == ["date", "region_id", "type_id"]

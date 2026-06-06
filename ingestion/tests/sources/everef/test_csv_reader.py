@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
@@ -9,6 +10,7 @@ import pytest
 from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics, DuckLakeWriterMode, RawDuckLakeTable
 from eve_ingest.sources.everef import csv_reader
 from eve_ingest.sources.everef.csv_reader import publish_file_backed_rows
+from eve_ingest.sources.everef.provenance import parse_last_modified_timestamp
 from tests.sources.everef.conftest import make_cache_result
 
 
@@ -66,7 +68,7 @@ class _FakeWriter:
         )
 
 
-def test_publish_file_backed_rows_groups_write_and_success_provenance_in_one_transaction() -> None:
+def test_publish_file_backed_rows_groups_write_and_success_provenance_after_initial_upsert() -> None:
     result = make_cache_result(
         "/tmp/market-history-2026-01-01.csv.bz2",
         source_url="https://example.com/market-history-2026-01-01.csv.bz2",
@@ -233,14 +235,15 @@ def test_publish_file_backed_rows_does_not_retry_non_conflict_failure(monkeypatc
     assert sleep_calls == []
 
 
-def test_publish_file_backed_rows_does_not_retry_replace_table_conflict(monkeypatch) -> None:
+def test_publish_file_backed_market_order_rows_does_not_retry_replace_table_conflict(monkeypatch) -> None:
     result = make_cache_result(
-        "/tmp/market-history-2026-01-01.csv.bz2",
-        source_url="https://example.com/market-history-2026-01-01.csv.bz2",
+        "/tmp/market-orders-2026-01-01.csv.bz2",
+        dataset_name="market-orders",
+        source_url="https://example.com/market-orders-2026-01-01.csv.bz2",
     )
     writer = _FakeWriter()
     writer.transaction_exit_exceptions = [RuntimeError("ducklake_snapshot primary key constraint violation")]
-    parsed_table = pa.table({"type_id": [34], "average": [5.25]})
+    parsed_table = pa.table({"order_id": [1], "price": [10.0]})
     sleep_calls: list[float] = []
 
     monkeypatch.setattr(csv_reader.time, "sleep", sleep_calls.append)
@@ -249,9 +252,9 @@ def test_publish_file_backed_rows_does_not_retry_replace_table_conflict(monkeypa
         result,
         writer,
         source_system="everef",
-        endpoint="market_history",
+        endpoint="market_orders",
         source_market_date=date(2026, 1, 1),
-        table_key=RawDuckLakeTable.MARKET_HISTORY,
+        table_key=RawDuckLakeTable.MARKET_ORDERS,
         mode=DuckLakeWriterMode.REPLACE_TABLE,
         key_columns=[],
         parse_table=lambda _: parsed_table,
@@ -268,3 +271,22 @@ def test_publish_file_backed_rows_does_not_retry_replace_table_conflict(monkeypa
         "upsert",
     ]
     assert sleep_calls == []
+
+
+def test_parse_last_modified_timestamp_supports_iso_and_http_date() -> None:
+    iso_value = parse_last_modified_timestamp("2026-01-02T11:01:55Z")
+    http_value = parse_last_modified_timestamp("Fri, 02 Jan 2026 11:01:55 GMT")
+
+    assert iso_value == http_value
+
+
+def test_parse_last_modified_timestamp_returns_none_for_invalid_value(caplog: pytest.LogCaptureFixture) -> None:
+    logger = logging.getLogger("eve_ingest.sources.everef")
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.WARNING, logger=logger.name):
+            value = parse_last_modified_timestamp("not-a-timestamp")
+            assert value is None
+            assert "Could not parse last_modified timestamp" in caplog.text
+    finally:
+        logger.removeHandler(caplog.handler)
