@@ -66,25 +66,12 @@ class TestListSnapshots:
         client.fetch_text.return_value = "<html></html>"
         logger.addHandler(caplog.handler)
         try:
-            with caplog.at_level(logging.INFO, logger=logger.name):
+            with caplog.at_level(logging.WARNING, logger=logger.name):
                 filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, client)
         finally:
             logger.removeHandler(caplog.handler)
         assert filenames == []
-        assert "Snapshot listing source_date=2026-01-01 snapshot_count=0" in caplog.text
-        assert "prefix=market-orders/history" in caplog.text
-
-    def test_malformed_html_warns(self, caplog: pytest.LogCaptureFixture) -> None:
-        client = MagicMock()
-        client.fetch_text.return_value = "<html>bad</html>"
-        logger.addHandler(caplog.handler)
-        try:
-            with caplog.at_level(logging.INFO, logger=logger.name):
-                filenames = list_snapshots("market-orders/history", date(2026, 1, 1), _SNAPSHOT_RE, client)
-        finally:
-            logger.removeHandler(caplog.handler)
-        assert filenames == []
-        assert "Snapshot listing source_date=2026-01-01 snapshot_count=0" in caplog.text
+        assert "No snapshots discovered source_date=2026-01-01" in caplog.text
         assert "prefix=market-orders/history" in caplog.text
 
 

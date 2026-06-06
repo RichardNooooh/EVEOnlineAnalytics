@@ -107,16 +107,10 @@ def test_publication_scope_maps_to_data_and_support_domains() -> None:
 
 
 def test_table_lock_domains_are_derived_from_physical_tables() -> None:
-    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_CATEGORIES) == ("ducklake:raw:raw_reference_categories")
-    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_GROUPS) == "ducklake:raw:raw_reference_groups"
-    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_MARKET_GROUPS) == (
-        "ducklake:raw:raw_reference_market_groups"
-    )
-    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_REGIONS) == "ducklake:raw:raw_reference_regions"
-    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_TYPES) == "ducklake:raw:raw_reference_types"
-    assert provenance_table_lock_domain(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS) == (
-        "ducklake:support:raw_reference_objects"
-    )
+    for table in RawDuckLakeTable:
+        assert raw_table_lock_domain(table) == f"ducklake:raw:{table.value}"
+    for table in RawDuckLakeProvenanceTable:
+        assert provenance_table_lock_domain(table) == f"ducklake:support:{table.value}"
 
 
 def test_ducklake_lock_domains_for_tables_orders_data_before_support() -> None:
@@ -146,8 +140,7 @@ def test_raw_bootstrap_domains_include_migration_and_all_publication_domains() -
 
 
 def test_lock_key_is_stable() -> None:
-    domain = "ducklake:raw:raw_market_orders"
-    assert ducklake_lock_key(domain) == ducklake_lock_key(domain)
+    assert ducklake_lock_key("ducklake:raw:raw_market_orders") == -8572494044246768565
 
 
 def test_lock_token_cannot_be_constructed_directly() -> None:

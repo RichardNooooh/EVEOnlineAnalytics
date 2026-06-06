@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -14,21 +13,6 @@ from eve_ingest.sources.everef.reference_data import (
     _process_member,
 )
 from tests.sources.everef.conftest import make_cache_result
-
-
-def _make_tarball(path: Path, files: dict[str, str]) -> Path:
-    staging = path.parent / "staging"
-    staging.mkdir(exist_ok=True)
-    for name, content in files.items():
-        file_path = staging / name
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(content)
-
-    with tarfile.open(path, "w:xz") as archive:
-        for file_path in staging.rglob("*"):
-            if file_path.is_file():
-                archive.add(file_path, arcname=str(file_path.relative_to(staging)))
-    return path
 
 
 def test_publisher_spec_declares_reference_mutations() -> None:
@@ -46,7 +30,7 @@ def test_publisher_spec_declares_reference_mutations() -> None:
     assert PUBLISHER_SPEC.publication_scope({"source_date": "latest"}) == "raw:references:full_extract"
 
 
-class TestBuildCacheObject:
+class TestBuildCacheObjects:
     def test_single_object(self) -> None:
         objects = _build_cache_objects()
         assert len(objects) == 1
@@ -123,7 +107,7 @@ class TestParseJsonToTable:
         assert "_source_archive_member" not in table.column_names
         assert "_ingested_at" not in table.column_names
 
-    def test_empty_list_returns_empty_table(self, tmp_path: Path) -> None:
+    def test_empty_object_returns_empty_table(self, tmp_path: Path) -> None:
         member_path = tmp_path / "empty.json"
         member_path.write_text("{}")
 
@@ -131,7 +115,7 @@ class TestParseJsonToTable:
 
         assert table.num_rows == 0
 
-    def test_non_keyed_object_returns_empty_table(self, tmp_path: Path) -> None:
+    def test_non_keyed_list_returns_empty_table(self, tmp_path: Path) -> None:
         member_path = tmp_path / "obj.json"
         member_path.write_text("[]")
 
@@ -196,9 +180,7 @@ class TestProcessMember:
         member_path = tmp_path / "types.json"
         member_path.write_text(json.dumps(self.TYPES_DATA))
 
-        tarball_path = tmp_path / "archive.tar.xz"
-        _make_tarball(tarball_path, {"types.json": json.dumps(self.TYPES_DATA)})
-        result = make_cache_result(str(tarball_path))
+        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
 
         writer = MagicMock()
         writer.write.return_value = MagicMock(replaced_rows=0)
