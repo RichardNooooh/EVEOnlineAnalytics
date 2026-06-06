@@ -31,7 +31,7 @@ class _KeepConnection:
 def shared_con(monkeypatch):
     con = _KeepConnection()
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.writer._attach_ducklake", lambda c, config: None)
+    monkeypatch.setattr("eve_ingest.ducklake.writer._attach", lambda c, config: None)
     yield con._con
     con._con.close()
 

@@ -10,14 +10,13 @@ import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig, build_ducklake_attach_config_from_url
 from eve_ingest.ducklake.locks import (
-    DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,
     DuckLakeLockTimeoutError,
     ducklake_lock_domains_for_publication_scope,
     hold_ducklake_lock_domains,
     raw_bootstrap_lock_domains,
 )
 from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
-from eve_ingest.ducklake.writer import _attach_ducklake, _quote_identifier, bootstrap_raw_ducklake
+from eve_ingest.ducklake.writer import _attach, _ident, bootstrap_raw_ducklake
 
 
 @pytest.fixture
@@ -33,12 +32,12 @@ def attach_config(pg_url: str, tmp_path: Path) -> DuckLakeAttachConfig:
 
 def _connect(attach_config: DuckLakeAttachConfig) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect()
-    _attach_ducklake(con, config=attach_config)
+    _attach(con, config=attach_config)
     return con
 
 
 def _target(attach_config: DuckLakeAttachConfig, table: RawDuckLakeTable) -> str:
-    return f"{_quote_identifier(attach_config.alias)}.raw.{_quote_identifier(table.value)}"
+    return f"{_ident(attach_config.alias)}.raw.{_ident(table.value)}"
 
 
 def _insert_market_order(
@@ -233,42 +232,6 @@ def test_raw_bootstrap_lock_set_blocks_every_writer_domain(pg_url: str) -> None:
                     timeout_seconds=0.1,
                 ):
                     pytest.fail(f"bootstrap lock set should block writer scope {writer_scope}")
-
-
-@pytest.mark.integration
-def test_maintenance_lock_set_blocks_writer_when_domains_overlap(pg_url: str) -> None:
-    writer_scope = "raw:market_history:source_date=2026-01-01"
-    writer_domains = ducklake_lock_domains_for_publication_scope(writer_scope)
-
-    with hold_ducklake_lock_domains(
-        catalog_url=pg_url,
-        lock_domains=(DUCKLAKE_MAINTENANCE_LOCK_DOMAIN, *writer_domains),
-        timeout_seconds=5,
-    ):
-        with pytest.raises(DuckLakeLockTimeoutError, match="raw_market_history"):
-            with hold_ducklake_lock_domains(
-                catalog_url=pg_url,
-                lock_domains=writer_domains,
-                timeout_seconds=0.1,
-            ):
-                pytest.fail("overlapping maintenance lock set should block writer domains")
-
-
-@pytest.mark.integration
-def test_maintenance_domain_alone_is_not_global_writer_pause(pg_url: str) -> None:
-    writer_domains = ducklake_lock_domains_for_publication_scope("raw:market_history:source_date=2026-01-01")
-
-    with hold_ducklake_lock_domains(
-        catalog_url=pg_url,
-        lock_domains=(DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,),
-        timeout_seconds=5,
-    ):
-        with hold_ducklake_lock_domains(
-            catalog_url=pg_url,
-            lock_domains=writer_domains,
-            timeout_seconds=0.1,
-        ):
-            pass
 
 
 def test_ingestion_code_does_not_reference_legacy_raw_source_objects() -> None:

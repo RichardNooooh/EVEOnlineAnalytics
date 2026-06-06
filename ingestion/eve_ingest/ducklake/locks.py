@@ -13,7 +13,13 @@ from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLa
 
 logger = logging.getLogger("eve_ingest.ducklake")
 
+
+############################
+# Lock Domains
+############################
+
 DUCKLAKE_MIGRATION_LOCK_DOMAIN = "ducklake:migration"
+# NOTE: Reserved placeholder only in case a maintenance lock label is needed later.
 DUCKLAKE_MAINTENANCE_LOCK_DOMAIN = "ducklake:maintenance"
 
 _DATA_TABLE_LOCK_DOMAINS = {
@@ -61,10 +67,14 @@ _PUBLICATION_SCOPE_TABLES = {
 
 _LOCK_DOMAIN_RANKS = {
     DUCKLAKE_MIGRATION_LOCK_DOMAIN: 0,
-    DUCKLAKE_MAINTENANCE_LOCK_DOMAIN: 1,
-    "ducklake:raw:": 2,
-    "ducklake:support:": 3,
+    "ducklake:raw:": 1,
+    "ducklake:support:": 2,
 }
+
+
+############################
+# Errors And Context
+############################
 
 
 class DuckLakeLockTimeoutError(RuntimeError):
@@ -84,12 +94,12 @@ class DuckLakeLockContext:
     airflow_run_id: str | None = None
 
 
-@dataclass
-class _DuckLakeLockState:
-    active: bool
-
-
 _DUCKLAKE_LOCK_TOKEN_SENTINEL = object()
+
+
+############################
+# Lock Token
+############################
 
 
 @dataclass(frozen=True, init=False)
@@ -97,13 +107,13 @@ class DuckLakeLockToken:
     """Proof that specific DuckLake advisory lock domains are currently held."""
 
     held_domains: tuple[str, ...]
-    _state: _DuckLakeLockState = field(repr=False, compare=False)
+    _active: bool = field(repr=False, compare=False)
 
     def __init__(
         self,
         held_domains: Iterable[str],
         *,
-        _state: _DuckLakeLockState | None = None,
+        _active: bool = True,
         _sentinel: object | None = None,
     ) -> None:
         if _sentinel is not _DUCKLAKE_LOCK_TOKEN_SENTINEL:
@@ -112,19 +122,19 @@ class DuckLakeLockToken:
                 "hold_ducklake_lock_domains() or DuckLakeLockToken.unsafe_for_tests()"
             )
         object.__setattr__(self, "held_domains", ordered_ducklake_lock_domains(held_domains))
-        object.__setattr__(self, "_state", _state or _DuckLakeLockState(active=True))
+        object.__setattr__(self, "_active", _active)
 
     @classmethod
     def unsafe_for_tests(cls, lock_domains: Iterable[str]) -> DuckLakeLockToken:
         return cls(
             lock_domains,
-            _state=_DuckLakeLockState(active=True),
+            _active=True,
             _sentinel=_DUCKLAKE_LOCK_TOKEN_SENTINEL,
         )
 
     @property
     def is_active(self) -> bool:
-        return self._state.active
+        return self._active
 
     def require_data_table(self, table: RawDuckLakeTable) -> None:
         self.require_domain(raw_table_lock_domain(table), table=table.value)
@@ -144,6 +154,11 @@ class DuckLakeLockToken:
             f"DuckLake lock token does not cover required domain={lock_domain}{table_context}; "
             f"held_domains={list(self.held_domains)}"
         )
+
+
+############################
+# Domain Helpers
+############################
 
 
 def raw_table_lock_domain(table: RawDuckLakeTable) -> str:
@@ -175,17 +190,6 @@ def raw_bootstrap_lock_domains() -> tuple[str, ...]:
     return ordered_ducklake_lock_domains((DUCKLAKE_MIGRATION_LOCK_DOMAIN, *all_raw_publication_lock_domains()))
 
 
-def maintenance_lock_domains_for_tables(
-    *,
-    data_tables: Iterable[RawDuckLakeTable] = (),
-    provenance_tables: Iterable[RawDuckLakeProvenanceTable] = (),
-) -> tuple[str, ...]:
-    return ordered_ducklake_lock_domains(
-        (DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,)
-        + ducklake_lock_domains_for_tables(data_tables=data_tables, provenance_tables=provenance_tables)
-    )
-
-
 def ducklake_lock_domains_for_publication_scope(publication_scope: str) -> tuple[str, ...]:
     for prefix, (data_tables, provenance_tables) in _PUBLICATION_SCOPE_TABLES.items():
         if publication_scope.startswith(prefix):
@@ -195,12 +199,17 @@ def ducklake_lock_domains_for_publication_scope(publication_scope: str) -> tuple
 
 def ordered_ducklake_lock_domains(lock_domains: Iterable[str]) -> tuple[str, ...]:
     unique = tuple(dict.fromkeys(lock_domains))
-    return tuple(sorted(unique, key=lambda domain: (_ducklake_lock_rank(domain), domain)))
+    return tuple(sorted(unique, key=lambda domain: (_rank(domain), domain)))
 
 
 def ducklake_lock_key(lock_domain: str) -> int:
     digest = hashlib.blake2b(lock_domain.encode("utf-8"), digest_size=8).digest()
     return int.from_bytes(digest, byteorder="big", signed=True)
+
+
+############################
+# Lock Acquisition
+############################
 
 
 @contextmanager
@@ -212,21 +221,20 @@ def hold_ducklake_lock_domains(
     context: DuckLakeLockContext | None = None,
 ) -> Iterator[DuckLakeLockToken]:
     ordered_domains = ordered_ducklake_lock_domains(lock_domains)
-    lock_state = _DuckLakeLockState(active=False)
     token = DuckLakeLockToken(
         ordered_domains,
-        _state=lock_state,
+        _active=False,
         _sentinel=_DUCKLAKE_LOCK_TOKEN_SENTINEL,
     )
     if not ordered_domains:
-        lock_state.active = True
+        object.__setattr__(token, "_active", True)
         try:
             yield token
         finally:
-            lock_state.active = False
+            object.__setattr__(token, "_active", False)
         return
 
-    log_context = _ducklake_lock_log_context(context)
+    log_context = _context_str(context)
 
     logger.info(
         "Waiting for DuckLake advisory locks domains=%s timeout_seconds=%s%s",
@@ -250,14 +258,19 @@ def hold_ducklake_lock_domains(
                 ) from exc
             finally:
                 cursor.execute("select set_config('statement_timeout', '0', false)")
-        lock_state.active = True
+        object.__setattr__(token, "_active", True)
         try:
             yield token
         finally:
-            lock_state.active = False
+            object.__setattr__(token, "_active", False)
     finally:
         logger.info("Releasing DuckLake advisory locks domains=%s%s", list(ordered_domains), log_context)
         connection.close()
+
+
+############################
+# Misc Helpers
+###########################
 
 
 def postgresql_uri(url: str) -> str:
@@ -267,7 +280,7 @@ def postgresql_uri(url: str) -> str:
     return parsed.render_as_string(hide_password=False)
 
 
-def _ducklake_lock_rank(lock_domain: str) -> int:
+def _rank(lock_domain: str) -> int:
     if lock_domain in _LOCK_DOMAIN_RANKS:
         return _LOCK_DOMAIN_RANKS[lock_domain]
 
@@ -278,7 +291,7 @@ def _ducklake_lock_rank(lock_domain: str) -> int:
     raise ValueError(f"Unsupported DuckLake lock domain: {lock_domain}")
 
 
-def _ducklake_lock_log_context(context: DuckLakeLockContext | None) -> str:
+def _context_str(context: DuckLakeLockContext | None) -> str:
     if context is None:
         return ""
 

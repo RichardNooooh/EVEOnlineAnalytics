@@ -3,32 +3,31 @@ from __future__ import annotations
 import logging
 import os
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from eve_ingest.raw_objects import Cache, CacheObject, CacheResult, GetMode, UpdateMode
 from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
-from eve_ingest.ducklake.writer import DuckLakeWriter
 from eve_ingest.ducklake.attach_config import build_ducklake_attach_config_from_url
 from eve_ingest.ducklake.locks import (
     DuckLakeLockContext,
     DuckLakeLockTimeoutError,
     hold_ducklake_lock_domains,
 )
-from eve_ingest.ducklake.raw_tables import (
-    DuckLakeWriteMetrics,
-    DuckLakeWriterMode,
-    RawDuckLakeProvenanceTable,
-    RawDuckLakeTable,
-)
-from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
+from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics
+from eve_ingest.ducklake.writer import DuckLakeWriter
+from eve_ingest.raw_objects import Cache, CacheObject, CacheResult, GetMode, UpdateMode
 from eve_ingest.raw_objects.ledger.models import PublicationContext
 from eve_ingest.workflows.publisher_specs import PublisherSpec
 
 logger = logging.getLogger(__name__)
+
+
+############################
+# Types
+############################
 
 
 class PublicationScopeLockError(DuckLakeLockTimeoutError):
@@ -53,44 +52,9 @@ class PipelineProcessResult:
     write_metrics: tuple[DuckLakeWriteMetrics, ...] = ()
 
 
-class _WriterModeEnforcingDuckLakeWriter:
-    def __init__(
-        self,
-        writer: DuckLakeWriter,
-        *,
-        allowed_mode: DuckLakeWriterMode,
-        dataset_name: str,
-    ) -> None:
-        self._writer = writer
-        self._allowed_mode = allowed_mode
-        self._dataset_name = dataset_name
-
-    @property
-    def write_history(self) -> tuple[DuckLakeWriteMetrics, ...]:
-        return self._writer.write_history
-
-    def write(
-        self,
-        arrow_table,
-        *,
-        table: RawDuckLakeTable,
-        mode: DuckLakeWriterMode,
-        key_columns: Sequence[str] = (),
-    ) -> DuckLakeWriteMetrics:
-        if mode != self._allowed_mode:
-            requested_mode = getattr(mode, "value", str(mode))
-            raise ValueError(
-                "DuckLake writer mode does not match publisher declaration "
-                f"dataset={self._dataset_name} table={table.value} "
-                f"declared_mode={self._allowed_mode.value} requested_mode={requested_mode}"
-            )
-        return self._writer.write(arrow_table, table=table, mode=mode, key_columns=key_columns)
-
-    def transaction(self):
-        return self._writer.transaction()
-
-    def upsert_source_object(self, data: dict, *, table: RawDuckLakeProvenanceTable) -> None:
-        self._writer.upsert_source_object(data, table=table)
+############################
+# Pipeline
+############################
 
 
 def run_pipeline(
@@ -100,6 +64,8 @@ def run_pipeline(
     config: _PipelineConfig,
     process_one: Callable[[CacheResult, DuckLakeWriter], PipelineProcessResult],
 ) -> int:
+    """Fetch unpublished raw files, publish them to DuckLake, then mark successes."""
+
     attach_config = build_ducklake_attach_config_from_url(
         config.ducklake.ducklake_catalog,
         data_path=f"{config.data_root}/datasets/ducklake/raw",
@@ -168,14 +134,14 @@ def run_pipeline(
                     continue
 
                 scope_successful_results: list[CacheResult] = []
-                with DuckLakeWriter(attach_config, lock_token=lock_token) as writer:
-                    constrained_writer = _WriterModeEnforcingDuckLakeWriter(
-                        writer,
-                        allowed_mode=publisher_spec.writer_mode,
-                        dataset_name=dataset_name,
-                    )
+                with DuckLakeWriter(
+                    attach_config,
+                    lock_token=lock_token,
+                    declared_mode=publisher_spec.writer_mode,
+                    dataset_name=dataset_name,
+                ) as writer:
                     for result in scope_results:
-                        outcome = process_one(result, constrained_writer)
+                        outcome = process_one(result, writer)
                         source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
                         if outcome.success:
                             success += 1
@@ -227,6 +193,11 @@ def run_pipeline(
     return exit_code
 
 
+############################
+# Locking
+############################
+
+
 @contextmanager
 def _hold_publication_domain_locks(
     *,
@@ -255,6 +226,11 @@ def _hold_publication_domain_locks(
             yield lock_token
     except DuckLakeLockTimeoutError as exc:
         raise PublicationScopeLockError(str(exc)) from exc
+
+
+############################
+# Result Filtering
+############################
 
 
 def _group_results_by_publication_scope(
@@ -322,7 +298,12 @@ def _filter_current_mutable_results(
             continue
 
         state = current_states.get(result.raw_object.ref.identity_hash)
-        is_current = _cache_result_matches_current_state(result, state)
+        is_current = (
+            state is not None
+            and state.current_version.id == result.version.id
+            and state.current_version.sha256 == result.version.sha256
+            and state.current_version.local_path == result.version.local_path
+        )
         path_exists = Path(result.path).exists()
         if not is_current:
             if not path_exists:
@@ -337,19 +318,6 @@ def _filter_current_mutable_results(
     return current_results, stale_count, missing_stale_count
 
 
-def _cache_result_matches_current_state(
-    result: CacheResult,
-    state: CurrentRawObjectState | None,
-) -> bool:
-    if state is None:
-        return False
-    return (
-        state.current_version.id == result.version.id
-        and state.current_version.sha256 == result.version.sha256
-        and state.current_version.local_path == result.version.local_path
-    )
-
-
 def _publication_scope_source_date(publication_scope: str, scope_results: list[CacheResult]) -> str | None:
     if ":source_date=" in publication_scope:
         return publication_scope.rsplit("=", 1)[-1]
@@ -359,6 +327,11 @@ def _publication_scope_source_date(publication_scope: str, scope_results: list[C
 
     source_date = scope_results[0].identity_key.get("source_date")
     return source_date if isinstance(source_date, str) and source_date else None
+
+
+############################
+# Publication Tracking
+############################
 
 
 def _mark_successful_results_published(
@@ -372,6 +345,11 @@ def _mark_successful_results_published(
             publisher_run_id=publisher_run_id,
         ),
     )
+
+
+############################
+# Logging
+############################
 
 
 def _count_by_source_date(objects: list[CacheObject] | list[CacheResult]) -> dict[str, int]:

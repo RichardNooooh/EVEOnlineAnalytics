@@ -36,7 +36,6 @@ Relevant upstream DuckLake references:
 - Transactions: <https://ducklake.select/docs/stable/duckdb/advanced_features/transactions.html>
 - Conflict resolution: <https://ducklake.select/docs/stable/duckdb/advanced_features/conflict_resolution.html>
 - Choosing a catalog database: <https://ducklake.select/docs/stable/duckdb/usage/choosing_a_catalog_database.html>
-- Recommended maintenance: <https://ducklake.select/docs/stable/duckdb/maintenance/recommended_maintenance.html>
 
 ## Decision
 
@@ -45,7 +44,6 @@ Adopt explicit DuckLake advisory lock domains and an explicit raw bootstrap step
 The first stable lock domains are:
 
 - `ducklake:migration`
-- `ducklake:maintenance`
 - `ducklake:raw:raw_market_history`
 - `ducklake:raw:raw_market_orders`
 - `ducklake:raw:raw_fuzzwork_orders`
@@ -62,9 +60,8 @@ The first stable lock domains are:
 Lock acquisition order is fixed by rank:
 
 1. migration
-2. maintenance
-3. data/publication domain
-4. support/provenance domain
+2. data/publication domain
+3. support/provenance domain
 
 Lexical ordering is only allowed within the same rank.
 
@@ -89,11 +86,9 @@ can acquire only their affected reference raw table domain plus the shared refer
 provenance domain.
 
 Raw bootstrap acquires `ducklake:migration` plus all raw and support domains whose schemas
-or tables it may create or alter.
-
-Maintenance publication exclusion is explicit-domain based: maintenance work must acquire
-`ducklake:maintenance` plus every affected DuckLake raw/support domain. The
-`ducklake:maintenance` domain alone is not a global writer pause.
+or tables it may create or alter. Bootstrap remains idempotent so reruns can safely
+repair missing raw schemas or support tables without moving routine DDL back into normal
+publication paths.
 
 Raw provenance is now dataset-scoped:
 
@@ -132,6 +127,3 @@ an explicit CLI entrypoint: `eve-ingest ducklake bootstrap raw`.
 - This pass does not add general optimistic-conflict retries for DuckLake write failures;
   only external advisory serialization is relied on because broader retries were not yet
   proven safe across all writer modes.
-- Maintenance must take the dedicated `ducklake:maintenance` domain plus affected
-  raw/support domains; Airflow-level `max_active_runs` remains only an outer scheduling
-  guard.

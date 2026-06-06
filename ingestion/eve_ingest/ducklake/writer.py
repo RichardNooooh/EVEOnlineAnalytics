@@ -28,36 +28,35 @@ logger = logging.getLogger("eve_ingest.ducklake")
 _IDENTIFIER_RE = re.compile(r"^[^\s-]+$")
 
 
-def _quote_identifier(identifier: str) -> str:
+############################
+# SQL Helpers
+############################
+
+
+def _ident(identifier: str) -> str:
     if not identifier or _IDENTIFIER_RE.fullmatch(identifier) is None:
         raise ValueError("SQL identifiers must be non-empty strings without spaces or dashes")
     return '"' + identifier.replace('"', '""') + '"'
 
 
-def _quote_table_target(alias: str, target: DuckLakeTableTarget) -> str:
+def _table_sql(alias: str, target: DuckLakeTableTarget) -> str:
     return ".".join(
         [
-            _quote_identifier(alias),
-            _quote_identifier(target.schema),
-            _quote_identifier(target.table),
+            _ident(alias),
+            _ident(target.schema),
+            _ident(target.table),
         ]
     )
 
 
-def _build_key_columns_clause(key_columns: Sequence[str]) -> str:
-    if not key_columns:
-        raise ValueError("key_columns must not be empty when writer mode requires keys")
-    return ", ".join(_quote_identifier(key) for key in key_columns)
-
-
 @contextmanager
-def _temporary_arrow_view(con: duckdb.DuckDBPyConnection, arrow_table: pa.Table) -> Iterator[str]:
+def _arrow_view(con: duckdb.DuckDBPyConnection, arrow_table: pa.Table) -> Iterator[str]:
     source_name = f"_arrow_source_{uuid4().hex}"
     con.from_arrow(arrow_table).create_view(source_name)
     try:
         yield source_name
     finally:
-        con.execute(f"DROP VIEW IF EXISTS {_quote_identifier(source_name)}")
+        con.execute(f"DROP VIEW IF EXISTS {_ident(source_name)}")
 
 
 def _quote_literal(value: str) -> str:
@@ -65,7 +64,7 @@ def _quote_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def _attach_ducklake(
+def _attach(
     con: duckdb.DuckDBPyConnection,
     *,
     config: DuckLakeAttachConfig,
@@ -79,13 +78,18 @@ def _attach_ducklake(
     con.execute("LOAD ducklake")
     con.execute(
         f"""
-        ATTACH {_quote_literal(config.attach_uri)} AS {_quote_identifier(config.alias)} (
+        ATTACH {_quote_literal(config.attach_uri)} AS {_ident(config.alias)} (
             DATA_PATH {_quote_literal(config.data_path)},
             METADATA_SCHEMA {_quote_literal(config.metadata_schema)},
             OVERRIDE_DATA_PATH {"TRUE" if config.override_data_path else "FALSE"}
         )
         """
     )
+
+
+############################
+# Validation Helpers
+############################
 
 
 def _assert_matched_key_rows_identical(
@@ -105,11 +109,9 @@ def _assert_matched_key_rows_identical(
     if not non_key_cols:
         return
 
-    key_join = " AND ".join(f"s.{_quote_identifier(k)} = t.{_quote_identifier(k)}" for k in key_columns)
-    key_list = ", ".join(f"s.{_quote_identifier(k)}" for k in key_columns)
-    where_clause = " OR ".join(
-        f"s.{_quote_identifier(c)} IS DISTINCT FROM t.{_quote_identifier(c)}" for c in non_key_cols
-    )
+    key_join = " AND ".join(f"s.{_ident(k)} = t.{_ident(k)}" for k in key_columns)
+    key_list = ", ".join(f"s.{_ident(k)}" for k in key_columns)
+    where_clause = " OR ".join(f"s.{_ident(c)} IS DISTINCT FROM t.{_ident(c)}" for c in non_key_cols)
     query = f"""
         SELECT {key_list}
         FROM {quoted_source} s
@@ -140,22 +142,22 @@ def _assert_target_rows_missing_from_source(
     if source_date_col not in arrow_table.column_names:
         return
 
-    key_join = " AND ".join(f"s.{_quote_identifier(k)} = t.{_quote_identifier(k)}" for k in key_columns)
-    key_list = ", ".join(f"t.{_quote_identifier(k)}" for k in key_columns)
+    key_join = " AND ".join(f"s.{_ident(k)} = t.{_ident(k)}" for k in key_columns)
+    key_list = ", ".join(f"t.{_ident(k)}" for k in key_columns)
 
     query = f"""
         WITH source_dates AS (
-            SELECT DISTINCT {quoted_source}.{_quote_identifier(source_date_col)} AS source_date
+            SELECT DISTINCT {quoted_source}.{_ident(source_date_col)} AS source_date
             FROM {quoted_source}
         )
-        SELECT t.{_quote_identifier(source_date_col)} AS source_date, {key_list}
+        SELECT t.{_ident(source_date_col)} AS source_date, {key_list}
         FROM {quoted_target} t
         JOIN source_dates sd
-            ON t.{_quote_identifier(source_date_col)} = sd.source_date
+            ON t.{_ident(source_date_col)} = sd.source_date
         WHERE NOT EXISTS (
             SELECT 1
             FROM {quoted_source} s
-            WHERE s.{_quote_identifier(source_date_col)} = t.{_quote_identifier(source_date_col)}
+            WHERE s.{_ident(source_date_col)} = t.{_ident(source_date_col)}
                 AND {key_join}
         )
     """
@@ -177,16 +179,11 @@ def _validate_key_columns(arrow_table: pa.Table, key_columns: Sequence[str]) -> 
         raise ValueError("key_columns must not be empty when writer mode requires keys")
 
     for key in key_columns:
-        _quote_identifier(key)
+        _ident(key)
 
     missing_key_columns = [key for key in key_columns if key not in arrow_table.column_names]
     if missing_key_columns:
         raise ValueError("key_columns must exist in arrow_table columns: " + ", ".join(missing_key_columns))
-
-
-def _validate_replace_table_arguments(key_columns: Sequence[str]) -> None:
-    if key_columns:
-        raise ValueError("REPLACE_TABLE does not accept key_columns")
 
 
 def _target_exists(con: duckdb.DuckDBPyConnection, *, alias: str, target: DuckLakeTableTarget) -> bool:
@@ -203,20 +200,7 @@ def _target_exists(con: duckdb.DuckDBPyConnection, *, alias: str, target: DuckLa
     return bool(exists and exists[0])
 
 
-def _count_target_rows(
-    con: duckdb.DuckDBPyConnection,
-    *,
-    alias: str,
-    target: DuckLakeTableTarget,
-    quoted_target: str,
-) -> int:
-    if not _target_exists(con, alias=alias, target=target):
-        return 0
-    row = con.execute(f"SELECT COUNT(*) FROM {quoted_target}").fetchone()
-    return int(row[0])
-
-
-def _ensure_bootstrapped_target_exists(
+def _require_table(
     con: duckdb.DuckDBPyConnection,
     *,
     alias: str,
@@ -230,6 +214,11 @@ def _ensure_bootstrapped_target_exists(
     )
 
 
+############################
+# Metric Helpers
+############################
+
+
 def _count_source_rows_with_matches(
     con: duckdb.DuckDBPyConnection,
     *,
@@ -237,9 +226,7 @@ def _count_source_rows_with_matches(
     quoted_source: str,
     key_columns: Sequence[str],
 ) -> int:
-    conditions = " AND ".join(
-        f"target.{_quote_identifier(key)} = source.{_quote_identifier(key)}" for key in key_columns
-    )
+    conditions = " AND ".join(f"target.{_ident(key)} = source.{_ident(key)}" for key in key_columns)
     row = con.execute(
         f"""
         SELECT COUNT(*)
@@ -261,9 +248,7 @@ def _count_source_rows_without_matches(
     quoted_source: str,
     key_columns: Sequence[str],
 ) -> int:
-    conditions = " AND ".join(
-        f"target.{_quote_identifier(key)} = source.{_quote_identifier(key)}" for key in key_columns
-    )
+    conditions = " AND ".join(f"target.{_ident(key)} = source.{_ident(key)}" for key in key_columns)
     row = con.execute(
         f"""
         SELECT COUNT(*)
@@ -276,6 +261,11 @@ def _count_source_rows_without_matches(
         """
     ).fetchone()
     return int(row[0])
+
+
+############################
+# Writer
+############################
 
 
 class DuckLakeWriter:
@@ -309,26 +299,30 @@ class DuckLakeWriter:
     """
 
     def __init__(
-        self, config: DuckLakeAttachConfig | None = None, *, lock_token: DuckLakeLockToken | None = None
+        self,
+        config: DuckLakeAttachConfig | None = None,
+        *,
+        lock_token: DuckLakeLockToken | None = None,
+        declared_mode: DuckLakeWriterMode | None = None,
+        dataset_name: str | None = None,
     ) -> None:
         """Create a writer for the default or provided DuckLake target.
 
-        Example:
-            ```python
-            writer = DuckLakeWriter()
-            custom_writer = DuckLakeWriter(DuckLakeAttachConfig(...))
-            ```
+        `declared_mode`, when provided by a workflow publisher declaration, rejects
+        accidental calls with a different write mode before any DuckDB mutation work.
         """
 
         self._attach = config or _build_default_attach_config()
         self._lock_token = lock_token
+        self._declared_mode = declared_mode
+        self._dataset_name = dataset_name
         self._con: duckdb.DuckDBPyConnection | None = None
         self._write_history: list[DuckLakeWriteMetrics] = []
         self._transaction_depth = 0
 
     def __enter__(self) -> DuckLakeWriter:
         self._con = duckdb.connect()
-        _attach_ducklake(self._con, config=self._attach)
+        _attach(self._con, config=self._attach)
         logger.info(
             "DuckLake writer attached alias=%s metadata_schema=%s data_path=%s raw_schema=%s",
             self._attach.alias,
@@ -379,6 +373,14 @@ class DuckLakeWriter:
             ```
         """
 
+        if self._declared_mode is not None and mode != self._declared_mode:
+            requested_mode = getattr(mode, "value", str(mode))
+            raise ValueError(
+                "DuckLake writer mode does not match publisher declaration "
+                f"dataset={self._dataset_name or '-'} table={table.value} "
+                f"declared_mode={self._declared_mode.value} requested_mode={requested_mode}"
+            )
+
         con = self._con
         if con is None:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
@@ -393,17 +395,18 @@ class DuckLakeWriter:
             mode.value,
         )
 
-        quoted_target = _quote_table_target(self._attach.alias, _target_for(table))
+        quoted_target = _table_sql(self._attach.alias, _target_for(table))
         target = _target_for(table)
 
         if mode is DuckLakeWriterMode.REPLACE_TABLE and len(arrow_table) == 0:
             raise ValueError("REPLACE_TABLE requires a non-empty arrow_table")
 
-        with _temporary_arrow_view(con, arrow_table) as source_name:
-            quoted_source = _quote_identifier(source_name)
+        with _arrow_view(con, arrow_table) as source_name:
+            quoted_source = _ident(source_name)
             if mode is DuckLakeWriterMode.REPLACE_TABLE:
-                _validate_replace_table_arguments(key_columns)
-                _ensure_bootstrapped_target_exists(
+                if key_columns:
+                    raise ValueError("REPLACE_TABLE does not accept key_columns")
+                _require_table(
                     con,
                     alias=self._attach.alias,
                     target=target,
@@ -443,7 +446,7 @@ class DuckLakeWriter:
                 DuckLakeWriterMode.INSERT_MISSING_KEYS,
                 DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
             }:
-                _ensure_bootstrapped_target_exists(
+                _require_table(
                     con,
                     alias=self._attach.alias,
                     target=target,
@@ -485,7 +488,7 @@ class DuckLakeWriter:
                     f"""
                     MERGE INTO {quoted_target} AS target
                     USING {quoted_source} AS source
-                    USING ({_build_key_columns_clause(key_columns)})
+                    USING ({", ".join(_ident(key) for key in key_columns)})
                     WHEN NOT MATCHED THEN INSERT BY NAME
                     """
                 )
@@ -541,15 +544,13 @@ class DuckLakeWriter:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
         self._require_provenance_table_lock(table)
 
-        quoted_target = _quote_table_target(self._attach.alias, provenance_target_for(table))
+        quoted_target = _table_sql(self._attach.alias, provenance_target_for(table))
 
         columns = list(data.keys())
-        col_list = ", ".join(_quote_identifier(c) for c in columns)
+        col_list = ", ".join(_ident(c) for c in columns)
         select_list = ", ".join("?" for _ in columns)
-        update_set = ", ".join(
-            f"{_quote_identifier(k)} = source.{_quote_identifier(k)}" for k in columns if k != "source_object_id"
-        )
-        insert_cols = ", ".join(f"source.{_quote_identifier(k)}" for k in columns)
+        update_set = ", ".join(f"{_ident(k)} = source.{_ident(k)}" for k in columns if k != "source_object_id")
+        insert_cols = ", ".join(f"source.{_ident(k)}" for k in columns)
         values = list(data.values())
 
         con.execute(
@@ -579,15 +580,20 @@ class DuckLakeWriter:
         self._lock_token.require_provenance_table(table)
 
 
+############################
+# Bootstrap
+############################
+
+
 def bootstrap_raw_ducklake(config: DuckLakeAttachConfig | None = None) -> None:
     attach = config or _build_default_attach_config()
     con = duckdb.connect()
     try:
-        _attach_ducklake(con, config=attach)
-        schema_name = f"{_quote_identifier(attach.alias)}.{_quote_identifier(DEFAULT_RAW_SCHEMA)}"
+        _attach(con, config=attach)
+        schema_name = f"{_ident(attach.alias)}.{_ident(DEFAULT_RAW_SCHEMA)}"
         con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
         for table in RawDuckLakeTable:
-            quoted_target = _quote_table_target(attach.alias, _target_for(table))
+            quoted_target = _table_sql(attach.alias, _target_for(table))
             table_column_sql = ",\n                    ".join(raw_table_column_definitions(table))
             con.execute(
                 f"""
@@ -598,7 +604,7 @@ def bootstrap_raw_ducklake(config: DuckLakeAttachConfig | None = None) -> None:
             )
         column_sql = ",\n                ".join(source_object_column_definitions())
         for table in RawDuckLakeProvenanceTable:
-            quoted_target = _quote_table_target(attach.alias, provenance_target_for(table))
+            quoted_target = _table_sql(attach.alias, provenance_target_for(table))
             con.execute(
                 f"""
                 CREATE TABLE IF NOT EXISTS {quoted_target} (

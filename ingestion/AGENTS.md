@@ -79,12 +79,9 @@ or ingestion tests.
     `raw_market_orders_objects`, `raw_fuzzwork_orders_objects`, and
     `raw_reference_objects`; do not reuse the retired shared `raw_source_objects`
     contract.
-- Maintenance or bootstrap work that mutates shared DuckLake metadata/table state must
-  not overlap normal writers for the same lock domain set.
-- Maintenance semantics are affected-domain based: acquire `ducklake:maintenance` plus
-  affected raw/support domains. `ducklake:maintenance` alone is not a global pause.
 - Raw bootstrap must acquire `ducklake:migration` plus every raw/support domain it may
-  create or alter.
+  create or alter. Bootstrap should be idempotent so reruns can safely repair missing
+  raw schemas or support tables without becoming part of normal publication paths.
 - Primary dev/execution path is `infra/local/compose.yml` Docker Compose stack.
   Direct `uv run` on host is deprecated.
 - Use local SQLite DuckLake catalogs only for local development and smoke tests.

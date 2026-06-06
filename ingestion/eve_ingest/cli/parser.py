@@ -161,7 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     ducklake_parser = subparsers.add_parser(
         "ducklake",
-        help="Run DuckLake maintenance commands.",
+        help="Run DuckLake bootstrap commands.",
     )
     ducklake_parser.set_defaults(handler=_provider_has_no_commands)
     ducklake_subparsers = ducklake_parser.add_subparsers(dest="sub_command")
