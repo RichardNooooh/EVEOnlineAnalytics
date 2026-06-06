@@ -49,6 +49,11 @@ Use PostgreSQL for the raw source-file ledger.
   the `raw_files` database and user manually, because Postgres init scripts run only on
   first initialization.
 - The database backend does not by itself remove the single-writer acquisition contract.
+- The SQLAlchemy `create_all` bootstrap creates the raw-object version-number uniqueness
+  constraint only for new ledger schemas. It is not a migration system and will not add
+  `raw_object_versions_unique_object_version_number` to existing PostgreSQL ledgers.
+  Existing ledgers must be manually migrated after checking for duplicate
+  `(raw_object_id, version_number)` rows before relying on version-number uniqueness.
 
 ## Alternatives Considered
 

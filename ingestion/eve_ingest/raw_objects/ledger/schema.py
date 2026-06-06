@@ -67,6 +67,11 @@ raw_object_versions = Table(
     Column("local_path", Text, nullable=False),
     Column("storage_encoding", Text, nullable=False),
     Column("version_number", Integer, nullable=False),
+    UniqueConstraint(
+        "raw_object_id",
+        "version_number",
+        name="raw_object_versions_unique_object_version_number",
+    ),
 )
 
 raw_object_publications = Table(

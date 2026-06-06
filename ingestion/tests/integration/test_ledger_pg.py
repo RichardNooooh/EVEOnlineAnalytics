@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from threading import Barrier, Thread
+from uuid import uuid4
 
 import pytest
+from sqlalchemy import func, select
 
 from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger.models import RawObjectRef
+from eve_ingest.raw_objects.ledger.schema import raw_object_versions, raw_objects
 from eve_ingest.raw_objects.primitives import UpdateMode
 
 
@@ -266,3 +270,111 @@ def test_load_latest_versions_returns_correct_for_multiple(pg_url: str) -> None:
         assert versions[raw1.id].sha256 == "c" * 64
         assert versions[raw2.id].sha256 == "d" * 64
     ledger.close()
+
+
+@pytest.mark.integration
+def test_concurrent_first_touch_creates_one_raw_object(pg_url: str) -> None:
+    worker_count = 4
+    identity_hash = f"hash-touch-{uuid4().hex}"
+    ref = RawObjectRef(
+        source_name="test",
+        dataset_name="test_ds",
+        identity_hash=identity_hash,
+        identity_key={"k": "concurrent-touch"},
+        update_mode=UpdateMode.MUTABLE,
+    )
+    start = Barrier(worker_count)
+    errors: list[BaseException] = []
+    raw_object_ids: list[str] = []
+
+    def worker(index: int) -> None:
+        ledger = RawObjectLedger(ledger_url=pg_url)
+        try:
+            start.wait(timeout=5)
+            with ledger.transaction() as tx:
+                entry = tx.writer.touch_raw_object(
+                    ref=ref,
+                    checked_at=datetime.now(UTC),
+                    revalidation=RevalidationMetadata(etag=f'"v{index}"'),
+                )
+                raw_object_ids.append(entry.id)
+        except BaseException as exc:  # pragma: no cover - surfaced through assertion below
+            errors.append(exc)
+        finally:
+            ledger.close()
+
+    threads = [Thread(target=worker, args=(index,)) for index in range(worker_count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert errors == []
+    assert all(thread.is_alive() is False for thread in threads)
+    assert len(raw_object_ids) == worker_count
+    assert len(set(raw_object_ids)) == 1
+
+    ledger = RawObjectLedger(ledger_url=pg_url)
+    with ledger._engine.begin() as con:
+        count = con.execute(
+            select(func.count()).select_from(raw_objects).where(raw_objects.c.identity_hash == identity_hash)
+        ).scalar_one()
+    ledger.close()
+    assert count == 1
+
+
+@pytest.mark.integration
+def test_concurrent_rotate_version_allocates_unique_version_numbers(pg_url: str) -> None:
+    worker_count = 4
+    identity_hash = f"hash-rotate-{uuid4().hex}"
+    ref = RawObjectRef(
+        source_name="test",
+        dataset_name="test_ds",
+        identity_hash=identity_hash,
+        identity_key={"k": "concurrent-rotate"},
+        update_mode=UpdateMode.MUTABLE,
+    )
+    start = Barrier(worker_count)
+    errors: list[BaseException] = []
+    version_numbers: list[int] = []
+
+    def worker(index: int) -> None:
+        ledger = RawObjectLedger(ledger_url=pg_url)
+        try:
+            start.wait(timeout=5)
+            with ledger.transaction() as tx:
+                result = tx.writer.rotate_version(
+                    ref=ref,
+                    source_url=f"https://example.com/v{index}",
+                    fetched_at=datetime.now(UTC),
+                    revalidation=RevalidationMetadata(etag=f'"v{index}"'),
+                    sha256=f"{index}" * 64,
+                    local_path=f"/tmp/v{index}",
+                    storage_encoding="csv",
+                )
+                version_numbers.append(result.version.version_number)
+        except BaseException as exc:  # pragma: no cover - surfaced through assertion below
+            errors.append(exc)
+        finally:
+            ledger.close()
+
+    threads = [Thread(target=worker, args=(index,)) for index in range(worker_count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert errors == []
+    assert all(thread.is_alive() is False for thread in threads)
+    assert sorted(version_numbers) == list(range(1, worker_count + 1))
+
+    ledger = RawObjectLedger(ledger_url=pg_url)
+    with ledger._engine.begin() as con:
+        rows = con.execute(
+            select(raw_object_versions.c.version_number)
+            .join(raw_objects, raw_object_versions.c.raw_object_id == raw_objects.c.id)
+            .where(raw_objects.c.identity_hash == identity_hash)
+            .order_by(raw_object_versions.c.version_number)
+        ).all()
+    ledger.close()
+    assert [row[0] for row in rows] == list(range(1, worker_count + 1))
