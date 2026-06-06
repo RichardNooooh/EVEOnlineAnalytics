@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 import pyarrow as pa
 import pytest
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
@@ -13,7 +11,6 @@ from eve_ingest.ducklake.locks import (
 )
 from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
-from eve_ingest.sources.everef.provenance import parse_last_modified_timestamp
 
 
 class FakeRelation:
@@ -174,10 +171,17 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
     assert "WHEN NOT MATCHED THEN INSERT BY NAME" in merge_queries[0]
 
 
-def test_writer_insert_modes_require_bootstrapped_table(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "mode",
+    [
+        DuckLakeWriterMode.INSERT_MISSING_KEYS,
+        DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+    ],
+)
+def test_writer_insert_modes_require_bootstrapped_table(monkeypatch, mode: DuckLakeWriterMode) -> None:
     con = FakeConnection()
     con.fetchone_results = [(0,)]
-    arrow_table = pa.table({"id": [1], "value": [10]})
+    arrow_table = pa.table({"id": [1], "source_market_date": ["2026-01-01"], "value": [10]})
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
@@ -186,7 +190,7 @@ def test_writer_insert_modes_require_bootstrapped_table(monkeypatch) -> None:
             writer.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_ORDERS,
-                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+                mode=mode,
                 key_columns=["id"],
             )
 
@@ -254,7 +258,7 @@ def test_replace_table_returns_replaced_row_metrics(monkeypatch) -> None:
         ),
     ],
 )
-def test_writer_rejects_invalid_inputs(
+def test_writer_rejects_invalid_key_columns(
     monkeypatch,
     key_columns: list[str],
     arrow_table: pa.Table,
@@ -484,7 +488,7 @@ def test_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
     assert "ROLLBACK" not in queries
 
 
-def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
+def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(0,), (0,), (1,)]
     table_a = pa.table({"id": [1]})
@@ -493,21 +497,24 @@ def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
     monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
 
-    bootstrap_raw_ducklake()
-
     with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        writer.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
-        writer.write(
+        metrics_a = writer.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
+        metrics_b = writer.write(
             table_b,
             table=RawDuckLakeTable.MARKET_ORDERS,
             mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
             key_columns=["order_id"],
         )
+        assert writer.write_history == (metrics_a, metrics_b)
 
     assert con.arrow_tables == [table_a, table_b]
     queries = _queries(con)
     assert any(f'"{RawDuckLakeTable.MARKET_HISTORY.value}"' in query for query in queries)
     assert any(f'"{RawDuckLakeTable.MARKET_ORDERS.value}"' in query for query in queries)
+    assert not any(query.lstrip().startswith("CREATE TABLE IF NOT EXISTS") for query in queries)
+    assert metrics_a.replaced_rows == 0
+    assert metrics_b.matched_rows == 0
+    assert metrics_b.inserted_rows == 1
     assert con.closed is True
 
 
@@ -556,22 +563,3 @@ def test_bootstrap_raw_ducklake_creates_all_raw_and_provenance_tables(monkeypatc
         assert any(f'"{table.value}"' in query for query in queries)
     for table in RawDuckLakeProvenanceTable:
         assert any(f'"{table.value}"' in query for query in queries)
-
-
-def test_parse_last_modified_timestamp_supports_iso_and_http_date() -> None:
-    iso_value = parse_last_modified_timestamp("2026-01-02T11:01:55Z")
-    http_value = parse_last_modified_timestamp("Fri, 02 Jan 2026 11:01:55 GMT")
-
-    assert iso_value == http_value
-
-
-def test_parse_last_modified_timestamp_returns_none_for_invalid_value(caplog: pytest.LogCaptureFixture) -> None:
-    logger = logging.getLogger("eve_ingest.sources.everef")
-    logger.addHandler(caplog.handler)
-    try:
-        with caplog.at_level(logging.WARNING, logger=logger.name):
-            value = parse_last_modified_timestamp("not-a-timestamp")
-            assert value is None
-            assert "Could not parse last_modified timestamp" in caplog.text
-    finally:
-        logger.removeHandler(caplog.handler)
