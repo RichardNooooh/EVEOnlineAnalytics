@@ -9,7 +9,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pyarrow as pa
 
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.fuzzwork_orders import (
+    PUBLISHER_SPEC,
     _FUZZWORK_COLUMN_NAMES,
     _FUZZWORK_RE,
     _build_cache_objects,
@@ -26,6 +29,17 @@ logger = logging.getLogger("eve_ingest.sources.everef")
 import pyarrow.csv as pac  # noqa: E402
 
 _TSV_DATA = "1\t34\t2026-01-01T00:00:00Z\tTrue\t10\t100\t1\t9.99\t60000001\t0\t30\t10000002\t161676\n"
+
+
+def test_publisher_spec_declares_fuzzwork_order_mutations() -> None:
+    assert PUBLISHER_SPEC.dataset_name == "fuzzwork-orders"
+    assert PUBLISHER_SPEC.update_mode is UpdateMode.SNAPSHOT
+    assert PUBLISHER_SPEC.data_tables == (RawDuckLakeTable.FUZZWORK_ORDERS,)
+    assert PUBLISHER_SPEC.provenance_tables == (RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS,)
+    assert PUBLISHER_SPEC.writer_mode is DuckLakeWriterMode.INSERT_MISSING_KEYS
+    assert PUBLISHER_SPEC.publication_scope({"source_date": "2026-01-01"}) == (
+        "raw:fuzzwork_orders:source_date=2026-01-01"
+    )
 
 
 @pytest.fixture

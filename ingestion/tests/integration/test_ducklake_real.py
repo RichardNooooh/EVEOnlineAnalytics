@@ -7,8 +7,9 @@ import pyarrow as pa
 import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
+from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeTable
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 
 
 class _KeepConnection:
@@ -49,6 +50,15 @@ _ATTACH = DuckLakeAttachConfig(
 )
 
 
+def _test_lock_token() -> DuckLakeLockToken:
+    return DuckLakeLockToken.unsafe_for_tests(
+        ducklake_lock_domains_for_tables(
+            data_tables=tuple(RawDuckLakeTable),
+            provenance_tables=tuple(RawDuckLakeProvenanceTable),
+        )
+    )
+
+
 @pytest.fixture(autouse=True)
 def bootstrapped(shared_con) -> None:
     bootstrap_raw_ducklake(_ATTACH)
@@ -62,7 +72,7 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
     Uses a real in-memory DuckDB to validate SQL correctness.
     """
     table_a = pa.table({"order_id": [1, 2], "price": [10.0, 20.0]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_a,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -71,7 +81,7 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
         )
 
     table_b = pa.table({"order_id": [2, 3], "price": [20.0, 30.0]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_b,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -95,7 +105,7 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
 def test_merge_column_order_independent(shared_con):
     """Verify BY NAME matching means column order doesn't matter."""
     table_a = pa.table({"order_id": [1], "price": [10.0]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_a,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -104,7 +114,7 @@ def test_merge_column_order_independent(shared_con):
         )
 
     table_b = pa.table({"price": [20.0], "order_id": [2]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_b,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -126,7 +136,7 @@ def test_merge_column_order_independent(shared_con):
 @pytest.mark.real_duckdb
 def test_replace_table_overwrites_existing_rows(shared_con):
     table_a = pa.table({"type_id": [1], "date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_a,
             table=RawDuckLakeTable.MARKET_HISTORY,
@@ -134,7 +144,7 @@ def test_replace_table_overwrites_existing_rows(shared_con):
         )
 
     table_b = pa.table({"type_id": [1], "date": ["2026-01-02"]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_b,
             table=RawDuckLakeTable.MARKET_HISTORY,
@@ -152,7 +162,7 @@ def test_replace_table_overwrites_existing_rows(shared_con):
 @pytest.mark.real_duckdb
 def test_merge_raises_for_matching_key_with_different_values(shared_con):
     first = pa.table({"order_id": [1], "price": [10.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             first,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -161,7 +171,7 @@ def test_merge_raises_for_matching_key_with_different_values(shared_con):
         )
 
     second = pa.table({"order_id": [1], "price": [99.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         with pytest.raises(ValueError, match="differing values"):
             writer.write(
                 second,
@@ -181,7 +191,7 @@ def test_merge_raises_for_matching_key_with_different_values(shared_con):
 def test_insert_missing_keys_is_idempotent_for_identical_snapshot(shared_con):
     rows = pa.table({"order_id": [1], "price": [10.0], "source_market_date": ["2026-01-01"]})
 
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             rows,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -189,7 +199,7 @@ def test_insert_missing_keys_is_idempotent_for_identical_snapshot(shared_con):
             key_columns=["order_id"],
         )
 
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             rows,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -207,7 +217,7 @@ def test_insert_missing_keys_is_idempotent_for_identical_snapshot(shared_con):
 @pytest.mark.real_duckdb
 def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from_source(shared_con):
     first = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             first,
             table=RawDuckLakeTable.MARKET_HISTORY,
@@ -216,7 +226,7 @@ def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from
         )
 
     second = pa.table({"type_id": [2], "average": [20.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         with pytest.raises(ValueError, match="source_date"):
             writer.write(
                 second,
@@ -235,7 +245,7 @@ def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from
 @pytest.mark.real_duckdb
 def test_insert_missing_keys_allows_partial_source_date_coverage(shared_con):
     first = pa.table({"order_id": [1], "price": [10.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             first,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -244,7 +254,7 @@ def test_insert_missing_keys_allows_partial_source_date_coverage(shared_con):
         )
 
     second = pa.table({"order_id": [2], "price": [20.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             second,
             table=RawDuckLakeTable.MARKET_ORDERS,

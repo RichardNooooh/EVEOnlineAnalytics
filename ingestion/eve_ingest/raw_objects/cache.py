@@ -250,6 +250,18 @@ class Cache:
         )
         return results
 
+    def load_current_states_for_results(
+        self,
+        results: Iterable[CacheResult],
+    ) -> dict[str, CurrentRawObjectState | None]:
+        """Load latest ledger state for cached results selected before publication locks."""
+
+        refs = [result.raw_object.ref for result in results]
+        if not refs:
+            return {}
+        with self._ledger.transaction() as tx:
+            return tx.reader.load_current_states(refs=refs)
+
     # ── ledger state loading ────────────────────────────────────────────────
 
     def _load_current_state(self, ref: RawObjectRef) -> CurrentRawObjectState | None:
