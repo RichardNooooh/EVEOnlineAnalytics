@@ -5,7 +5,10 @@ import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.reference_data import (
+    PUBLISHER_SPEC,
     _build_cache_objects,
     _parse_json_to_table,
     _process_member,
@@ -26,6 +29,21 @@ def _make_tarball(path: Path, files: dict[str, str]) -> Path:
             if file_path.is_file():
                 archive.add(file_path, arcname=str(file_path.relative_to(staging)))
     return path
+
+
+def test_publisher_spec_declares_reference_mutations() -> None:
+    assert PUBLISHER_SPEC.dataset_name == "reference-data"
+    assert PUBLISHER_SPEC.update_mode is UpdateMode.MUTABLE
+    assert PUBLISHER_SPEC.data_tables == (
+        RawDuckLakeTable.REFERENCE_TYPES,
+        RawDuckLakeTable.REFERENCE_REGIONS,
+        RawDuckLakeTable.REFERENCE_GROUPS,
+        RawDuckLakeTable.REFERENCE_CATEGORIES,
+        RawDuckLakeTable.REFERENCE_MARKET_GROUPS,
+    )
+    assert PUBLISHER_SPEC.provenance_tables == (RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,)
+    assert PUBLISHER_SPEC.writer_mode is DuckLakeWriterMode.REPLACE_TABLE
+    assert PUBLISHER_SPEC.publication_scope({"source_date": "latest"}) == "raw:references:full_extract"
 
 
 class TestBuildCacheObject:

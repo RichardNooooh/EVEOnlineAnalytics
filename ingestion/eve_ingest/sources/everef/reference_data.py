@@ -15,6 +15,7 @@ from eve_ingest.ducklake.writer import DuckLakeWriter
 from eve_ingest.ducklake.raw_tables import (
     DuckLakeWriteMetrics,
     DuckLakeWriterMode,
+    RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
     compute_source_object_id,
     reference_provenance_table,
@@ -22,6 +23,7 @@ from eve_ingest.ducklake.raw_tables import (
 from eve_ingest.sources.everef.discovery import EVEREF_BASE
 from eve_ingest.sources.everef.provenance import build_source_object_metadata
 from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult, run_pipeline as _run_pipeline
+from eve_ingest.workflows.publisher_specs import PublisherSpec
 
 logger = logging.getLogger("eve_ingest.sources.everef")
 
@@ -40,6 +42,15 @@ _REFERENCE_ID_FIELDS: dict[str, str] = {
     "categories": "category_id",
     "market_groups": "market_group_id",
 }
+
+PUBLISHER_SPEC = PublisherSpec(
+    dataset_name="reference-data",
+    update_mode=UpdateMode.MUTABLE,
+    data_tables=tuple(_REFERENCE_TABLES.values()),
+    provenance_tables=(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
+    writer_mode=DuckLakeWriterMode.REPLACE_TABLE,
+    publication_scope_builder=lambda _: "raw:references:full_extract",
+)
 
 
 def _english_text(value: object) -> str | None:
@@ -313,8 +324,7 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
 
 def run_pipeline(config: EverefReferencesCliConfig) -> int:
     return _run_pipeline(
-        dataset_name="reference-data",
-        update_mode=UpdateMode.MUTABLE,
+        publisher_spec=PUBLISHER_SPEC,
         objects=_build_cache_objects(),
         config=config,
         process_one=_process_references_result,

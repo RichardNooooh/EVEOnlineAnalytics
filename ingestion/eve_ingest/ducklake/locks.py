@@ -4,32 +4,58 @@ import hashlib
 import logging
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import psycopg
 from sqlalchemy.engine import make_url
+
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 
 logger = logging.getLogger("eve_ingest.ducklake")
 
 DUCKLAKE_MIGRATION_LOCK_DOMAIN = "ducklake:migration"
 DUCKLAKE_MAINTENANCE_LOCK_DOMAIN = "ducklake:maintenance"
 
-_DATASET_LOCK_DOMAINS = {
+_DATA_TABLE_LOCK_DOMAINS = {
+    RawDuckLakeTable.MARKET_HISTORY: "ducklake:raw:raw_market_history",
+    RawDuckLakeTable.MARKET_ORDERS: "ducklake:raw:raw_market_orders",
+    RawDuckLakeTable.FUZZWORK_ORDERS: "ducklake:raw:raw_fuzzwork_orders",
+    RawDuckLakeTable.REFERENCE_CATEGORIES: "ducklake:raw:raw_reference_categories",
+    RawDuckLakeTable.REFERENCE_GROUPS: "ducklake:raw:raw_reference_groups",
+    RawDuckLakeTable.REFERENCE_MARKET_GROUPS: "ducklake:raw:raw_reference_market_groups",
+    RawDuckLakeTable.REFERENCE_REGIONS: "ducklake:raw:raw_reference_regions",
+    RawDuckLakeTable.REFERENCE_TYPES: "ducklake:raw:raw_reference_types",
+}
+
+_PROVENANCE_TABLE_LOCK_DOMAINS = {
+    RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS: "ducklake:support:raw_market_history_objects",
+    RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS: "ducklake:support:raw_market_orders_objects",
+    RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS: "ducklake:support:raw_fuzzwork_orders_objects",
+    RawDuckLakeProvenanceTable.REFERENCE_OBJECTS: "ducklake:support:raw_reference_objects",
+}
+
+_PUBLICATION_SCOPE_TABLES = {
     "raw:market_history:": (
-        "ducklake:raw:raw_market_history",
-        "ducklake:support:raw_market_history_objects",
+        (RawDuckLakeTable.MARKET_HISTORY,),
+        (RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,),
     ),
     "raw:market_orders:": (
-        "ducklake:raw:raw_market_orders",
-        "ducklake:support:raw_market_orders_objects",
+        (RawDuckLakeTable.MARKET_ORDERS,),
+        (RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,),
     ),
     "raw:fuzzwork_orders:": (
-        "ducklake:raw:raw_fuzzwork_orders",
-        "ducklake:support:raw_fuzzwork_orders_objects",
+        (RawDuckLakeTable.FUZZWORK_ORDERS,),
+        (RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS,),
     ),
     "raw:references:": (
-        "ducklake:raw:references",
-        "ducklake:support:raw_reference_objects",
+        (
+            RawDuckLakeTable.REFERENCE_CATEGORIES,
+            RawDuckLakeTable.REFERENCE_GROUPS,
+            RawDuckLakeTable.REFERENCE_MARKET_GROUPS,
+            RawDuckLakeTable.REFERENCE_REGIONS,
+            RawDuckLakeTable.REFERENCE_TYPES,
+        ),
+        (RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
     ),
 }
 
@@ -45,6 +71,10 @@ class DuckLakeLockTimeoutError(RuntimeError):
     """Raised when a DuckLake advisory lock cannot be acquired in time."""
 
 
+class DuckLakeLockViolationError(RuntimeError):
+    """Raised when a DuckLake mutation is attempted without a matching lock."""
+
+
 @dataclass(frozen=True)
 class DuckLakeLockContext:
     dataset: str | None = None
@@ -54,10 +84,112 @@ class DuckLakeLockContext:
     airflow_run_id: str | None = None
 
 
+@dataclass
+class _DuckLakeLockState:
+    active: bool
+
+
+_DUCKLAKE_LOCK_TOKEN_SENTINEL = object()
+
+
+@dataclass(frozen=True, init=False)
+class DuckLakeLockToken:
+    """Proof that specific DuckLake advisory lock domains are currently held."""
+
+    held_domains: tuple[str, ...]
+    _state: _DuckLakeLockState = field(repr=False, compare=False)
+
+    def __init__(
+        self,
+        held_domains: Iterable[str],
+        *,
+        _state: _DuckLakeLockState | None = None,
+        _sentinel: object | None = None,
+    ) -> None:
+        if _sentinel is not _DUCKLAKE_LOCK_TOKEN_SENTINEL:
+            raise TypeError(
+                "DuckLakeLockToken cannot be constructed directly; use "
+                "hold_ducklake_lock_domains() or DuckLakeLockToken.unsafe_for_tests()"
+            )
+        object.__setattr__(self, "held_domains", ordered_ducklake_lock_domains(held_domains))
+        object.__setattr__(self, "_state", _state or _DuckLakeLockState(active=True))
+
+    @classmethod
+    def unsafe_for_tests(cls, lock_domains: Iterable[str]) -> DuckLakeLockToken:
+        return cls(
+            lock_domains,
+            _state=_DuckLakeLockState(active=True),
+            _sentinel=_DUCKLAKE_LOCK_TOKEN_SENTINEL,
+        )
+
+    @property
+    def is_active(self) -> bool:
+        return self._state.active
+
+    def require_data_table(self, table: RawDuckLakeTable) -> None:
+        self.require_domain(raw_table_lock_domain(table), table=table.value)
+
+    def require_provenance_table(self, table: RawDuckLakeProvenanceTable) -> None:
+        self.require_domain(provenance_table_lock_domain(table), table=table.value)
+
+    def require_domain(self, lock_domain: str, *, table: str | None = None) -> None:
+        if not self.is_active:
+            raise DuckLakeLockViolationError(
+                f"DuckLake lock token is inactive; required domain={lock_domain} held_domains={list(self.held_domains)}"
+            )
+        if lock_domain in self.held_domains:
+            return
+        table_context = "" if table is None else f" table={table}"
+        raise DuckLakeLockViolationError(
+            f"DuckLake lock token does not cover required domain={lock_domain}{table_context}; "
+            f"held_domains={list(self.held_domains)}"
+        )
+
+
+def raw_table_lock_domain(table: RawDuckLakeTable) -> str:
+    return _DATA_TABLE_LOCK_DOMAINS[table]
+
+
+def provenance_table_lock_domain(table: RawDuckLakeProvenanceTable) -> str:
+    return _PROVENANCE_TABLE_LOCK_DOMAINS[table]
+
+
+def ducklake_lock_domains_for_tables(
+    *,
+    data_tables: Iterable[RawDuckLakeTable] = (),
+    provenance_tables: Iterable[RawDuckLakeProvenanceTable] = (),
+) -> tuple[str, ...]:
+    return ordered_ducklake_lock_domains(
+        [raw_table_lock_domain(table) for table in data_tables]
+        + [provenance_table_lock_domain(table) for table in provenance_tables]
+    )
+
+
+def all_raw_publication_lock_domains() -> tuple[str, ...]:
+    return ordered_ducklake_lock_domains(
+        tuple(_DATA_TABLE_LOCK_DOMAINS.values()) + tuple(_PROVENANCE_TABLE_LOCK_DOMAINS.values())
+    )
+
+
+def raw_bootstrap_lock_domains() -> tuple[str, ...]:
+    return ordered_ducklake_lock_domains((DUCKLAKE_MIGRATION_LOCK_DOMAIN, *all_raw_publication_lock_domains()))
+
+
+def maintenance_lock_domains_for_tables(
+    *,
+    data_tables: Iterable[RawDuckLakeTable] = (),
+    provenance_tables: Iterable[RawDuckLakeProvenanceTable] = (),
+) -> tuple[str, ...]:
+    return ordered_ducklake_lock_domains(
+        (DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,)
+        + ducklake_lock_domains_for_tables(data_tables=data_tables, provenance_tables=provenance_tables)
+    )
+
+
 def ducklake_lock_domains_for_publication_scope(publication_scope: str) -> tuple[str, ...]:
-    for prefix, domains in _DATASET_LOCK_DOMAINS.items():
+    for prefix, (data_tables, provenance_tables) in _PUBLICATION_SCOPE_TABLES.items():
         if publication_scope.startswith(prefix):
-            return domains
+            return ducklake_lock_domains_for_tables(data_tables=data_tables, provenance_tables=provenance_tables)
     raise ValueError(f"Unsupported publication scope for DuckLake lock domains: {publication_scope}")
 
 
@@ -78,10 +210,20 @@ def hold_ducklake_lock_domains(
     lock_domains: Iterable[str],
     timeout_seconds: float,
     context: DuckLakeLockContext | None = None,
-) -> Iterator[None]:
+) -> Iterator[DuckLakeLockToken]:
     ordered_domains = ordered_ducklake_lock_domains(lock_domains)
+    lock_state = _DuckLakeLockState(active=False)
+    token = DuckLakeLockToken(
+        ordered_domains,
+        _state=lock_state,
+        _sentinel=_DUCKLAKE_LOCK_TOKEN_SENTINEL,
+    )
     if not ordered_domains:
-        yield
+        lock_state.active = True
+        try:
+            yield token
+        finally:
+            lock_state.active = False
         return
 
     log_context = _ducklake_lock_log_context(context)
@@ -108,7 +250,11 @@ def hold_ducklake_lock_domains(
                 ) from exc
             finally:
                 cursor.execute("select set_config('statement_timeout', '0', false)")
-        yield
+        lock_state.active = True
+        try:
+            yield token
+        finally:
+            lock_state.active = False
     finally:
         logger.info("Releasing DuckLake advisory locks domains=%s%s", list(ordered_domains), log_context)
         connection.close()

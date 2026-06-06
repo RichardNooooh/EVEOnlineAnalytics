@@ -7,8 +7,9 @@ import duckdb
 import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
+from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
-from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.sources.everef.market_orders import _process_result
 from tests.sources.everef.conftest import make_cache_result
 
@@ -39,6 +40,15 @@ _ATTACH = DuckLakeAttachConfig(
     metadata_schema="memory",
     alias="memory",
 )
+
+
+def _test_lock_token() -> DuckLakeLockToken:
+    return DuckLakeLockToken.unsafe_for_tests(
+        ducklake_lock_domains_for_tables(
+            data_tables=tuple(RawDuckLakeTable),
+            provenance_tables=tuple(RawDuckLakeProvenanceTable),
+        )
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -82,7 +92,7 @@ def test_process_result_merges_market_orders_rows(shared_con, tmp_path: Path) ->
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-b.csv.bz2",
     )
 
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         first_outcome = _process_result(first, writer)
 
     assert first_outcome.success is True
@@ -91,7 +101,7 @@ def test_process_result_merges_market_orders_rows(shared_con, tmp_path: Path) ->
     assert first_outcome.write_metrics[0].inserted_rows == 1
     assert first_outcome.write_metrics[0].matched_rows == 0
 
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         second_outcome = _process_result(second, writer)
 
     assert second_outcome.success is True

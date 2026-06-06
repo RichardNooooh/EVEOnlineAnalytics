@@ -1,17 +1,27 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from eve_ingest.ducklake.locks import (
     DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,
     DUCKLAKE_MIGRATION_LOCK_DOMAIN,
     DuckLakeLockContext,
+    DuckLakeLockToken,
     DuckLakeLockTimeoutError,
+    all_raw_publication_lock_domains,
     ducklake_lock_domains_for_publication_scope,
+    ducklake_lock_domains_for_tables,
     ducklake_lock_key,
     hold_ducklake_lock_domains,
+    maintenance_lock_domains_for_tables,
     ordered_ducklake_lock_domains,
+    provenance_table_lock_domain,
+    raw_bootstrap_lock_domains,
+    raw_table_lock_domain,
 )
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 
 
 class _FakeCursor:
@@ -84,9 +94,68 @@ def test_publication_scope_maps_to_data_and_support_domains() -> None:
         "ducklake:raw:raw_market_history",
         "ducklake:support:raw_market_history_objects",
     )
+    assert ducklake_lock_domains_for_publication_scope("raw:market_orders:source_date=2026-01-01") == (
+        "ducklake:raw:raw_market_orders",
+        "ducklake:support:raw_market_orders_objects",
+    )
+    assert ducklake_lock_domains_for_publication_scope("raw:fuzzwork_orders:source_date=2026-01-01") == (
+        "ducklake:raw:raw_fuzzwork_orders",
+        "ducklake:support:raw_fuzzwork_orders_objects",
+    )
     assert ducklake_lock_domains_for_publication_scope("raw:references:full_extract") == (
-        "ducklake:raw:references",
+        "ducklake:raw:raw_reference_categories",
+        "ducklake:raw:raw_reference_groups",
+        "ducklake:raw:raw_reference_market_groups",
+        "ducklake:raw:raw_reference_regions",
+        "ducklake:raw:raw_reference_types",
         "ducklake:support:raw_reference_objects",
+    )
+
+
+def test_table_lock_domains_are_derived_from_physical_tables() -> None:
+    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_CATEGORIES) == ("ducklake:raw:raw_reference_categories")
+    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_GROUPS) == "ducklake:raw:raw_reference_groups"
+    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_MARKET_GROUPS) == (
+        "ducklake:raw:raw_reference_market_groups"
+    )
+    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_REGIONS) == "ducklake:raw:raw_reference_regions"
+    assert raw_table_lock_domain(RawDuckLakeTable.REFERENCE_TYPES) == "ducklake:raw:raw_reference_types"
+    assert provenance_table_lock_domain(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS) == (
+        "ducklake:support:raw_reference_objects"
+    )
+
+
+def test_ducklake_lock_domains_for_tables_orders_data_before_support() -> None:
+    assert ducklake_lock_domains_for_tables(
+        data_tables=(RawDuckLakeTable.MARKET_ORDERS,),
+        provenance_tables=(RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,),
+    ) == (
+        "ducklake:raw:raw_market_orders",
+        "ducklake:support:raw_market_orders_objects",
+    )
+
+
+def test_all_raw_publication_domains_include_every_raw_and_support_domain() -> None:
+    domains = all_raw_publication_lock_domains()
+
+    assert DUCKLAKE_MIGRATION_LOCK_DOMAIN not in domains
+    assert DUCKLAKE_MAINTENANCE_LOCK_DOMAIN not in domains
+    for table in RawDuckLakeTable:
+        assert raw_table_lock_domain(table) in domains
+    for table in RawDuckLakeProvenanceTable:
+        assert provenance_table_lock_domain(table) in domains
+
+
+def test_raw_bootstrap_domains_include_migration_and_all_publication_domains() -> None:
+    assert raw_bootstrap_lock_domains() == ordered_ducklake_lock_domains(
+        (DUCKLAKE_MIGRATION_LOCK_DOMAIN, *all_raw_publication_lock_domains())
+    )
+
+
+def test_maintenance_domains_are_explicit_affected_domains() -> None:
+    assert maintenance_lock_domains_for_tables(data_tables=(RawDuckLakeTable.MARKET_HISTORY,)) == (
+        DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,
+        "ducklake:raw:raw_market_history",
     )
 
 
@@ -95,10 +164,16 @@ def test_lock_key_is_stable() -> None:
     assert ducklake_lock_key(domain) == ducklake_lock_key(domain)
 
 
+def test_lock_token_cannot_be_constructed_directly() -> None:
+    with pytest.raises(TypeError, match="cannot be constructed directly"):
+        DuckLakeLockToken(("ducklake:raw:raw_market_orders",))
+
+
 def test_hold_ducklake_lock_domains_sets_timeout_orders_domains_and_logs_context(monkeypatch, caplog) -> None:
     connection = _FakeConnection()
     monkeypatch.setattr("eve_ingest.ducklake.locks.psycopg.connect", lambda *args, **kwargs: connection)
 
+    token = None
     with caplog.at_level("INFO", logger="eve_ingest.ducklake"):
         with hold_ducklake_lock_domains(
             catalog_url="postgresql://user:pass@localhost:5432/db",
@@ -111,9 +186,16 @@ def test_hold_ducklake_lock_domains_sets_timeout_orders_domains_and_logs_context
                 source_date="2026-01-01",
                 airflow_run_id="airflow-run-123",
             ),
-        ):
-            pass
+        ) as token:
+            assert isinstance(token, DuckLakeLockToken)
+            assert token.is_active is True
+            assert token.held_domains == (
+                "ducklake:raw:raw_market_orders",
+                "ducklake:support:raw_market_orders_objects",
+            )
 
+    assert token is not None
+    assert token.is_active is False
     assert connection.closed is True
     assert connection.calls[0] == ("select set_config('statement_timeout', %s, false)", ("12500",))
     lock_calls = [call for call in connection.calls if call[0].startswith("select pg_advisory_lock")]
@@ -135,6 +217,18 @@ def test_hold_ducklake_lock_domains_sets_timeout_orders_domains_and_logs_context
     )
 
 
+def test_hold_ducklake_lock_domains_no_domain_token_is_only_active_inside_context() -> None:
+    with hold_ducklake_lock_domains(
+        catalog_url="postgresql://user:pass@localhost:5432/db",
+        lock_domains=(),
+        timeout_seconds=0.1,
+    ) as token:
+        assert token.held_domains == ()
+        assert token.is_active is True
+
+    assert token.is_active is False
+
+
 def test_hold_ducklake_lock_domains_raises_timeout(monkeypatch) -> None:
     connection = _FakeConnection()
     connection.raise_on_lock = __import__("psycopg").errors.QueryCanceled()
@@ -147,3 +241,39 @@ def test_hold_ducklake_lock_domains_raises_timeout(monkeypatch) -> None:
             timeout_seconds=0.1,
         ):
             pytest.fail("lock acquisition should have timed out")
+
+
+def test_raw_bootstrap_acquires_migration_and_all_raw_domains(monkeypatch) -> None:
+    from eve_ingest.ducklake.bootstrap import run_raw_bootstrap
+
+    captured = SimpleNamespace(lock_domains=None, bootstrapped=False)
+
+    class FakeLock:
+        def __enter__(self):
+            return DuckLakeLockToken.unsafe_for_tests(captured.lock_domains)
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_hold(*, catalog_url, lock_domains, timeout_seconds, context=None):
+        captured.lock_domains = tuple(lock_domains)
+        return FakeLock()
+
+    def fake_bootstrap(config) -> None:
+        captured.bootstrapped = True
+
+    monkeypatch.setattr("eve_ingest.ducklake.bootstrap.hold_ducklake_lock_domains", fake_hold)
+    monkeypatch.setattr("eve_ingest.ducklake.bootstrap.bootstrap_raw_ducklake", fake_bootstrap)
+
+    config = SimpleNamespace(
+        data_root="/data",
+        ducklake=SimpleNamespace(
+            ducklake_catalog="postgresql://user:pass@localhost:5432/db",
+            ducklake_metadata_schema="eve_market",
+            lock_wait_timeout_seconds=12.5,
+        ),
+    )
+
+    assert run_raw_bootstrap(config) == 0
+    assert captured.bootstrapped is True
+    assert captured.lock_domains == raw_bootstrap_lock_domains()

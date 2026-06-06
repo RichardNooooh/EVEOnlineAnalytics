@@ -9,7 +9,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pyarrow as pa
 
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.market_orders import (
+    PUBLISHER_SPEC,
     _SNAPSHOT_RE,
     _build_cache_objects,
     _process_result,
@@ -21,6 +24,17 @@ from eve_ingest.sources.everef import discovery as everef_discovery
 from tests.sources.everef.conftest import make_cache_result
 
 logger = logging.getLogger("eve_ingest.sources.everef")
+
+
+def test_publisher_spec_declares_market_order_mutations() -> None:
+    assert PUBLISHER_SPEC.dataset_name == "market-orders"
+    assert PUBLISHER_SPEC.update_mode is UpdateMode.SNAPSHOT
+    assert PUBLISHER_SPEC.data_tables == (RawDuckLakeTable.MARKET_ORDERS,)
+    assert PUBLISHER_SPEC.provenance_tables == (RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,)
+    assert PUBLISHER_SPEC.writer_mode is DuckLakeWriterMode.INSERT_MISSING_KEYS
+    assert PUBLISHER_SPEC.publication_scope({"source_date": "2026-01-01"}) == (
+        "raw:market_orders:source_date=2026-01-01"
+    )
 
 
 @pytest.fixture

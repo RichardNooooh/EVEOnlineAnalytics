@@ -9,10 +9,11 @@ import pyarrow as pa
 
 from eve_ingest.raw_objects import CacheResult, CacheResultStatus
 from eve_ingest.raw_objects.http_models import RevalidationMetadata
-from eve_ingest.raw_objects.ledger.models import RawObjectEntry, RawObjectRef, RawObjectVersion
+from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, RawObjectEntry, RawObjectRef, RawObjectVersion
 from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.models import GetMode
 from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
+from eve_ingest.ducklake.locks import DuckLakeLockToken
 
 
 class FakeRelation:
@@ -61,6 +62,9 @@ def make_cache_result(
     content_length: int | None = None,
     last_modified: str | None = None,
     update_mode: UpdateMode = UpdateMode.SNAPSHOT,
+    identity_hash: str = "abc",
+    raw_object_id: str = "obj-1",
+    version_id: str = "ver-1",
 ) -> CacheResult:
     identity_key = identity_key or {"source_date": "2026-01-01"}
     source_url = source_url or f"https://example.com/{dataset_name}/test.csv.bz2"
@@ -68,18 +72,18 @@ def make_cache_result(
     ref = RawObjectRef(
         source_name="everef",
         dataset_name=dataset_name,
-        identity_hash="abc",
+        identity_hash=identity_hash,
         identity_key=identity_key,
         update_mode=update_mode,
     )
     raw_object = RawObjectEntry(
-        id="obj-1",
+        id=raw_object_id,
         ref=ref,
         created_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
     )
     version = RawObjectVersion(
-        id="ver-1",
-        raw_object_id="obj-1",
+        id=version_id,
+        raw_object_id=raw_object_id,
         source_url=source_url,
         fetched_at=datetime(2026, 1, 2, 11, 1, 55, tzinfo=UTC),
         revalidation=RevalidationMetadata(content_length=content_length, last_modified=last_modified),
@@ -118,17 +122,18 @@ def install_pipeline_fakes(
     assert_mode: GetMode = GetMode.UNPUBLISHED,
 ) -> tuple[FakeConnection, MagicMock]:
     mock_pubtrack = MagicMock()
+    mock_pubtrack.filter_published.return_value = set()
 
     @contextmanager
     def fake_hold_publication_domain_locks(
         *,
-        dataset_name: str,
+        publisher_spec: Any,
         catalog_url: str,
         publication_scopes: tuple[str, ...],
         source_date: str | None,
         timeout_seconds: float,
     ):
-        yield
+        yield DuckLakeLockToken.unsafe_for_tests(publisher_spec.lock_domains())
 
     class FakeCache:
         def __init__(self, *args: object, **kwargs: object) -> None:
@@ -147,6 +152,17 @@ def install_pipeline_fakes(
         def get_many(self, objects: object, *, mode: object = None) -> list[CacheResult]:
             assert mode is assert_mode
             return results
+
+        def load_current_states_for_results(
+            self, selected: list[CacheResult]
+        ) -> dict[str, CurrentRawObjectState | None]:
+            return {
+                result.raw_object.ref.identity_hash: CurrentRawObjectState(
+                    raw_object=result.raw_object,
+                    current_version=result.version,
+                )
+                for result in selected
+            }
 
     con = FakeConnection()
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)

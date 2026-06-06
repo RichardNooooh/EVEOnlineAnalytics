@@ -9,6 +9,7 @@ import pyarrow as pa
 import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig, build_ducklake_attach_config_from_url
+from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.ducklake.writer import DuckLakeWriter, _attach_ducklake, _quote_identifier, bootstrap_raw_ducklake
 
@@ -37,6 +38,15 @@ def _drop_table(con: duckdb.DuckDBPyConnection, attach_config: DuckLakeAttachCon
     con.execute(f"DROP TABLE IF EXISTS {alias}.raw.{_quote_identifier(table.value)}")
 
 
+def _test_lock_token() -> DuckLakeLockToken:
+    return DuckLakeLockToken.unsafe_for_tests(
+        ducklake_lock_domains_for_tables(
+            data_tables=tuple(RawDuckLakeTable),
+            provenance_tables=tuple(RawDuckLakeProvenanceTable),
+        )
+    )
+
+
 @pytest.mark.integration
 def test_ducklake_writer_attaches_to_postgres(attach_config: DuckLakeAttachConfig) -> None:
     with DuckLakeWriter(attach_config):
@@ -48,7 +58,7 @@ def test_replace_table_writes_rows(attach_config: DuckLakeAttachConfig, raw_con:
     bootstrap_raw_ducklake(attach_config)
 
     table = pa.table({"type_id": [34, 35], "date": ["2026-01-01", "2026-01-02"]})
-    with DuckLakeWriter(attach_config) as writer:
+    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
     rows = raw_con.execute(
@@ -66,7 +76,7 @@ def test_write_with_key_columns_does_insert_if_not_exists(
     bootstrap_raw_ducklake(attach_config)
 
     table = pa.table({"order_id": [1, 2], "price": [100.0, 200.0]})
-    with DuckLakeWriter(attach_config) as writer:
+    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         writer.write(
             table,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -76,7 +86,7 @@ def test_write_with_key_columns_does_insert_if_not_exists(
 
     # Insert same order_ids again with identical prices — should be no-ops
     duplicate = pa.table({"order_id": [1, 2], "price": [100.0, 200.0]})
-    with DuckLakeWriter(attach_config) as writer:
+    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         writer.write(
             duplicate,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -97,7 +107,7 @@ def test_publish_arrow_table_one_shot(attach_config: DuckLakeAttachConfig, raw_c
     bootstrap_raw_ducklake(attach_config)
 
     table = pa.table({"type_id": [42], "date": ["2026-06-01"]})
-    with DuckLakeWriter(attach_config) as writer:
+    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         writer.write(
             table,
             table=RawDuckLakeTable.MARKET_HISTORY,
@@ -118,7 +128,7 @@ def test_written_data_queryable_through_duckdb(
     bootstrap_raw_ducklake(attach_config)
 
     table = pa.table({"type_id": [1, 2, 3], "date": ["2026-01-01"] * 3})
-    with DuckLakeWriter(attach_config) as writer:
+    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
     count = raw_con.execute(
@@ -135,7 +145,7 @@ def test_insert_style_write_fails_when_bootstrapped_table_is_missing(
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_ORDERS)
 
     table = pa.table({"order_id": [1], "price": [100.0]})
-    with DuckLakeWriter(attach_config) as writer:
+    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         with pytest.raises(RuntimeError, match="eve-ingest ducklake bootstrap raw"):
             writer.write(
                 table,

@@ -8,6 +8,7 @@ import duckdb
 import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
+from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
 from eve_ingest.sources.everef.reference_data import _process_references_result
@@ -40,6 +41,15 @@ _ATTACH = DuckLakeAttachConfig(
     metadata_schema="memory",
     alias="memory",
 )
+
+
+def _test_lock_token() -> DuckLakeLockToken:
+    return DuckLakeLockToken.unsafe_for_tests(
+        ducklake_lock_domains_for_tables(
+            data_tables=tuple(RawDuckLakeTable),
+            provenance_tables=tuple(RawDuckLakeProvenanceTable),
+        )
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -110,7 +120,7 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
         source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
     )
 
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         outcome = _process_references_result(result, writer)
 
     assert outcome.success is True
@@ -165,7 +175,7 @@ def test_process_references_result_marks_failed_on_archive_error(shared_con, tmp
         source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
     )
 
-    with DuckLakeWriter(_ATTACH) as writer:
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         outcome = _process_references_result(result, writer)
 
     assert outcome.success is False

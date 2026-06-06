@@ -14,6 +14,7 @@ from eve_ingest.ducklake.locks import (
     DuckLakeLockTimeoutError,
     ducklake_lock_domains_for_publication_scope,
     hold_ducklake_lock_domains,
+    raw_bootstrap_lock_domains,
 )
 from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
 from eve_ingest.ducklake.writer import _attach_ducklake, _quote_identifier, bootstrap_raw_ducklake
@@ -193,6 +194,48 @@ def test_same_table_publication_scopes_serialize_on_shared_lock_domains(pg_url: 
 
 
 @pytest.mark.integration
+def test_different_table_publication_domains_can_overlap(pg_url: str) -> None:
+    market_history_domains = ducklake_lock_domains_for_publication_scope("raw:market_history:source_date=2026-01-01")
+    market_orders_domains = ducklake_lock_domains_for_publication_scope("raw:market_orders:source_date=2026-01-01")
+
+    with hold_ducklake_lock_domains(
+        catalog_url=pg_url,
+        lock_domains=market_history_domains,
+        timeout_seconds=5,
+    ):
+        with hold_ducklake_lock_domains(
+            catalog_url=pg_url,
+            lock_domains=market_orders_domains,
+            timeout_seconds=0.1,
+        ):
+            pass
+
+
+@pytest.mark.integration
+def test_raw_bootstrap_lock_set_blocks_every_writer_domain(pg_url: str) -> None:
+    writer_scopes = (
+        "raw:market_history:source_date=2026-01-01",
+        "raw:market_orders:source_date=2026-01-01",
+        "raw:fuzzwork_orders:source_date=2026-01-01",
+        "raw:references:full_extract",
+    )
+
+    with hold_ducklake_lock_domains(
+        catalog_url=pg_url,
+        lock_domains=raw_bootstrap_lock_domains(),
+        timeout_seconds=5,
+    ):
+        for writer_scope in writer_scopes:
+            with pytest.raises(DuckLakeLockTimeoutError):
+                with hold_ducklake_lock_domains(
+                    catalog_url=pg_url,
+                    lock_domains=ducklake_lock_domains_for_publication_scope(writer_scope),
+                    timeout_seconds=0.1,
+                ):
+                    pytest.fail(f"bootstrap lock set should block writer scope {writer_scope}")
+
+
+@pytest.mark.integration
 def test_maintenance_lock_set_blocks_writer_when_domains_overlap(pg_url: str) -> None:
     writer_scope = "raw:market_history:source_date=2026-01-01"
     writer_domains = ducklake_lock_domains_for_publication_scope(writer_scope)
@@ -209,6 +252,23 @@ def test_maintenance_lock_set_blocks_writer_when_domains_overlap(pg_url: str) ->
                 timeout_seconds=0.1,
             ):
                 pytest.fail("overlapping maintenance lock set should block writer domains")
+
+
+@pytest.mark.integration
+def test_maintenance_domain_alone_is_not_global_writer_pause(pg_url: str) -> None:
+    writer_domains = ducklake_lock_domains_for_publication_scope("raw:market_history:source_date=2026-01-01")
+
+    with hold_ducklake_lock_domains(
+        catalog_url=pg_url,
+        lock_domains=(DUCKLAKE_MAINTENANCE_LOCK_DOMAIN,),
+        timeout_seconds=5,
+    ):
+        with hold_ducklake_lock_domains(
+            catalog_url=pg_url,
+            lock_domains=writer_domains,
+            timeout_seconds=0.1,
+        ):
+            pass
 
 
 def test_ingestion_code_does_not_reference_legacy_raw_source_objects() -> None:

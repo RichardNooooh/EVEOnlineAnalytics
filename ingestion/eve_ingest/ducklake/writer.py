@@ -10,6 +10,7 @@ import duckdb
 import pyarrow as pa
 
 from eve_ingest.ducklake.attach_config import DEFAULT_RAW_SCHEMA, DuckLakeAttachConfig, _build_default_attach_config
+from eve_ingest.ducklake.locks import DuckLakeLockToken, DuckLakeLockViolationError
 from eve_ingest.ducklake.raw_tables import (
     DuckLakeTableTarget,
     DuckLakeWriteMetrics,
@@ -307,7 +308,9 @@ class DuckLakeWriter:
         ```
     """
 
-    def __init__(self, config: DuckLakeAttachConfig | None = None) -> None:
+    def __init__(
+        self, config: DuckLakeAttachConfig | None = None, *, lock_token: DuckLakeLockToken | None = None
+    ) -> None:
         """Create a writer for the default or provided DuckLake target.
 
         Example:
@@ -318,6 +321,7 @@ class DuckLakeWriter:
         """
 
         self._attach = config or _build_default_attach_config()
+        self._lock_token = lock_token
         self._con: duckdb.DuckDBPyConnection | None = None
         self._write_history: list[DuckLakeWriteMetrics] = []
         self._transaction_depth = 0
@@ -378,6 +382,7 @@ class DuckLakeWriter:
         con = self._con
         if con is None:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+        self._require_data_table_lock(table)
 
         logger.debug(
             "Writing to DuckLake table=%s rows=%d columns=%d key_columns=%s mode=%s",
@@ -534,6 +539,7 @@ class DuckLakeWriter:
         con = self._con
         if con is None:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+        self._require_provenance_table_lock(table)
 
         quoted_target = _quote_table_target(self._attach.alias, provenance_target_for(table))
 
@@ -556,6 +562,21 @@ class DuckLakeWriter:
             """,
             values,
         )
+
+    def _require_data_table_lock(self, table: RawDuckLakeTable) -> None:
+        if self._lock_token is None:
+            raise DuckLakeLockViolationError(
+                f"DuckLakeWriter.write() requires DuckLakeLockToken covering raw table={table.value}"
+            )
+        self._lock_token.require_data_table(table)
+
+    def _require_provenance_table_lock(self, table: RawDuckLakeProvenanceTable) -> None:
+        if self._lock_token is None:
+            raise DuckLakeLockViolationError(
+                "DuckLakeWriter.upsert_source_object() requires DuckLakeLockToken "
+                f"covering provenance table={table.value}"
+            )
+        self._lock_token.require_provenance_table(table)
 
 
 def bootstrap_raw_ducklake(config: DuckLakeAttachConfig | None = None) -> None:
