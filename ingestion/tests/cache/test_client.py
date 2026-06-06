@@ -183,26 +183,9 @@ def test_read_returns_not_modified_with_last_modified_fallback(monkeypatch, tmp_
     ]
 
 
-def test_read_raises_on_404(monkeypatch, tmp_path: Path) -> None:
-    response = FakeResponse(status_code=404)
-    session = FakeSession(response)
-
-    monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
-
-    temp_path = tmp_path / "file.download"
-    with HttpRawObjectClient() as client:
-        with pytest.raises(requests.HTTPError):
-            client.read(
-                source_url="https://example.com/file.csv",
-                request_headers={},
-                temp_path=str(temp_path),
-            )
-
-    assert temp_path.exists() is False
-
-
-def test_read_raises_on_500(monkeypatch, tmp_path: Path) -> None:
-    response = FakeResponse(status_code=500)
+@pytest.mark.parametrize("status_code", [404, 500])
+def test_read_raises_on_http_error_status(monkeypatch, tmp_path: Path, status_code: int) -> None:
+    response = FakeResponse(status_code=status_code)
     session = FakeSession(response)
 
     monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
