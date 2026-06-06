@@ -7,7 +7,9 @@ from datetime import date
 
 import pytest
 
-from eve_ingest.sources.everef.market_history import _build_cache_objects
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.raw_objects import UpdateMode
+from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC, _build_cache_objects
 from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow
 from tests.sources.everef.conftest import make_cache_result
 
@@ -22,6 +24,17 @@ _ORIGINAL_COLS = [
     "region_id",
     "type_id",
 ]
+
+
+def test_publisher_spec_declares_market_history_mutations() -> None:
+    assert PUBLISHER_SPEC.dataset_name == "market-history"
+    assert PUBLISHER_SPEC.update_mode is UpdateMode.MUTABLE
+    assert PUBLISHER_SPEC.data_tables == (RawDuckLakeTable.MARKET_HISTORY,)
+    assert PUBLISHER_SPEC.provenance_tables == (RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,)
+    assert PUBLISHER_SPEC.writer_mode is DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS
+    assert PUBLISHER_SPEC.publication_scope({"source_date": "2026-01-01"}) == (
+        "raw:market_history:source_date=2026-01-01"
+    )
 
 
 class TestBuildCacheObjects:

@@ -5,6 +5,12 @@ import logging
 import pyarrow as pa
 import pytest
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
+from eve_ingest.ducklake.locks import (
+    DuckLakeLockToken,
+    DuckLakeLockViolationError,
+    ducklake_lock_domains_for_tables,
+    hold_ducklake_lock_domains,
+)
 from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.sources.everef.provenance import parse_last_modified_timestamp
@@ -61,12 +67,22 @@ def _attach_call(con: FakeConnection) -> tuple[str, list[str] | None]:
     raise AssertionError("no ATTACH call found")
 
 
+def _test_lock_token(
+    *,
+    data_tables: tuple[RawDuckLakeTable, ...] = tuple(RawDuckLakeTable),
+    provenance_tables: tuple[RawDuckLakeProvenanceTable, ...] = tuple(RawDuckLakeProvenanceTable),
+) -> DuckLakeLockToken:
+    return DuckLakeLockToken.unsafe_for_tests(
+        ducklake_lock_domains_for_tables(data_tables=data_tables, provenance_tables=provenance_tables)
+    )
+
+
 def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     con = FakeConnection()
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         assert writer._con is con
 
     attach_call = _attach_call(con)
@@ -113,7 +129,7 @@ def test_writer_replaces_table(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         writer.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
@@ -141,7 +157,7 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         writer.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -165,7 +181,7 @@ def test_writer_insert_modes_require_bootstrapped_table(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         with pytest.raises(RuntimeError, match="eve-ingest ducklake bootstrap raw"):
             writer.write(
                 arrow_table,
@@ -184,7 +200,7 @@ def test_writer_returns_write_metrics(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         metrics = writer.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_ORDERS,
@@ -205,7 +221,7 @@ def test_replace_table_returns_replaced_row_metrics(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         metrics = writer.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
@@ -248,7 +264,7 @@ def test_writer_rejects_invalid_inputs(
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         with pytest.raises(ValueError, match=error_message):
             writer.write(
                 arrow_table,
@@ -256,6 +272,99 @@ def test_writer_rejects_invalid_inputs(
                 mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
                 key_columns=key_columns,
             )
+
+
+def test_writer_requires_lock_token_for_write(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        with pytest.raises(DuckLakeLockViolationError, match="requires DuckLakeLockToken"):
+            writer.write(
+                pa.table({"id": [1]}),
+                table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.REPLACE_TABLE,
+            )
+
+    assert con.arrow_tables == []
+
+
+def test_writer_rejects_wrong_lock_token_for_write(monkeypatch) -> None:
+    con = FakeConnection()
+    token = _test_lock_token(
+        data_tables=(RawDuckLakeTable.MARKET_HISTORY,),
+        provenance_tables=(),
+    )
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=token) as writer:
+        with pytest.raises(DuckLakeLockViolationError, match="raw_market_orders"):
+            writer.write(
+                pa.table({"id": [1]}),
+                table=RawDuckLakeTable.MARKET_ORDERS,
+                mode=DuckLakeWriterMode.REPLACE_TABLE,
+            )
+
+    assert con.arrow_tables == []
+
+
+def test_writer_rejects_reused_inactive_lock_token_before_mutation(monkeypatch) -> None:
+    con = FakeConnection()
+    with hold_ducklake_lock_domains(
+        catalog_url="postgresql://user:pass@localhost:5432/db",
+        lock_domains=(),
+        timeout_seconds=0.1,
+    ) as token:
+        assert token.is_active is True
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=token) as writer:
+        with pytest.raises(DuckLakeLockViolationError, match="inactive"):
+            writer.write(
+                pa.table({"id": [1]}),
+                table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.REPLACE_TABLE,
+            )
+
+    assert con.arrow_tables == []
+    assert not any(query.lstrip().startswith(("DELETE FROM", "INSERT INTO", "MERGE INTO")) for query in _queries(con))
+
+
+def test_writer_requires_lock_token_for_source_object(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter() as writer:
+        with pytest.raises(DuckLakeLockViolationError, match="requires DuckLakeLockToken"):
+            writer.upsert_source_object(
+                {"source_object_id": "soid-1", "status": "failed"},
+                table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
+            )
+
+    assert not any(query.lstrip().startswith("MERGE INTO") for query in _queries(con))
+
+
+def test_writer_rejects_wrong_lock_token_for_source_object(monkeypatch) -> None:
+    con = FakeConnection()
+    token = _test_lock_token(
+        data_tables=(),
+        provenance_tables=(RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,),
+    )
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=token) as writer:
+        with pytest.raises(DuckLakeLockViolationError, match="raw_market_orders_objects"):
+            writer.upsert_source_object(
+                {"source_object_id": "soid-1", "status": "failed"},
+                table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
+            )
+
+    assert not any(query.lstrip().startswith("MERGE INTO") for query in _queries(con))
 
 
 def test_writer_requires_with_block() -> None:
@@ -277,7 +386,7 @@ def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with pytest.raises(RuntimeError, match="boom"):
-        with DuckLakeWriter() as writer:
+        with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
             writer.write(
                 pa.table({"id": [1]}),
                 table=RawDuckLakeTable.MARKET_HISTORY,
@@ -295,7 +404,7 @@ def test_replace_table_rejects_empty_arrow_table_without_writing(monkeypatch) ->
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         with pytest.raises(ValueError, match="REPLACE_TABLE requires a non-empty arrow_table"):
             writer.write(
                 arrow_table,
@@ -313,7 +422,7 @@ def test_replace_table_rejects_key_columns(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         with pytest.raises(ValueError, match="REPLACE_TABLE does not accept key_columns"):
             writer.write(
                 arrow_table,
@@ -330,7 +439,7 @@ def test_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         with writer.transaction():
             with writer.transaction():
                 writer.upsert_source_object(
@@ -358,7 +467,7 @@ def test_writer_writes_to_multiple_tables_in_one_block(monkeypatch) -> None:
 
     bootstrap_raw_ducklake()
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         writer.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
         writer.write(
             table_b,
@@ -379,7 +488,7 @@ def test_upsert_source_object_uses_merge(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         writer.upsert_source_object(
             {
                 "source_object_id": "soid-1",
