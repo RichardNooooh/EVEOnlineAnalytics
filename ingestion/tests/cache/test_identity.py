@@ -38,7 +38,7 @@ def test_normalize_source_relative_path_returns_relative_path(source_url: str, e
         "https://",
     ],
 )
-def test_normalize_source_relative_path_rejects_non_https(url: str) -> None:
+def test_normalize_source_relative_path_rejects_invalid_scheme_or_host(url: str) -> None:
     with pytest.raises(ValueError, match="source_url must be an https URL"):
         normalize_source_relative_path(url)
 

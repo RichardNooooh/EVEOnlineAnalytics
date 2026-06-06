@@ -538,11 +538,11 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
     )
     first_object = CacheObject(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
-        identity_key={"source": "test"},
+        identity_key={"source": "first"},
     )
     second_object = CacheObject(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2",
-        identity_key={"source": "test"},
+        identity_key={"source": "second"},
     )
 
     with _store(tmp_path=tmp_path, client=client, ledger=ledger) as store:
@@ -559,8 +559,7 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
 
     assert len(unpublished_results) == 2
     assert unpublished_results[0].status is CacheResultStatus.HIT
-    assert unpublished_results[0].identity_key == {"source": "test"}
-    assert unpublished_results[1].identity_key == {"source": "test"}
+    assert {result.identity_key["source"] for result in unpublished_results} == {"first", "second"}
     assert filtered_results == []
     assert ledger.filter_published_calls >= 2
 
