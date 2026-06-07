@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from threading import Barrier, Lock, Thread
@@ -20,8 +21,10 @@ from eve_ingest.sources.everef.reference_data import PUBLISHER_SPEC as REFERENCE
 from eve_ingest.workflows.raw_file_workflow import (
     PipelineProcessResult,
     PublicationScopeLockError,
+    _process_snapshot_scope_results,
     run_pipeline,
 )
+from eve_ingest.workflows.publication_errors import SnapshotScopePublishError
 from tests.sources.everef.conftest import make_cache_result, make_everef_pipeline_config
 
 
@@ -90,6 +93,16 @@ class _FakeWriter:
     def __exit__(self, exc_type, exc, tb) -> None:
         return None
 
+    @contextmanager
+    def transaction(self):
+        yield
+
+    def record_source_object(self, metadata, *, table) -> None:
+        self.recorded = (metadata, table)
+
+    def mark_source_object_failed(self, source_object_id: str, *, reason: str, table) -> None:
+        self.failed = (source_object_id, reason, table)
+
 
 class _FakeLock:
     def __init__(self, lock_domains: tuple[str, ...]) -> None:
@@ -100,6 +113,117 @@ class _FakeLock:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         return None
+
+
+def test_process_snapshot_scope_results_rolls_back_scope_and_persists_failed_provenance() -> None:
+    writer = _FakeWriter(None, lock_token=DuckLakeLockToken.unsafe_for_tests(MARKET_ORDERS_SPEC.lock_domains()))
+    result = make_cache_result("/tmp/a.csv.bz2", dataset_name="market-orders")
+
+    def process_one(_result, _writer):
+        raise SnapshotScopePublishError(
+            source_object_id="soid-1",
+            provenance_table=MARKET_ORDERS_SPEC.provenance_tables[0],
+            metadata={"source_object_id": "soid-1"},
+            source_date="2026-01-01",
+        )
+
+    outcomes = _process_snapshot_scope_results(scope_results=[result], writer=writer, process_one=process_one)
+
+    assert outcomes == []
+    assert writer.recorded == ({"source_object_id": "soid-1"}, MARKET_ORDERS_SPEC.provenance_tables[0])
+    assert writer.failed == ("soid-1", "see log for details", MARKET_ORDERS_SPEC.provenance_tables[0])
+
+
+def test_run_pipeline_does_not_mark_partial_snapshot_scope_published(monkeypatch, tmp_path: Path) -> None:
+    captured: SimpleNamespace = SimpleNamespace(pubtrack=None)
+
+    class FakeCache:
+        def __init__(self, *args, **kwargs) -> None:
+            self.pubtrack = _FakePubtrack()
+            self.raw_root = Path(kwargs["raw_root"])
+            captured.pubtrack = self.pubtrack
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+            path = self.raw_root / "a.csv.bz2"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("data")
+            return [
+                make_cache_result(
+                    str(path),
+                    dataset_name="market-orders",
+                    identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
+                    source_url=objects[0].source_url,
+                    update_mode=UpdateMode.SNAPSHOT,
+                    identity_hash="hash-1",
+                    raw_object_id="obj-1",
+                    version_id="ver-1",
+                ),
+                make_cache_result(
+                    str(path),
+                    dataset_name="market-orders",
+                    identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-30-00"},
+                    source_url=objects[1].source_url,
+                    update_mode=UpdateMode.SNAPSHOT,
+                    identity_hash="hash-2",
+                    raw_object_id="obj-2",
+                    version_id="ver-2",
+                ),
+            ]
+
+        def load_current_states_for_results(
+            self, results: list[CacheResult]
+        ) -> dict[str, CurrentRawObjectState | None]:
+            return {}
+
+    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
+    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", _FakeWriter)
+    monkeypatch.setattr(
+        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
+        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: _FakeLock(
+            publisher_spec.lock_domains()
+        ),
+    )
+
+    outcomes = iter(
+        [
+            PipelineProcessResult(success=True, source_date="2026-01-01"),
+            SnapshotScopePublishError(
+                source_object_id="soid-2",
+                provenance_table=MARKET_ORDERS_SPEC.provenance_tables[0],
+                metadata={"source_object_id": "soid-2"},
+                source_date="2026-01-01",
+            ),
+        ]
+    )
+
+    def process_one(result, writer) -> PipelineProcessResult:
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
+    objects = [
+        CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"}),
+        CacheObject(source_url="https://example.com/b.csv.bz2", identity_key={"source_date": "2026-01-01"}),
+    ]
+
+    exit_code = run_pipeline(
+        publisher_spec=MARKET_ORDERS_SPEC,
+        objects=objects,
+        config=config,
+        process_one=process_one,
+    )
+
+    assert exit_code == 1
+    assert captured.pubtrack is not None
+    assert captured.pubtrack.calls == []
 
 
 def test_run_pipeline_logs_summary_and_day_summary(

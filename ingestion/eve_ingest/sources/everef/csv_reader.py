@@ -12,6 +12,7 @@ import pyarrow.csv as pac
 
 from eve_ingest.raw_objects import CacheResult
 from eve_ingest.ducklake.writer import DuckLakeWriter
+from eve_ingest.ducklake.writer import DuckLakeSqlSnapshotSource
 from eve_ingest.ducklake.raw_tables import (
     DuckLakeWriterMode,
     RawDuckLakeTable,
@@ -19,6 +20,7 @@ from eve_ingest.ducklake.raw_tables import (
 )
 from eve_ingest.sources.everef.provenance import build_source_object_metadata
 from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult
+from eve_ingest.workflows.publication_errors import SnapshotScopePublishError
 from eve_ingest.util import file_size
 
 logger = logging.getLogger("eve_ingest.sources.everef")
@@ -271,3 +273,101 @@ def publish_file_backed_rows(
             success=False,
             source_date=source_date_str,
         )
+
+
+def publish_file_backed_snapshot_rows(
+    result: CacheResult,
+    writer: DuckLakeWriter,
+    *,
+    source_system: str,
+    endpoint: str,
+    source_market_date: date,
+    snapshot_ts: datetime,
+    table_key: RawDuckLakeTable,
+    sql_source: DuckLakeSqlSnapshotSource,
+    log_context: dict[str, Any] | None = None,
+) -> PipelineProcessResult:
+    source_date_str = str(result.identity_key.get("source_date", "unknown"))
+    metadata = build_source_object_metadata(
+        result,
+        source_system,
+        endpoint,
+        source_market_date=source_market_date,
+        snapshot_ts=snapshot_ts,
+    )
+    soid = metadata["source_object_id"]
+    provenance_table = provenance_table_for_data_table(table_key)
+
+    if _check_append_snapshot_source_object(
+        writer,
+        soid=soid,
+        sha256=result.version.sha256,
+        provenance_table=provenance_table,
+        table_key=table_key,
+        source_date_str=source_date_str,
+    ):
+        return PipelineProcessResult(success=True, source_date=source_date_str)
+
+    try:
+        writer.record_source_object(metadata, table=provenance_table)
+
+        metrics = None
+        for attempt in range(1, _DUCKLAKE_CONFLICT_MAX_ATTEMPTS + 1):
+            if _check_append_snapshot_source_object(
+                writer,
+                soid=soid,
+                sha256=result.version.sha256,
+                provenance_table=provenance_table,
+                table_key=table_key,
+                source_date_str=source_date_str,
+            ):
+                return PipelineProcessResult(success=True, source_date=source_date_str)
+            try:
+                metrics = writer.publish_source_object_sql_rows(
+                    sql_source,
+                    data_table=table_key,
+                    provenance_table=provenance_table,
+                    source_object_id=soid,
+                    mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+                )
+                break
+            except Exception as exc:
+                should_retry = _is_retryable_ducklake_conflict(exc)
+                if not should_retry or attempt >= _DUCKLAKE_CONFLICT_MAX_ATTEMPTS:
+                    raise
+                delay_seconds = (_DUCKLAKE_CONFLICT_BASE_DELAY_SECONDS * attempt) + random.uniform(
+                    0.0, _DUCKLAKE_CONFLICT_JITTER_SECONDS
+                )
+                logger.warning(
+                    "Retrying DuckLake insert-style publication after conflict source_date=%s table=%s mode=%s attempt=%d max_attempts=%d sleep_seconds=%.3f",
+                    source_date_str,
+                    table_key.value,
+                    DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS.value,
+                    attempt + 1,
+                    _DUCKLAKE_CONFLICT_MAX_ATTEMPTS,
+                    delay_seconds,
+                )
+                time.sleep(delay_seconds)
+
+        extra_context = log_context or {}
+        logger.debug(
+            "Processed source file source_date=%s snapshot_ts=%s %s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
+            source_date_str,
+            snapshot_ts,
+            " ".join(f"{key}={value}" for key, value in extra_context.items()),
+            table_key.value,
+            metrics.attempted_rows,
+            metrics.inserted_rows,
+            metrics.matched_rows,
+        )
+        return PipelineProcessResult(success=True, source_date=source_date_str, write_metrics=(metrics,))
+    except ImmutableSnapshotSourceObjectChangedError:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to process %s", result.identity_key)
+        raise SnapshotScopePublishError(
+            source_object_id=soid,
+            provenance_table=provenance_table,
+            metadata=metadata,
+            source_date=source_date_str,
+        ) from exc

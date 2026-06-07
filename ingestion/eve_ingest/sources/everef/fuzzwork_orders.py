@@ -4,14 +4,13 @@ import logging
 import re
 from datetime import UTC, date, datetime
 
-import pyarrow.csv as pac
-
 from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
 from eve_ingest.cli.config import EverefCliConfig
-from eve_ingest.ducklake.writer import DuckLakeWriter
+from eve_ingest.ducklake.raw_tables import compute_source_object_id
+from eve_ingest.ducklake.writer import DuckLakeSqlSnapshotSource, DuckLakeWriter
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.sources.everef.discovery import build_listed_objects
-from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow, publish_file_backed_rows
+from eve_ingest.sources.everef.csv_reader import publish_file_backed_snapshot_rows
 from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult, run_pipeline as _run_pipeline
 from eve_ingest.workflows.publisher_specs import PublisherSpec, source_date_publication_scope
 
@@ -44,6 +43,24 @@ _FUZZWORK_COLUMN_NAMES = [
     "order_set_id",
 ]
 
+_FUZZWORK_SQL_SCHEMA = """
+{
+    'order_id': 'BIGINT',
+    'type_id': 'BIGINT',
+    'issued': 'TIMESTAMP',
+    'is_buy_order': 'BOOLEAN',
+    'volume_remain': 'BIGINT',
+    'volume_total': 'BIGINT',
+    'min_volume': 'BIGINT',
+    'price': 'DOUBLE',
+    'location_id': 'BIGINT',
+    'range': 'VARCHAR',
+    'duration': 'BIGINT',
+    'region_id': 'BIGINT',
+    'order_set_id': 'BIGINT'
+}
+"""
+
 
 def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
     return build_listed_objects(
@@ -64,7 +81,42 @@ def _parse_fuzzwork_identity(filename: str, d: date) -> dict[str, str]:
 def _process_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
     source_market_date = date.fromisoformat(str(result.identity_key["source_date"]))
     snapshot_ts = datetime.strptime(str(result.identity_key["snapshot_time"]), "%Y-%m-%d_%H-%M-%S").replace(tzinfo=UTC)
-    return publish_file_backed_rows(
+    source_object_id = compute_source_object_id("fuzzwork", "fuzzwork_orders", result.version.source_url)
+    path_sql = writer.quote_sql_string(result.path)
+    source_object_id_sql = writer.quote_sql_string(source_object_id)
+    source_market_date_sql = writer.quote_sql_string(source_market_date.isoformat())
+    snapshot_ts_sql = writer.quote_sql_string(snapshot_ts.isoformat())
+    sql_source = DuckLakeSqlSnapshotSource(
+        sql=f"""
+        SELECT
+            order_id,
+            type_id,
+            issued,
+            is_buy_order,
+            volume_remain,
+            volume_total,
+            min_volume,
+            price,
+            location_id,
+            "range" AS range,
+            duration,
+            region_id,
+            order_set_id,
+            CAST({source_object_id_sql} AS VARCHAR) AS source_object_id,
+            CAST({source_market_date_sql} AS DATE) AS source_market_date,
+            CAST({snapshot_ts_sql} AS TIMESTAMP WITH TIME ZONE) AS snapshot_ts
+        FROM read_csv(
+            {path_sql},
+            auto_detect = false,
+            header = false,
+            compression = 'gzip',
+            delim = '\t',
+            columns = {_FUZZWORK_SQL_SCHEMA},
+            timestampformat = '%Y-%m-%dT%H:%M:%SZ'
+        )
+        """
+    )
+    return publish_file_backed_snapshot_rows(
         result,
         writer,
         source_system="fuzzwork",
@@ -72,13 +124,7 @@ def _process_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProc
         source_market_date=source_market_date,
         snapshot_ts=snapshot_ts,
         table_key=RawDuckLakeTable.FUZZWORK_ORDERS,
-        mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
-        key_columns=[],
-        parse_table=lambda cache_result: parse_csv_to_arrow(
-            cache_result,
-            read_options=pac.ReadOptions(column_names=_FUZZWORK_COLUMN_NAMES),
-            parse_options=pac.ParseOptions(delimiter="\t"),
-        ),
+        sql_source=sql_source,
         log_context={"order_set_id": result.identity_key.get("order_set_id")},
     )
 

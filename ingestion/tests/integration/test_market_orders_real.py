@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 import bz2
 
@@ -9,7 +10,7 @@ import pytest
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
 from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
-from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable, compute_source_object_id
 from eve_ingest.sources.everef.market_orders import _process_result
 from tests.sources.everef.conftest import make_cache_result
 
@@ -102,3 +103,50 @@ def test_process_result_is_idempotent_for_same_market_orders_source_object(share
     ).fetchall()
 
     assert rows == [(1, 9.99)]
+
+
+@pytest.mark.real_duckdb
+def test_process_result_writes_native_metadata_and_provenance(shared_con, tmp_path: Path) -> None:
+    file_path = tmp_path / "market-orders.csv.bz2"
+    _write_orders_file(file_path, price=12.34)
+
+    result = make_cache_result(
+        str(file_path),
+        content_length=file_path.stat().st_size,
+        last_modified="2026-01-01T00:00:00Z",
+        dataset_name="market-orders",
+        identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders.csv.bz2",
+    )
+
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
+        outcome = _process_result(result, writer)
+
+    assert outcome.success is True
+    expected_source_object_id = compute_source_object_id("everef", "market_orders", result.version.source_url)
+
+    raw_rows = shared_con.execute(
+        f'''SELECT order_id, price, source_object_id, source_market_date, snapshot_ts
+        FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}"'''
+    ).fetchall()
+    assert len(raw_rows) == 1
+    order_id, price, source_object_id, source_market_date, snapshot_ts = raw_rows[0]
+    assert order_id == 1
+    assert price == 12.34
+    assert source_object_id == expected_source_object_id
+    assert str(source_market_date) == "2026-01-01"
+    assert snapshot_ts.astimezone(UTC).isoformat() == "2026-01-01T00:00:00+00:00"
+
+    provenance_rows = shared_con.execute(
+        f'''SELECT source_object_id, status, row_count, source_market_date, snapshot_ts
+        FROM "memory"."raw"."{RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS.value}"'''
+    ).fetchall()
+    assert len(provenance_rows) == 1
+    provenance_source_object_id, status, row_count, provenance_source_market_date, provenance_snapshot_ts = (
+        provenance_rows[0]
+    )
+    assert provenance_source_object_id == expected_source_object_id
+    assert status == "ingested"
+    assert row_count == 1
+    assert provenance_source_market_date == source_market_date
+    assert provenance_snapshot_ts.astimezone(UTC).isoformat() == "2026-01-01T00:00:00+00:00"

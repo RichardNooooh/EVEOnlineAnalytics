@@ -9,7 +9,12 @@ from eve_ingest.ducklake.locks import (
     ducklake_lock_domains_for_tables,
     hold_ducklake_lock_domains,
 )
-from eve_ingest.ducklake.writer import DuckLakeWriter, _ensure_expected_partitioning, bootstrap_raw_ducklake
+from eve_ingest.ducklake.writer import (
+    DuckLakeSqlSnapshotSource,
+    DuckLakeWriter,
+    _ensure_expected_partitioning,
+    bootstrap_raw_ducklake,
+)
 from eve_ingest.ducklake.raw_tables import (
     DuckLakeTableTarget,
     DuckLakeWriterMode,
@@ -763,6 +768,31 @@ def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
     assert metrics_b.matched_rows == 0
     assert metrics_b.inserted_rows == 1
     assert con.closed is True
+
+
+def test_publish_source_object_sql_rows_uses_temp_sql_view_and_no_arrow(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [(1,)]
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        metrics = writer.publish_source_object_sql_rows(
+            DuckLakeSqlSnapshotSource(
+                sql="SELECT 1 AS order_id, 'soid-1' AS source_object_id, DATE '2026-01-01' AS source_market_date, TIMESTAMPTZ '2026-01-01T00:00:00+00:00' AS snapshot_ts"
+            ),
+            data_table=RawDuckLakeTable.MARKET_ORDERS,
+            provenance_table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
+            source_object_id="soid-1",
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+        )
+
+    assert con.arrow_tables == []
+    queries = _queries(con)
+    assert any("CREATE OR REPLACE TEMP VIEW" in query for query in queries)
+    assert any("INSERT INTO" in query and RawDuckLakeTable.MARKET_ORDERS.value in query for query in queries)
+    assert metrics.inserted_rows == 1
 
 
 def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) -> None:

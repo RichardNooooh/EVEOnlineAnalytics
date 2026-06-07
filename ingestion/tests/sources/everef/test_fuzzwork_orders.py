@@ -7,13 +7,14 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
-import pyarrow as pa
 
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.writer import DuckLakeSqlSnapshotSource
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.fuzzwork_orders import (
     PUBLISHER_SPEC,
     _FUZZWORK_COLUMN_NAMES,
+    _FUZZWORK_SQL_SCHEMA,
     _FUZZWORK_RE,
     _build_cache_objects,
     _process_result,
@@ -175,18 +176,17 @@ def test_process_result_uses_append_snapshot_rows_mode(monkeypatch: pytest.Monke
     writer = MagicMock()
     writer.source_object_ingested_sha256.return_value = None
     writer.source_object_version_is_ingested.return_value = False
-    monkeypatch.setattr(
-        "eve_ingest.sources.everef.fuzzwork_orders.parse_csv_to_arrow",
-        lambda result, read_options=None, parse_options=None: pa.table({"order_id": [1]}),
-    )
 
-    writer.publish_source_object_rows.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
+    writer.quote_sql_string.side_effect = lambda value: repr(value)
+    writer.publish_source_object_sql_rows.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
 
     outcome = _process_result(result, writer)
     assert outcome.success is True
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
     writer.write.assert_not_called()
-    call_kwargs = writer.publish_source_object_rows.call_args.kwargs
+    call_args = writer.publish_source_object_sql_rows.call_args
+    call_kwargs = call_args.kwargs
     assert call_kwargs["mode"] is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
-    assert call_kwargs["key_columns"] == []
+    assert isinstance(call_args.args[0], DuckLakeSqlSnapshotSource)
+    assert _FUZZWORK_SQL_SCHEMA.strip() in call_args.args[0].sql

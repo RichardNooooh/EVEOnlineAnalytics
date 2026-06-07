@@ -17,10 +17,12 @@ from eve_ingest.ducklake.locks import (
     hold_ducklake_lock_domains,
 )
 from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode
 from eve_ingest.ducklake.writer import DuckLakeWriter
 from eve_ingest.raw_objects import Cache, CacheObject, CacheResult, GetMode, UpdateMode
 from eve_ingest.raw_objects.ledger.models import PublicationContext
 from eve_ingest.workflows.publisher_specs import PublisherSpec
+from eve_ingest.workflows.publication_errors import SnapshotScopePublishError
 
 logger = logging.getLogger(__name__)
 
@@ -144,19 +146,38 @@ def run_pipeline(
                     declared_mode=publisher_spec.writer_mode,
                     dataset_name=dataset_name,
                 ) as writer:
-                    for result in scope_results:
-                        outcome = process_one(result, writer)
-                        source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
-                        if outcome.success:
+                    if _uses_snapshot_scope_batch(publisher_spec):
+                        batch_outcomes = _process_snapshot_scope_results(
+                            scope_results=scope_results,
+                            writer=writer,
+                            process_one=process_one,
+                        )
+                        for result, outcome in batch_outcomes:
+                            source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
                             success += 1
                             successful_results.append(result)
                             scope_successful_results.append(result)
                             per_day_success[source_date] += 1
-                        else:
-                            failed += 1
-                            per_day_failed[source_date] += 1
-                        for metric in outcome.write_metrics:
-                            per_day_metrics[source_date] = _merge_metrics(per_day_metrics.get(source_date), metric)
+                            for metric in outcome.write_metrics:
+                                per_day_metrics[source_date] = _merge_metrics(per_day_metrics.get(source_date), metric)
+                    else:
+                        for result in scope_results:
+                            outcome = process_one(result, writer)
+                            source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
+                            if outcome.success:
+                                success += 1
+                                successful_results.append(result)
+                                scope_successful_results.append(result)
+                                per_day_success[source_date] += 1
+                            else:
+                                failed += 1
+                                per_day_failed[source_date] += 1
+                            for metric in outcome.write_metrics:
+                                per_day_metrics[source_date] = _merge_metrics(per_day_metrics.get(source_date), metric)
+                if _uses_snapshot_scope_batch(publisher_spec) and not scope_successful_results and scope_results:
+                    failed += 1
+                    source_date = _publication_scope_source_date(publication_scope, scope_results) or "unknown"
+                    per_day_failed[source_date] += 1
 
                 if scope_successful_results:
                     _mark_successful_results_published(
@@ -246,6 +267,34 @@ def _group_results_by_publication_scope(
     for result in results:
         grouped[publisher_spec.publication_scope(result.identity_key)].append(result)
     return {publication_scope: grouped[publication_scope] for publication_scope in sorted(grouped)}
+
+
+def _uses_snapshot_scope_batch(publisher_spec: PublisherSpec) -> bool:
+    return (
+        publisher_spec.update_mode is UpdateMode.SNAPSHOT
+        and publisher_spec.writer_mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
+    )
+
+
+def _process_snapshot_scope_results(
+    *,
+    scope_results: list[CacheResult],
+    writer: DuckLakeWriter,
+    process_one: Callable[[CacheResult, DuckLakeWriter], PipelineProcessResult],
+) -> list[tuple[CacheResult, PipelineProcessResult]]:
+    outcomes: list[tuple[CacheResult, PipelineProcessResult]] = []
+    try:
+        with writer.transaction():
+            for result in scope_results:
+                outcome = process_one(result, writer)
+                if not outcome.success:
+                    raise RuntimeError("Snapshot source-date batch returned unsuccessful result without an exception")
+                outcomes.append((result, outcome))
+    except SnapshotScopePublishError as exc:
+        writer.record_source_object(exc.metadata, table=exc.provenance_table)
+        writer.mark_source_object_failed(exc.source_object_id, reason=exc.reason, table=exc.provenance_table)
+        return []
+    return outcomes
 
 
 def _filter_scope_results_after_lock(
