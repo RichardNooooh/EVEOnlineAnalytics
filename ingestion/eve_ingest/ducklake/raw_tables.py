@@ -47,7 +47,7 @@ class RawDuckLakeTable(StrEnum):
 
 
 class DuckLakeWriterMode(StrEnum):
-    INSERT_MISSING_KEYS = "insert_missing_keys"
+    APPEND_SNAPSHOT_ROWS = "append_snapshot_rows"
     ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS = "assert_partition_coverage_insert_missing_keys"
     REPLACE_TABLE = "replace_table"
 
@@ -219,3 +219,9 @@ def source_object_column_definitions() -> tuple[str, ...]:
 
 def raw_table_column_definitions(table: RawDuckLakeTable) -> tuple[str, ...]:
     return _RAW_TABLE_COLUMN_DEFINITIONS[table]
+
+
+def raw_table_partition_columns(table: RawDuckLakeTable) -> tuple[str, ...]:
+    if table in {RawDuckLakeTable.MARKET_ORDERS, RawDuckLakeTable.FUZZWORK_ORDERS}:
+        return ("source_market_date",)
+    return ()

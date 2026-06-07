@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from eve_ingest.cli.config_builders import build_everef_config
+from eve_ingest.cli.config import RawFilesCliConfig
 from eve_ingest.cli.parser import build_parser
 from eve_ingest.logging_config import configure_logging
 from eve_ingest.__main__ import main
@@ -41,6 +42,7 @@ def test_market_history_uses_runtime_defaults() -> None:
     assert config.data_root == DEFAULT_DATA_ROOT
     assert config.raw_files.raw_root == DEFAULT_RAW_ROOT
     assert config.raw_files.raw_ledger_url == DEFAULT_RAW_LEDGER_URL
+    assert config.raw_files.raw_download_workers == 4
     assert config.ducklake.ducklake_catalog == DEFAULT_DUCKLAKE_CATALOG
     assert config.ducklake.ducklake_metadata_schema == DEFAULT_DUCKLAKE_METADATA_SCHEMA
     assert config.ducklake.lock_wait_timeout_seconds == DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS
@@ -95,6 +97,19 @@ def test_market_history_uses_runtime_defaults() -> None:
                 "2025-01-01",
                 "--end-date",
                 "2025-01-31",
+                "--raw-download-workers",
+                "0",
+            ],
+            "raw_download_workers must be at least 1",
+        ),
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-01-01",
+                "--end-date",
+                "2025-01-31",
                 "--ducklake-lock-wait-timeout-seconds",
                 "0",
             ],
@@ -134,6 +149,16 @@ def test_market_history_validation_errors(argv: list[str], error_message: str) -
 
     with pytest.raises(ValueError, match=error_message):
         build_everef_config(args)
+
+
+def test_raw_files_config_accepts_explicit_download_workers() -> None:
+    config = RawFilesCliConfig(
+        raw_root="/tmp/raw",
+        raw_ledger_url="postgresql://raw_files:password@postgres:5432/raw_files",
+        raw_download_workers=4,
+    )
+
+    assert config.raw_download_workers == 4
 
 
 @pytest.mark.parametrize(

@@ -4,6 +4,7 @@ import logging
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import duckdb
@@ -20,12 +21,17 @@ from eve_ingest.ducklake.raw_tables import (
     _target_for,
     provenance_target_for,
     raw_table_column_definitions,
+    raw_table_partition_columns,
     source_object_column_definitions,
 )
 
 logger = logging.getLogger("eve_ingest.ducklake")
 
 _IDENTIFIER_RE = re.compile(r"^[^\s-]+$")
+
+
+def datetime_now_utc() -> datetime:
+    return datetime.now(UTC)
 
 
 ############################
@@ -237,6 +243,75 @@ def _add_missing_columns(
         con.execute(f"ALTER TABLE {quoted_target} ADD COLUMN IF NOT EXISTS {repair_column_definition}")
 
 
+def _parse_partition_columns(value: object) -> tuple[str, ...] | None:
+    if value is None:
+        return ()
+    if isinstance(value, list | tuple):
+        return tuple(str(item) for item in value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return ()
+        return tuple(part.strip().strip('"') for part in stripped.strip("[]()").split(",") if part.strip())
+    return None
+
+
+def _ducklake_partition_columns(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    target: DuckLakeTableTarget,
+) -> tuple[str, ...] | None:
+    try:
+        row = con.execute(
+            """
+            SELECT partition_columns
+            FROM ducklake_table_info()
+            WHERE schema_name = ?
+                AND table_name = ?
+            """,
+            [target.schema, target.table],
+        ).fetchone()
+    except Exception:
+        return None
+    if row is None:
+        return None
+    return _parse_partition_columns(row[0])
+
+
+def _ensure_expected_partitioning(
+    con: duckdb.DuckDBPyConnection,
+    *,
+    alias: str,
+    target: DuckLakeTableTarget,
+    partition_columns: Sequence[str],
+) -> None:
+    if not partition_columns:
+        return
+
+    expected = tuple(partition_columns)
+    current = _ducklake_partition_columns(con, target=target)
+    if current == expected:
+        return
+    if current not in {None, ()}:
+        raise RuntimeError(
+            "DuckLake table partitioning differs from expected layout; rebuild or migrate table "
+            f"{target.schema}.{target.table} current={current} expected={expected}"
+        )
+
+    quoted_target = _table_sql(alias, target)
+    try:
+        con.execute(
+            f"""
+            ALTER TABLE {quoted_target}
+            SET PARTITIONED BY ({", ".join(_ident(column) for column in expected)})
+            """
+        )
+    except Exception as exc:
+        if "SET PARTITIONED BY is not supported for DuckDB tables" not in str(exc):
+            raise
+        logger.debug("Skipping DuckLake partition DDL for non-DuckLake table=%s", target.table)
+
+
 ############################
 # Metric Helpers
 ############################
@@ -315,8 +390,7 @@ class DuckLakeWriter:
             writer.write(
                 rows,
                 table=RawDuckLakeTable.MARKET_ORDERS,
-                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-                key_columns=["order_id"],
+                mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
             )
         ```
     """
@@ -342,6 +416,7 @@ class DuckLakeWriter:
         self._con: duckdb.DuckDBPyConnection | None = None
         self._write_history: list[DuckLakeWriteMetrics] = []
         self._transaction_depth = 0
+        self._transaction_rollback_only = False
 
     def __enter__(self) -> DuckLakeWriter:
         self._con = duckdb.connect()
@@ -375,10 +450,11 @@ class DuckLakeWriter:
     ) -> DuckLakeWriteMetrics:
         """Write rows to a raw DuckLake table.
 
-        `INSERT_MISSING_KEYS` inserts only previously unseen keys after asserting matched
-        rows are identical. `ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS` adds the
-        current market-history source-date coverage assertion. `REPLACE_TABLE` replaces
-        the whole target table from the incoming Arrow table.
+        `APPEND_SNAPSHOT_ROWS` appends every source row without key validation.
+        `ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS` inserts previously unseen
+        market-history keys after asserting matched rows are identical and target source-date
+        coverage is present in the incoming source. `REPLACE_TABLE` replaces the whole
+        target table from the incoming Arrow table.
 
         Example:
             ```python
@@ -390,15 +466,14 @@ class DuckLakeWriter:
             writer.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_ORDERS,
-                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-                key_columns=["order_id"],
+                mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
             )
             ```
         """
 
-        self._validate_write_request(arrow_table, table=table, mode=mode, key_columns=key_columns)
-        with self._prepare_arrow_source(arrow_table) as source_name:
-            return self._write_from_prepared_source(
+        self.validate_write_request(arrow_table, table=table, mode=mode, key_columns=key_columns)
+        with self.prepare_arrow_source(arrow_table) as source_name:
+            return self.write_prepared_source(
                 arrow_table,
                 source_name=source_name,
                 table=table,
@@ -407,14 +482,14 @@ class DuckLakeWriter:
             )
 
     @contextmanager
-    def _prepare_arrow_source(self, arrow_table: pa.Table) -> Iterator[str]:
+    def prepare_arrow_source(self, arrow_table: pa.Table) -> Iterator[str]:
         con = self._con
         if con is None:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
         with _arrow_view(con, arrow_table) as source_name:
             yield source_name
 
-    def _validate_write_request(
+    def validate_write_request(
         self,
         arrow_table: pa.Table,
         *,
@@ -436,16 +511,23 @@ class DuckLakeWriter:
             raise ValueError("REPLACE_TABLE requires a non-empty arrow_table")
         if mode is DuckLakeWriterMode.REPLACE_TABLE and key_columns:
             raise ValueError("REPLACE_TABLE does not accept key_columns")
-        if mode in {
-            DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-        }:
+        if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS:
+            if key_columns:
+                raise ValueError("APPEND_SNAPSHOT_ROWS does not accept key_columns")
+            required_columns = ["source_object_id", "source_market_date"]
+            if table in {RawDuckLakeTable.MARKET_ORDERS, RawDuckLakeTable.FUZZWORK_ORDERS}:
+                required_columns.append("snapshot_ts")
+            missing_columns = [column for column in required_columns if column not in arrow_table.column_names]
+            if missing_columns:
+                raise ValueError("APPEND_SNAPSHOT_ROWS requires arrow_table columns: " + ", ".join(missing_columns))
+            return
+        if mode is DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS:
             _validate_key_columns(arrow_table, key_columns)
             return
         if mode is not DuckLakeWriterMode.REPLACE_TABLE:
             raise ValueError(f"Unsupported DuckLake writer mode: {mode}")
 
-    def _write_from_prepared_source(
+    def write_prepared_source(
         self,
         arrow_table: pa.Table,
         *,
@@ -454,7 +536,7 @@ class DuckLakeWriter:
         mode: DuckLakeWriterMode,
         key_columns: Sequence[str] = (),
     ) -> DuckLakeWriteMetrics:
-        self._validate_write_request(arrow_table, table=table, mode=mode, key_columns=key_columns)
+        self.validate_write_request(arrow_table, table=table, mode=mode, key_columns=key_columns)
 
         con = self._con
         if con is None:
@@ -495,6 +577,29 @@ class DuckLakeWriter:
                 inserted_rows=len(arrow_table),
                 matched_rows=0,
                 replaced_rows=replaced_rows,
+            )
+            self._record_write_metrics(metrics, key_columns=key_columns)
+            return metrics
+
+        if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS:
+            _require_table(
+                con,
+                alias=self._attach.alias,
+                target=target,
+            )
+            con.execute(
+                f"""
+                INSERT INTO {quoted_target} BY NAME
+                SELECT * FROM {quoted_source}
+                """
+            )
+            metrics = DuckLakeWriteMetrics(
+                table=table,
+                mode=mode,
+                attempted_rows=len(arrow_table),
+                inserted_rows=len(arrow_table),
+                matched_rows=0,
+                replaced_rows=0,
             )
             self._record_write_metrics(metrics, key_columns=key_columns)
             return metrics
@@ -556,6 +661,38 @@ class DuckLakeWriter:
         self._record_write_metrics(metrics, key_columns=key_columns)
         return metrics
 
+    @contextmanager
+    def _prepare_arrow_source(self, arrow_table: pa.Table) -> Iterator[str]:
+        with self.prepare_arrow_source(arrow_table) as source_name:
+            yield source_name
+
+    def _validate_write_request(
+        self,
+        arrow_table: pa.Table,
+        *,
+        table: RawDuckLakeTable,
+        mode: DuckLakeWriterMode,
+        key_columns: Sequence[str] = (),
+    ) -> None:
+        self.validate_write_request(arrow_table, table=table, mode=mode, key_columns=key_columns)
+
+    def _write_from_prepared_source(
+        self,
+        arrow_table: pa.Table,
+        *,
+        source_name: str,
+        table: RawDuckLakeTable,
+        mode: DuckLakeWriterMode,
+        key_columns: Sequence[str] = (),
+    ) -> DuckLakeWriteMetrics:
+        return self.write_prepared_source(
+            arrow_table,
+            source_name=source_name,
+            table=table,
+            mode=mode,
+            key_columns=key_columns,
+        )
+
     def _record_write_metrics(self, metrics: DuckLakeWriteMetrics, *, key_columns: Sequence[str]) -> None:
         self._write_history.append(metrics)
         logger.debug(
@@ -568,6 +705,33 @@ class DuckLakeWriter:
             metrics.replaced_rows,
             list(key_columns),
         )
+
+    def publish_source_object_rows(
+        self,
+        arrow_table: pa.Table,
+        *,
+        data_table: RawDuckLakeTable,
+        provenance_table: RawDuckLakeProvenanceTable,
+        source_object_id: str,
+        mode: DuckLakeWriterMode,
+        row_count: int,
+        key_columns: Sequence[str] = (),
+    ) -> DuckLakeWriteMetrics:
+        """Mark parsed, write rows, and mark ingested in one transaction."""
+
+        self.validate_write_request(arrow_table, table=data_table, mode=mode, key_columns=key_columns)
+        with self.prepare_arrow_source(arrow_table) as source_name:
+            with self.transaction():
+                self.mark_source_object_parsed(source_object_id, table=provenance_table)
+                metrics = self.write_prepared_source(
+                    arrow_table,
+                    source_name=source_name,
+                    table=data_table,
+                    mode=mode,
+                    key_columns=key_columns,
+                )
+                self.mark_source_object_ingested(source_object_id, row_count=row_count, table=provenance_table)
+                return metrics
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -582,14 +746,20 @@ class DuckLakeWriter:
         try:
             yield
         except Exception:
+            self._transaction_rollback_only = True
             self._transaction_depth -= 1
             if outermost:
                 self._transaction_depth = 0
+                self._transaction_rollback_only = False
                 con.execute("ROLLBACK")
             raise
         else:
             self._transaction_depth -= 1
             if outermost:
+                if self._transaction_rollback_only:
+                    self._transaction_rollback_only = False
+                    con.execute("ROLLBACK")
+                    raise RuntimeError("DuckLake transaction marked rollback-only by nested failure")
                 try:
                     con.execute("COMMIT")
                 except Exception:
@@ -599,7 +769,48 @@ class DuckLakeWriter:
                         logger.exception("Failed to rollback after DuckLake commit failure")
                     raise
 
-    def upsert_source_object(self, data: dict, *, table: RawDuckLakeProvenanceTable) -> None:
+    def record_source_object(self, metadata: dict, *, table: RawDuckLakeProvenanceTable) -> None:
+        self._merge_source_object(metadata, table=table)
+
+    def mark_source_object_parsed(self, source_object_id: str, *, table: RawDuckLakeProvenanceTable) -> None:
+        self._update_source_object_status(
+            source_object_id,
+            table=table,
+            data={"status": "parsed", "parsed_at": datetime_now_utc(), "status_reason": None},
+        )
+
+    def mark_source_object_ingested(
+        self,
+        source_object_id: str,
+        *,
+        row_count: int,
+        table: RawDuckLakeProvenanceTable,
+    ) -> None:
+        self._update_source_object_status(
+            source_object_id,
+            table=table,
+            data={
+                "status": "ingested",
+                "ingested_at": datetime_now_utc(),
+                "row_count": row_count,
+                "status_reason": None,
+            },
+        )
+
+    def mark_source_object_failed(
+        self,
+        source_object_id: str,
+        *,
+        reason: str,
+        table: RawDuckLakeProvenanceTable,
+    ) -> None:
+        self._update_source_object_status(
+            source_object_id,
+            table=table,
+            data={"status": "failed", "status_reason": reason},
+        )
+
+    def _merge_source_object(self, data: dict, *, table: RawDuckLakeProvenanceTable) -> None:
         con = self._con
         if con is None:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
@@ -625,6 +836,85 @@ class DuckLakeWriter:
             values,
         )
 
+    def _update_source_object_status(
+        self,
+        source_object_id: str,
+        *,
+        table: RawDuckLakeProvenanceTable,
+        data: dict,
+    ) -> None:
+        con = self._con
+        if con is None:
+            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+        self._require_provenance_table_lock(table)
+
+        quoted_target = _table_sql(self._attach.alias, provenance_target_for(table))
+        columns = list(data.keys())
+        set_list = ", ".join(f"{_ident(column)} = ?" for column in columns)
+        rows = con.execute(
+            f"""
+            UPDATE {quoted_target}
+            SET {set_list}
+            WHERE source_object_id = ?
+            RETURNING source_object_id
+            """,
+            [*data.values(), source_object_id],
+        ).fetchall()
+        if not rows:
+            raise RuntimeError(f"Missing source object provenance row source_object_id={source_object_id}")
+
+    def source_object_version_is_ingested(
+        self,
+        source_object_id: str,
+        *,
+        sha256: str,
+        table: RawDuckLakeProvenanceTable,
+    ) -> bool:
+        con = self._con
+        if con is None:
+            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+        self._require_provenance_table_lock(table)
+
+        quoted_target = _table_sql(self._attach.alias, provenance_target_for(table))
+        row = con.execute(
+            f"""
+            SELECT 1
+            FROM {quoted_target}
+            WHERE source_object_id = ?
+                AND status = 'ingested'
+                AND sha256 = ?
+            LIMIT 1
+            """,
+            [source_object_id, sha256],
+        ).fetchone()
+        return row is not None
+
+    def source_object_ingested_sha256(
+        self,
+        source_object_id: str,
+        *,
+        table: RawDuckLakeProvenanceTable,
+    ) -> str | None:
+        con = self._con
+        if con is None:
+            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+        self._require_provenance_table_lock(table)
+
+        quoted_target = _table_sql(self._attach.alias, provenance_target_for(table))
+        row = con.execute(
+            f"""
+            SELECT sha256
+            FROM {quoted_target}
+            WHERE source_object_id = ?
+                AND status = 'ingested'
+            LIMIT 1
+            """,
+            [source_object_id],
+        ).fetchone()
+        if row is None:
+            return None
+        return row[0]
+
     def _require_data_table_lock(self, table: RawDuckLakeTable) -> None:
         if self._lock_token is None:
             raise DuckLakeLockViolationError(
@@ -635,8 +925,7 @@ class DuckLakeWriter:
     def _require_provenance_table_lock(self, table: RawDuckLakeProvenanceTable) -> None:
         if self._lock_token is None:
             raise DuckLakeLockViolationError(
-                "DuckLakeWriter.upsert_source_object() requires DuckLakeLockToken "
-                f"covering provenance table={table.value}"
+                f"DuckLakeWriter provenance methods require DuckLakeLockToken covering provenance table={table.value}"
             )
         self._lock_token.require_provenance_table(table)
 
@@ -670,6 +959,14 @@ def bootstrap_raw_ducklake(config: DuckLakeAttachConfig | None = None) -> None:
                 target=target,
                 column_definitions=raw_table_column_definitions(table),
             )
+            partition_columns = raw_table_partition_columns(table)
+            if partition_columns:
+                _ensure_expected_partitioning(
+                    con,
+                    alias=attach.alias,
+                    target=target,
+                    partition_columns=partition_columns,
+                )
         column_sql = ",\n                ".join(source_object_column_definitions())
         for table in RawDuckLakeProvenanceTable:
             target = provenance_target_for(table)

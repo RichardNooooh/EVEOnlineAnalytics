@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -79,22 +80,77 @@ class SequenceClient:
             client.close()
 
 
+class ThreadSafeParallelClient:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.max_active_reads = 0
+        self.closed = False
+        self._active_reads = 0
+        self._condition = threading.Condition()
+
+    def read(
+        self,
+        *,
+        source_url: str,
+        request_headers: dict[str, str],
+        temp_path: str,
+    ) -> ReadResult:
+        del request_headers
+        with self._condition:
+            self.calls.append(source_url)
+            self._active_reads += 1
+            self.max_active_reads = max(self.max_active_reads, self._active_reads)
+            self._condition.notify_all()
+            if source_url.endswith("first.csv.bz2"):
+                self._condition.wait_for(lambda: self._active_reads >= 2, timeout=0.5)
+        try:
+            Path(temp_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(temp_path).write_bytes(b"payload")
+            name = Path(source_url).name.removesuffix(".csv.bz2")
+            return ModifiedRead(
+                status=ReadStatus.MODIFIED,
+                fetched_at=datetime.now(UTC),
+                temp_path=temp_path,
+                sha256=f"sha-{name}",
+                revalidation=RevalidationMetadata(content_length=7),
+            )
+        finally:
+            with self._condition:
+                self._active_reads -= 1
+                self._condition.notify_all()
+
+    def close(self) -> None:
+        self.closed = True
+
+    def __enter__(self) -> ThreadSafeParallelClient:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+
 def _store(
     *,
     tmp_path: Path,
-    client: FakeClient | SequenceClient,
+    client: FakeClient | SequenceClient | ThreadSafeParallelClient | None,
     dataset_name: str = "market-orders",
     update_mode: UpdateMode = UpdateMode.SNAPSHOT,
     source_name: str = "everef",
     ledger: InMemoryRawObjectLedger | None = None,
+    raw_download_workers: int | None = None,
 ) -> Cache:
+    kwargs = {
+        "dataset_name": dataset_name,
+        "update_mode": update_mode,
+        "source_name": source_name,
+        "raw_root": str(tmp_path / "raw"),
+        "client": client,
+        "ledger": ledger or InMemoryRawObjectLedger(),
+    }
+    if raw_download_workers is not None:
+        kwargs["raw_download_workers"] = raw_download_workers
     return Cache(
-        dataset_name=dataset_name,
-        update_mode=update_mode,
-        source_name=source_name,
-        raw_root=str(tmp_path / "raw"),
-        client=client,
-        ledger=ledger or InMemoryRawObjectLedger(),
+        **kwargs,
     )
 
 
@@ -192,7 +248,7 @@ def test_get_changed_returns_changed_objects(tmp_path: Path) -> None:
         identity_key={"source": "second"},
     )
 
-    with _store(tmp_path=tmp_path, client=client) as store:
+    with _store(tmp_path=tmp_path, client=client, raw_download_workers=2) as store:
         store.get_many([first_object], mode=GetMode.ALL)
         changed_results = store.get_many([first_object, second_object])
 
@@ -223,6 +279,25 @@ def test_get_uses_explicit_source_path_for_non_everef_url(tmp_path: Path) -> Non
 
     assert result.identity_key == {"source": "test"}
     assert result.path == str(tmp_path / "raw" / "example" / "vendor" / "market-orders" / "file.csv")
+
+
+def test_get_many_parallel_workers_preserve_result_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = ThreadSafeParallelClient()
+    monkeypatch.setattr("eve_ingest.raw_objects.cache.HttpRawObjectClient", lambda: client)
+    first_object = CacheObject(
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/first.csv.bz2",
+        identity_key={"source": "first"},
+    )
+    second_object = CacheObject(
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/second.csv.bz2",
+        identity_key={"source": "second"},
+    )
+
+    with _store(tmp_path=tmp_path, client=None, raw_download_workers=2) as store:
+        results = store.get_many([first_object, second_object], mode=GetMode.ALL)
+
+    assert [result.identity_key["source"] for result in results] == ["first", "second"]
+    assert client.max_active_reads >= 2
 
 
 def test_get_reuses_existing_snapshot_without_remote_read(tmp_path: Path) -> None:
@@ -545,7 +620,7 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
         identity_key={"source": "second"},
     )
 
-    with _store(tmp_path=tmp_path, client=client, ledger=ledger) as store:
+    with _store(tmp_path=tmp_path, client=client, ledger=ledger, raw_download_workers=2) as store:
         store.get_many([first_object], mode=GetMode.ALL)
         unpublished_results = store.get_many([first_object, second_object], mode=GetMode.UNPUBLISHED)
         store.pubtrack.mark_published_many(

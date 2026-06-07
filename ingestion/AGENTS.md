@@ -63,16 +63,21 @@ or ingestion tests.
 - When adding a new source or writer, declare all of the following up front in code and
   docs: semantic publication scope, physical raw/provenance tables mutated, writer
   idempotency mode, and the advisory lock domain(s) that serialize those mutations.
-- Do not call `DuckLakeWriter.write()` or `DuckLakeWriter.upsert_source_object()` without
-  a valid `DuckLakeLockToken` covering the target raw/provenance table domain.
+- Do not call `DuckLakeWriter.write()`, `DuckLakeWriter.record_source_object()`,
+  `DuckLakeWriter.mark_source_object_parsed()`,
+  `DuckLakeWriter.mark_source_object_ingested()`, or
+  `DuckLakeWriter.mark_source_object_failed()` without a valid `DuckLakeLockToken`
+  covering the target raw/provenance table domain.
 - When adding a publisher, declare physical data tables, provenance tables, writer mode,
   semantic publication scope, and derived lock domains together.
 - Choose writer behavior from dataset semantics, not from a generic key list alone.
 - Current ingestion semantics:
-  - `market_orders` and `fuzzwork_orders` are snapshot-oriented and use idempotent
-    insert-missing-key semantics.
-  - `market_history` is source-date-authoritative and currently uses
-    assert-partition-coverage plus insert-missing semantics for each source date.
+  - `market_orders` and `fuzzwork_orders` are snapshot-oriented and append rows per
+    new `source_object_id`; replay idempotency comes from raw publication/provenance
+    state keyed by `source_object_id`, while `source_date` is the publication and lock
+    batch scope.
+  - `market_history` is source-date-authoritative and validates the covered source-date
+    scope before publication.
   - `references` ingests the latest full extracts and uses full-table replacement
     semantics per published reference table.
   - Raw-file provenance is dataset-scoped via `raw_market_history_objects`,

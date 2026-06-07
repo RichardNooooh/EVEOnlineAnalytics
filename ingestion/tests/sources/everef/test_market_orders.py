@@ -31,7 +31,7 @@ def test_publisher_spec_declares_market_order_mutations() -> None:
     assert PUBLISHER_SPEC.update_mode is UpdateMode.SNAPSHOT
     assert PUBLISHER_SPEC.data_tables == (RawDuckLakeTable.MARKET_ORDERS,)
     assert PUBLISHER_SPEC.provenance_tables == (RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,)
-    assert PUBLISHER_SPEC.writer_mode is DuckLakeWriterMode.INSERT_MISSING_KEYS
+    assert PUBLISHER_SPEC.writer_mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
     assert PUBLISHER_SPEC.publication_scope({"source_date": "2026-01-01"}) == (
         "raw:market_orders:source_date=2026-01-01"
     )
@@ -255,7 +255,7 @@ class TestParseCsvToArrow:
         assert "Zero-row CSV file" in caplog.text
 
 
-def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_process_result_uses_append_snapshot_rows_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     result = make_cache_result(
         "/tmp/fake.csv.bz2",
         dataset_name="market-orders",
@@ -263,18 +263,20 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
     )
     writer = MagicMock()
+    writer.source_object_ingested_sha256.return_value = None
+    writer.source_object_version_is_ingested.return_value = False
     monkeypatch.setattr(
         "eve_ingest.sources.everef.market_orders.parse_csv_to_arrow",
         lambda result: pa.table({"order_id": [1]}),
     )
 
-    writer._write_from_prepared_source.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
+    writer.publish_source_object_rows.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
 
     outcome = _process_result(result, writer)
     assert outcome.success is True
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
     writer.write.assert_not_called()
-    call_kwargs = writer._write_from_prepared_source.call_args.kwargs
-    assert call_kwargs["mode"].value == "insert_missing_keys"
-    assert call_kwargs["key_columns"] == ["source_object_id", "order_id"]
+    call_kwargs = writer.publish_source_object_rows.call_args.kwargs
+    assert call_kwargs["mode"] is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
+    assert call_kwargs["key_columns"] == []

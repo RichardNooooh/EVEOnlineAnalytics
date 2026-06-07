@@ -75,27 +75,27 @@ def test_write_with_key_columns_does_insert_if_not_exists(
 ) -> None:
     bootstrap_raw_ducklake(attach_config)
 
-    table = pa.table({"order_id": [1, 2], "price": [100.0, 200.0]})
+    table = pa.table({"type_id": [1, 2], "average": [100.0, 200.0], "source_market_date": ["2026-01-01"] * 2})
     with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         writer.write(
             table,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
 
     # Insert same order_ids again with identical prices — should be no-ops
-    duplicate = pa.table({"order_id": [1, 2], "price": [100.0, 200.0]})
+    duplicate = pa.table({"type_id": [1, 2], "average": [100.0, 200.0], "source_market_date": ["2026-01-01"] * 2})
     with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         writer.write(
             duplicate,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
 
     rows = raw_con.execute(
-        f"SELECT order_id, price FROM {_ident(attach_config.alias)}.raw.raw_market_orders ORDER BY order_id"
+        f"SELECT type_id, average FROM {_ident(attach_config.alias)}.raw.raw_market_history ORDER BY type_id"
     ).fetchall()
     assert len(rows) == 2
     assert rows[0] == (1, 100.0)
@@ -103,7 +103,7 @@ def test_write_with_key_columns_does_insert_if_not_exists(
 
 
 @pytest.mark.integration
-def test_authoritative_insert_missing_keys_writes_new_market_history_row(
+def test_authoritative_mode_writes_new_market_history_row(
     attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
 ) -> None:
     bootstrap_raw_ducklake(attach_config)
@@ -144,14 +144,21 @@ def test_insert_style_write_fails_when_bootstrapped_table_is_missing(
     bootstrap_raw_ducklake(attach_config)
     _drop_table(raw_con, attach_config, RawDuckLakeTable.MARKET_ORDERS)
 
-    table = pa.table({"order_id": [1], "price": [100.0]})
+    table = pa.table(
+        {
+            "order_id": [1],
+            "price": [100.0],
+            "source_object_id": ["soid-1"],
+            "source_market_date": ["2026-01-01"],
+            "snapshot_ts": ["2026-01-01"],
+        }
+    )
     with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
         with pytest.raises(RuntimeError, match="eve-ingest ducklake bootstrap raw"):
             writer.write(
                 table,
                 table=RawDuckLakeTable.MARKET_ORDERS,
-                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-                key_columns=["order_id"],
+                mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
             )
 
 

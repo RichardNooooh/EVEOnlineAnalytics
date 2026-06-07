@@ -18,14 +18,13 @@ from eve_ingest.workflows.publisher_specs import PublisherSpec, source_date_publ
 logger = logging.getLogger("eve_ingest.sources.everef")
 
 _FUZZWORK_RE = re.compile(r'href="[^"]*(fuzzwork-orderset-\d+-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.csv\.gz)"')
-_KEY_COLUMNS = ["source_object_id", "order_id"]
 
 PUBLISHER_SPEC = PublisherSpec(
     dataset_name="fuzzwork-orders",
     update_mode=UpdateMode.SNAPSHOT,
     data_tables=(RawDuckLakeTable.FUZZWORK_ORDERS,),
     provenance_tables=(RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS,),
-    writer_mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+    writer_mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
     publication_scope_builder=source_date_publication_scope("fuzzwork_orders"),
 )
 
@@ -73,8 +72,8 @@ def _process_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProc
         source_market_date=source_market_date,
         snapshot_ts=snapshot_ts,
         table_key=RawDuckLakeTable.FUZZWORK_ORDERS,
-        mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-        key_columns=_KEY_COLUMNS,
+        mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+        key_columns=[],
         parse_table=lambda cache_result: parse_csv_to_arrow(
             cache_result,
             read_options=pac.ReadOptions(column_names=_FUZZWORK_COLUMN_NAMES),
