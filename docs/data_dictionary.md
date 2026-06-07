@@ -77,6 +77,7 @@ Durable DuckLake-backed representation of market order snapshots.
 Expected contract elements:
 
 - region identifier
+- `location_id`, `station_id`, and `constellation_id` fields from Everef snapshots
 - snapshot timestamp
 - buy or sell side flags
 - price, volume, range, and location fields from the source snapshot

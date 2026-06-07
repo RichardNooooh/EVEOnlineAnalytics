@@ -10,6 +10,9 @@ DEFAULT_DUCKLAKE_CATALOG = os.environ.get(
     "postgresql://airflow:airflow-local-only@postgres:5432/airflow",
 )
 DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS = float(os.environ.get("EVE_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS", "60"))
+DEFAULT_DUCKLAKE_PG_POOL_MAX_CONNECTIONS = int(os.environ.get("EVE_DUCKLAKE_PG_POOL_MAX_CONNECTIONS", "32"))
+DEFAULT_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS = int(os.environ.get("EVE_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS", "120000"))
+DEFAULT_DUCKLAKE_PG_POOL_ACQUIRE_MODE = os.environ.get("EVE_DUCKLAKE_PG_POOL_ACQUIRE_MODE", "wait")
 DEFAULT_RAW_LEDGER_URL = os.environ.get(
     "EVE_RAW_LEDGER_URL",
     "postgresql://raw_files:password@postgres:5432/raw_files",

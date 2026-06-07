@@ -6,6 +6,7 @@ from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
     provenance_table_for_data_table,
+    raw_table_column_definitions,
     source_object_column_definitions,
 )
 
@@ -59,3 +60,11 @@ def test_source_object_schema_definition_is_shared() -> None:
         "status_reason VARCHAR",
         "row_count BIGINT",
     )
+
+
+def test_market_orders_schema_matches_everef_snapshot_columns() -> None:
+    columns = raw_table_column_definitions(RawDuckLakeTable.MARKET_ORDERS)
+
+    assert "location_id BIGINT" in columns
+    assert "station_id BIGINT" in columns
+    assert "constellation_id BIGINT" in columns

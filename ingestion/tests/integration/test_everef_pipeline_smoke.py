@@ -30,8 +30,8 @@ def _write_orders_file(path: Path) -> None:
     path.write_bytes(
         bz2.compress(
             (
-                "order_id,type_id,region_id,location_id,system_id,range,price,volume_remain,volume_total,min_volume,issued,expires,duration,is_buy_order,reported_by,http_last_modified\n"
-                "1,34,10000001,60000001,30000001,0,9.99,10,100,1,2026-01-01T00:00:00Z,2026-02-01T00:00:00Z,30,True,1000001,2026-01-01T00:00:00Z\n"
+                "duration,is_buy_order,issued,location_id,min_volume,order_id,price,range,system_id,type_id,volume_remain,volume_total,http_last_modified,station_id,region_id,constellation_id\n"
+                "30,True,2026-01-01T00:00:00Z,60000001,1,1,9.99,0,30000001,34,10,100,2026-01-01T00:00:00Z,60000001,10000001,20000001\n"
             ).encode()
         )
     )

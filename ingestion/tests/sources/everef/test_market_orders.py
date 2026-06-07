@@ -201,9 +201,10 @@ class TestBuildCacheObjectsWithRealFixture:
 
 class TestParseCsvToArrow:
     CSV_CONTENT = (
-        "order_id,type_id,region_id,location_id,system_id,"
-        "range,price,volume_remain,volume_total,min_volume,issued,expires,duration,is_buy_order,reported_by,http_last_modified\n"
-        "1,34,10000001,60000001,30000001,0,9.99,10,100,1,2026-01-01T00:00:00Z,2026-02-01T00:00:00Z,30,True,1000001,2026-01-01T00:00:00Z\n"
+        "duration,is_buy_order,issued,location_id,min_volume,order_id,price,range,"
+        "system_id,type_id,volume_remain,volume_total,http_last_modified,station_id,region_id,constellation_id\n"
+        "30,True,2026-01-01T00:00:00Z,60000001,1,1,9.99,0,30000001,34,10,100,"
+        "2026-01-01T00:00:00Z,60000001,10000001,20000001\n"
     )
 
     @pytest.fixture
@@ -225,10 +226,14 @@ class TestParseCsvToArrow:
         table = parse_csv_to_arrow(result)
 
         assert "order_id" in table.column_names
+        assert "station_id" in table.column_names
+        assert "constellation_id" in table.column_names
         assert "_source_market_date" not in table.column_names
         assert "_source_local_path" not in table.column_names
         assert len(table) == 1
         assert table.column("order_id")[0].as_py() == 1
+        assert table.column("station_id")[0].as_py() == 60000001
+        assert table.column("constellation_id")[0].as_py() == 20000001
 
     def test_zero_row_warning(self, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
         path = tmp_path / "empty.csv.bz2"
@@ -263,12 +268,13 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
         lambda result: pa.table({"order_id": [1]}),
     )
 
-    writer.write.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
+    writer._write_from_prepared_source.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
 
     outcome = _process_result(result, writer)
     assert outcome.success is True
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
-    call_kwargs = writer.write.call_args.kwargs
+    writer.write.assert_not_called()
+    call_kwargs = writer._write_from_prepared_source.call_args.kwargs
     assert call_kwargs["mode"].value == "insert_missing_keys"
     assert call_kwargs["key_columns"] == ["source_object_id", "order_id"]

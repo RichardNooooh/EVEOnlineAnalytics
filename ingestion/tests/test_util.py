@@ -18,6 +18,9 @@ class TestConstants:
         monkeypatch.delenv("EVE_DUCKLAKE_CATALOG", raising=False)
         monkeypatch.delenv("EVE_RAW_LEDGER_URL", raising=False)
         monkeypatch.delenv("EVE_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS", raising=False)
+        monkeypatch.delenv("EVE_DUCKLAKE_PG_POOL_MAX_CONNECTIONS", raising=False)
+        monkeypatch.delenv("EVE_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS", raising=False)
+        monkeypatch.delenv("EVE_DUCKLAKE_PG_POOL_ACQUIRE_MODE", raising=False)
         importlib.reload(util)
 
     def test_default_data_root(self) -> None:
@@ -37,6 +40,11 @@ class TestConstants:
 
     def test_default_ducklake_metadata_schema(self) -> None:
         assert util.DEFAULT_DUCKLAKE_METADATA_SCHEMA == "eve_market"
+
+    def test_default_ducklake_postgres_pool_settings(self) -> None:
+        assert util.DEFAULT_DUCKLAKE_PG_POOL_MAX_CONNECTIONS == 32
+        assert util.DEFAULT_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS == 120000
+        assert util.DEFAULT_DUCKLAKE_PG_POOL_ACQUIRE_MODE == "wait"
 
 
 class TestParseIsoDate:

@@ -46,6 +46,7 @@ def _publish_transactional_rows_with_retry(
     writer: DuckLakeWriter,
     *,
     table: pa.Table,
+    source_name: str,
     row_count: int,
     soid: str,
     provenance_table,
@@ -66,8 +67,9 @@ def _publish_transactional_rows_with_retry(
                     table=provenance_table,
                 )
 
-                metrics = writer.write(
+                metrics = writer._write_from_prepared_source(
                     table,
+                    source_name=source_name,
                     table=table_key,
                     mode=mode,
                     key_columns=key_columns,
@@ -185,17 +187,20 @@ def publish_file_backed_rows(
                 pa.array([snapshot_ts] * n, type=pa.timestamp("us", tz="UTC")),
             )
 
-        metrics = _publish_transactional_rows_with_retry(
-            writer,
-            table=table,
-            row_count=n,
-            soid=soid,
-            provenance_table=provenance_table,
-            table_key=table_key,
-            mode=mode,
-            key_columns=key_columns,
-            source_date_str=source_date_str,
-        )
+        writer._validate_write_request(table, table=table_key, mode=mode, key_columns=key_columns)
+        with writer._prepare_arrow_source(table) as source_name:
+            metrics = _publish_transactional_rows_with_retry(
+                writer,
+                table=table,
+                source_name=source_name,
+                row_count=n,
+                soid=soid,
+                provenance_table=provenance_table,
+                table_key=table_key,
+                mode=mode,
+                key_columns=key_columns,
+                source_date_str=source_date_str,
+            )
 
         extra_context = log_context or {}
         if snapshot_ts is None:

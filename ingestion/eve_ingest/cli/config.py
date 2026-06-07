@@ -21,6 +21,9 @@ class DuckLakeCliConfig:
     ducklake_catalog: str
     ducklake_metadata_schema: str
     lock_wait_timeout_seconds: float
+    pg_pool_max_connections: int
+    pg_pool_wait_timeout_millis: int
+    pg_pool_acquire_mode: str
 
 
 @dataclass(frozen=True)
