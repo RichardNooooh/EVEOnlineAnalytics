@@ -45,6 +45,16 @@ observability, and deployment wiring that satisfies those requirements.
   the target physical table domain; semantic publication scope alone is not enough.
 - Raw DuckLake schema and dataset-scoped provenance tables must be bootstrapped
   explicitly before first writer use in a new catalog/schema.
+- `raw_market_orders` and `raw_fuzzwork_orders` are append-only per `source_object_id`
+  snapshot object; `source_object_id` is their replay/idempotency boundary and
+  `source_date` is their publication/lock batch scope.
+- Raw order snapshot DuckLake tables partition by `source_market_date`; existing raw
+  DuckLake state should be rebuilt for clean partitioning because DuckLake partition
+  changes affect new writes only.
+- Raw order partition rebuilds require stopping writers, backing up or snapshotting
+  catalog/storage, rebuilding or dropping the raw order DuckLake tables or raw catalog,
+  bootstrapping, backfilling from raw cache/source, verifying partitions, and resuming
+  writers.
 - Bootstrap jobs must acquire `ducklake:migration` plus affected raw/support lock domains
   before raw schema or table DDL; bootstrap operations must be idempotent so reruns
   can repair missing schemas or support tables safely.

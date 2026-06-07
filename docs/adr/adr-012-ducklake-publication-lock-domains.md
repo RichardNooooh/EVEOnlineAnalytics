@@ -71,9 +71,10 @@ names.
 
 Publisher declarations define the semantic publication scope, mutated raw data tables,
 mutated provenance tables, and writer mode together. Workflow lock domains are derived
-from those declared physical tables. `DuckLakeWriter.write()` and
-`DuckLakeWriter.upsert_source_object()` require a `DuckLakeLockToken` proving the caller
-holds the target table's physical advisory lock domain before mutation.
+from those declared physical tables. `DuckLakeWriter.write()` and provenance lifecycle
+methods such as `record_source_object()` and `mark_source_object_ingested()` require a
+`DuckLakeLockToken` proving the caller holds the target table's physical advisory lock
+domain before mutation.
 
 Raw-file workflows may select candidate cache results before lock acquisition, but they
 must recheck publication markers after acquiring the physical lock domains. Mutable raw

@@ -187,6 +187,11 @@ finishes, while dbt data tests still run afterward.
 For Everef market history, revised source dates are represented through DuckLake merge
 or delete-insert semantics rather than append-only duplicate rows.
 
+For raw market-order snapshots, `raw_market_orders` and `raw_fuzzwork_orders` are
+append-only per `source_object_id` snapshot object. Replay idempotency is enforced by raw
+publication/provenance state keyed by `source_object_id`; `source_date` is the writer
+publication and lock batch scope.
+
 For the current BI path, dbt builds `fact_market_history` on local scratch compute and
 materializes curated marts directly into writable DuckLake tables attached as
 `curated_lake`. dbt data tests still run after those writes, so `dbt build` is not a

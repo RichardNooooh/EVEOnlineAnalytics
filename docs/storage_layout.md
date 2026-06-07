@@ -101,21 +101,38 @@ Current planned rules:
 
 - market history tables use `date` as the primary Everef replacement scope and include
   `region_id` and `type_id`
-- market order snapshot tables, including Fuzzwork order snapshots, partition by
-  `source_market_date`
+- raw market order snapshot tables, including `raw_market_orders` and
+  `raw_fuzzwork_orders`, partition by `source_market_date`; `source_date` is the
+  publication and lock batch scope used by the writer, while `source_object_id` is the
+  replay and idempotency boundary for each raw order snapshot object
 - curated tables partition by the smallest stable unit that supports rebuild and
   efficient downstream reads, typically `date` and optionally `region_id`
 - current curated BI marts `curated_daily_prices` and `curated_trade_volume` use `date`
   as the primary replacement scope and retain `region_id` and `type_id` at row grain
+
+DuckLake partition changes apply only to new writes. Existing raw DuckLake state created
+before the `source_market_date` partition contract should be rebuilt rather than relying
+on later writes to reorganize old files into clean partitions.
+
+Raw order partition rebuild runbook:
+
+1. stop raw order writers
+2. back up or snapshot DuckLake catalog metadata and DuckLake storage
+3. drop/rebuild `raw_market_orders` and `raw_fuzzwork_orders`, or rebuild the raw catalog
+   when a clean catalog reset is intended
+4. bootstrap raw schemas, tables, and dataset-scoped provenance support tables
+5. rerun backfill from raw cache or source archives
+6. verify `source_market_date` partitions and row/object counts
+7. resume writers
 
 ## Write Semantics and Replacement Scope
 
 Storage layout must preserve the difference between snapshot publication and
 authoritative publication.
 
-- snapshot-oriented datasets append new published observations over time and rely on
-  idempotent insert-missing-key behavior to avoid duplicate publication of the same
-  snapshot rows
+- snapshot-oriented datasets append new published source objects over time;
+  `raw_market_orders` and `raw_fuzzwork_orders` dedupe replayed snapshots through raw
+  publication/provenance keyed by `source_object_id`
 - authoritative datasets define an explicit visible replacement scope, such as a source
   date partition or an entire table
 
