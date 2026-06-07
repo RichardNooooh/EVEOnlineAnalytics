@@ -147,13 +147,13 @@ def test_process_result_uses_authoritative_writer_mode(monkeypatch: pytest.Monke
         lambda result: pa.table({"date": [date(2026, 1, 1)], "region_id": [10000001], "type_id": [34]}),
     )
 
-    writer._write_from_prepared_source.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
+    writer.publish_source_object_rows.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
 
     outcome = _process_result(result, writer)
     assert outcome.success is True
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
     writer.write.assert_not_called()
-    call_kwargs = writer._write_from_prepared_source.call_args.kwargs
+    call_kwargs = writer.publish_source_object_rows.call_args.kwargs
     assert call_kwargs["mode"] is DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS
     assert call_kwargs["key_columns"] == ["date", "region_id", "type_id"]

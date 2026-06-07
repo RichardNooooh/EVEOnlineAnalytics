@@ -250,16 +250,24 @@ class _ReferenceWriter:
         finally:
             self.in_transaction = False
 
-    def upsert_source_object(self, data: dict, *, table) -> None:
+    def record_source_object(self, data: dict, *, table) -> None:
         assert self.in_transaction is True
-        self.calls.append(("upsert", data.copy()))
+        self.calls.append(("record", data.copy()))
 
-    def _validate_write_request(self, arrow_table: pa.Table, *, table, mode, key_columns=()) -> None:
+    def mark_source_object_parsed(self, source_object_id: str, *, table) -> None:
+        assert self.in_transaction is True
+        self.calls.append(("mark_parsed", source_object_id))
+
+    def mark_source_object_ingested(self, source_object_id: str, *, row_count: int, table) -> None:
+        assert self.in_transaction is True
+        self.calls.append(("mark_ingested", {"source_object_id": source_object_id, "row_count": row_count}))
+
+    def validate_write_request(self, arrow_table: pa.Table, *, table, mode, key_columns=()) -> None:
         assert self.in_transaction is False
         self.calls.append(("validate_write", {"table": table, "mode": mode, "rows": len(arrow_table)}))
 
     @contextmanager
-    def _prepare_arrow_source(self, arrow_table: pa.Table):
+    def prepare_arrow_source(self, arrow_table: pa.Table):
         assert self.in_transaction is False
         source_name = f"source_{len([call for call in self.calls if call[0] == 'prepare_source'])}"
         self.calls.append(("prepare_source", {"source_name": source_name, "rows": len(arrow_table)}))
@@ -268,7 +276,7 @@ class _ReferenceWriter:
         finally:
             self.calls.append(("drop_source", source_name))
 
-    def _write_from_prepared_source(self, arrow_table: pa.Table, *, source_name: str, table, mode, key_columns=()):
+    def write_prepared_source(self, arrow_table: pa.Table, *, source_name: str, table, mode, key_columns=()):
         assert self.in_transaction is True
         self.calls.append(("write_prepared", {"source_name": source_name, "table": table, "rows": len(arrow_table)}))
         if self.fail_write:
@@ -321,11 +329,13 @@ def test_process_references_prepares_arrow_sources_before_ducklake_transaction(t
         "validate_write",
         "prepare_source",
         "transaction_enter",
-        "upsert",
-        "upsert",
+        "record",
+        "mark_parsed",
         "write_prepared",
-        "upsert",
+        "mark_ingested",
         "transaction_commit",
         "drop_source",
     ]
     assert outcome.write_metrics[0].table is RawDuckLakeTable.REFERENCE_MARKET_GROUPS
+    assert writer.calls[3][1]["source_object_id"] == writer.calls[4][1]
+    assert writer.calls[3][1]["source_object_id"] == writer.calls[6][1]["source_object_id"]

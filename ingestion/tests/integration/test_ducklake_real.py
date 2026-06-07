@@ -65,31 +65,67 @@ def bootstrapped(shared_con) -> None:
 
 
 @pytest.mark.real_duckdb
+def test_append_snapshot_rows_appends_duplicate_snapshot_rows(shared_con):
+    rows = pa.table(
+        {
+            "order_id": [1],
+            "price": [10.0],
+            "source_object_id": ["soid-1"],
+            "source_market_date": [date(2026, 1, 1)],
+            "snapshot_ts": ["2026-01-01"],
+        }
+    )
+
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
+        first_metrics = writer.write(
+            rows,
+            table=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+        )
+
+    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
+        second_metrics = writer.write(
+            rows,
+            table=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+        )
+
+    result = shared_con.execute(
+        f'SELECT order_id, price FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY order_id'
+    ).fetchall()
+    assert result == [(1, 10.0), (1, 10.0)]
+    assert first_metrics.inserted_rows == 1
+    assert first_metrics.matched_rows == 0
+    assert second_metrics.inserted_rows == 1
+    assert second_metrics.matched_rows == 0
+
+
+@pytest.mark.real_duckdb
 def test_merge_inserts_new_rows_and_skips_existing(shared_con):
     """Verify MERGE inserts new key rows and skips existing key rows.
 
     Uses a real in-memory DuckDB to validate SQL correctness.
     """
-    table_a = pa.table({"order_id": [1, 2], "price": [10.0, 20.0]})
+    table_a = pa.table({"type_id": [1, 2], "average": [10.0, 20.0], "source_market_date": ["2026-01-01"] * 2})
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_a,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
 
-    table_b = pa.table({"order_id": [2, 3], "price": [20.0, 30.0]})
+    table_b = pa.table({"type_id": [1, 2, 3], "average": [10.0, 20.0, 30.0], "source_market_date": ["2026-01-01"] * 3})
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_b,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
 
     result = shared_con.execute(
-        f'SELECT order_id, price FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY order_id'
+        f'SELECT type_id, average FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}" ORDER BY type_id'
     ).fetchall()
 
     assert result == [
@@ -102,26 +138,26 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
 @pytest.mark.real_duckdb
 def test_merge_column_order_independent(shared_con):
     """Verify BY NAME matching means column order doesn't matter."""
-    table_a = pa.table({"order_id": [1], "price": [10.0]})
+    table_a = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_a,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
 
-    table_b = pa.table({"price": [20.0], "order_id": [2]})
+    table_b = pa.table({"average": [20.0], "type_id": [2], "source_market_date": ["2026-01-02"]})
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             table_b,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
 
     result = shared_con.execute(
-        f'SELECT order_id, price FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY order_id'
+        f'SELECT type_id, average FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}" ORDER BY type_id'
     ).fetchall()
 
     assert result == [
@@ -157,53 +193,53 @@ def test_replace_table_overwrites_existing_rows(shared_con):
 
 @pytest.mark.real_duckdb
 def test_merge_raises_for_matching_key_with_different_values(shared_con):
-    first = pa.table({"order_id": [1], "price": [10.0], "source_market_date": ["2026-01-01"]})
+    first = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             first,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
 
-    second = pa.table({"order_id": [1], "price": [99.0], "source_market_date": ["2026-01-01"]})
+    second = pa.table({"type_id": [1], "average": [99.0], "source_market_date": ["2026-01-01"]})
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         with pytest.raises(ValueError, match="differing values"):
             writer.write(
                 second,
-                table=RawDuckLakeTable.MARKET_ORDERS,
-                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-                key_columns=["order_id"],
+                table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+                key_columns=["type_id"],
             )
 
     rows = shared_con.execute(
-        f'SELECT order_id, price FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY order_id'
+        f'SELECT type_id, average FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}" ORDER BY type_id'
     ).fetchall()
     assert rows == [(1, 10.0)]
 
 
 @pytest.mark.real_duckdb
-def test_insert_missing_keys_is_idempotent_for_identical_snapshot(shared_con):
-    rows = pa.table({"order_id": [1], "price": [10.0], "source_market_date": ["2026-01-01"]})
+def test_authoritative_mode_is_idempotent_for_identical_source_date(shared_con):
+    rows = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
 
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             rows,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
 
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             rows,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
 
     result = shared_con.execute(
-        f'SELECT order_id, price FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY order_id'
+        f'SELECT type_id, average FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}" ORDER BY type_id'
     ).fetchall()
     assert result == [(1, 10.0)]
 
@@ -236,23 +272,37 @@ def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from
 
 
 @pytest.mark.real_duckdb
-def test_insert_missing_keys_allows_partial_source_date_coverage(shared_con):
-    first = pa.table({"order_id": [1], "price": [10.0], "source_market_date": ["2026-01-01"]})
+def test_append_snapshot_rows_allows_partial_source_date_coverage(shared_con):
+    first = pa.table(
+        {
+            "order_id": [1],
+            "price": [10.0],
+            "source_object_id": ["soid-1"],
+            "source_market_date": ["2026-01-01"],
+            "snapshot_ts": ["2026-01-01"],
+        }
+    )
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             first,
             table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
         )
 
-    second = pa.table({"order_id": [2], "price": [20.0], "source_market_date": ["2026-01-01"]})
+    second = pa.table(
+        {
+            "order_id": [2],
+            "price": [20.0],
+            "source_object_id": ["soid-2"],
+            "source_market_date": ["2026-01-01"],
+            "snapshot_ts": ["2026-01-01"],
+        }
+    )
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
         writer.write(
             second,
             table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
         )
 
     rows = shared_con.execute(
