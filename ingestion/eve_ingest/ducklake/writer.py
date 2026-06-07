@@ -4,6 +4,7 @@ import logging
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -68,6 +69,11 @@ def _arrow_view(con: duckdb.DuckDBPyConnection, arrow_table: pa.Table) -> Iterat
 def _quote_literal(value: str) -> str:
     """Quote a string as a SQL literal (single-quoted, escaped)."""
     return "'" + value.replace("'", "''") + "'"
+
+
+@dataclass(frozen=True)
+class DuckLakeSqlSnapshotSource:
+    sql: str
 
 
 def _attach(
@@ -481,6 +487,9 @@ class DuckLakeWriter:
                 key_columns=key_columns,
             )
 
+    def quote_sql_string(self, value: str) -> str:
+        return _quote_literal(value)
+
     @contextmanager
     def prepare_arrow_source(self, arrow_table: pa.Table) -> Iterator[str]:
         con = self._con
@@ -488,6 +497,18 @@ class DuckLakeWriter:
             raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
         with _arrow_view(con, arrow_table) as source_name:
             yield source_name
+
+    @contextmanager
+    def prepare_sql_source(self, sql_source: DuckLakeSqlSnapshotSource) -> Iterator[str]:
+        con = self._con
+        if con is None:
+            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+        source_name = f"_sql_source_{uuid4().hex}"
+        con.execute(f"CREATE OR REPLACE TEMP VIEW {_ident(source_name)} AS {sql_source.sql}")
+        try:
+            yield source_name
+        finally:
+            con.execute(f"DROP VIEW IF EXISTS {_ident(source_name)}")
 
     def validate_write_request(
         self,
@@ -732,6 +753,63 @@ class DuckLakeWriter:
                 )
                 self.mark_source_object_ingested(source_object_id, row_count=row_count, table=provenance_table)
                 return metrics
+
+    def publish_source_object_sql_rows(
+        self,
+        sql_source: DuckLakeSqlSnapshotSource,
+        *,
+        data_table: RawDuckLakeTable,
+        provenance_table: RawDuckLakeProvenanceTable,
+        source_object_id: str,
+        mode: DuckLakeWriterMode,
+    ) -> DuckLakeWriteMetrics:
+        if mode is not DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS:
+            raise ValueError("publish_source_object_sql_rows only supports APPEND_SNAPSHOT_ROWS")
+        self._require_data_table_lock(data_table)
+        with self.prepare_sql_source(sql_source) as source_name:
+            quoted_source = _ident(source_name)
+            row_count = int(self._con.execute(f"SELECT COUNT(*) FROM {quoted_source}").fetchone()[0])
+            with self.transaction():
+                self.mark_source_object_parsed(source_object_id, table=provenance_table)
+                metrics = self._append_snapshot_prepared_source(
+                    source_name=source_name,
+                    table=data_table,
+                    attempted_rows=row_count,
+                )
+                self.mark_source_object_ingested(source_object_id, row_count=row_count, table=provenance_table)
+                return metrics
+
+    def _append_snapshot_prepared_source(
+        self,
+        *,
+        source_name: str,
+        table: RawDuckLakeTable,
+        attempted_rows: int,
+    ) -> DuckLakeWriteMetrics:
+        con = self._con
+        if con is None:
+            raise RuntimeError("Missing DB connection. DuckLakeWriter must be used inside a with block")
+
+        target = _target_for(table)
+        _require_table(con, alias=self._attach.alias, target=target)
+        quoted_target = _table_sql(self._attach.alias, target)
+        quoted_source = _ident(source_name)
+        con.execute(
+            f"""
+            INSERT INTO {quoted_target} BY NAME
+            SELECT * FROM {quoted_source}
+            """
+        )
+        metrics = DuckLakeWriteMetrics(
+            table=table,
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+            attempted_rows=attempted_rows,
+            inserted_rows=attempted_rows,
+            matched_rows=0,
+            replaced_rows=0,
+        )
+        self._record_write_metrics(metrics, key_columns=())
+        return metrics
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
