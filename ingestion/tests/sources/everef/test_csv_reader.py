@@ -7,9 +7,11 @@ from datetime import UTC, date, datetime
 import pyarrow as pa
 import pytest
 
+from eve_ingest.ducklake.writer import DuckLakeSqlSnapshotSource
 from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics, DuckLakeWriterMode, RawDuckLakeTable
 from eve_ingest.sources.everef import csv_reader
-from eve_ingest.sources.everef.csv_reader import publish_file_backed_rows
+from eve_ingest.sources.everef.csv_reader import publish_file_backed_rows, publish_file_backed_snapshot_rows
+from eve_ingest.workflows.publication_errors import SnapshotScopePublishError
 from eve_ingest.sources.everef.provenance import parse_last_modified_timestamp
 from tests.sources.everef.conftest import make_cache_result
 
@@ -94,6 +96,37 @@ class _FakeWriter:
             mode=mode,
             attempted_rows=len(arrow_table),
             inserted_rows=len(arrow_table),
+            matched_rows=0,
+            replaced_rows=0,
+        )
+
+    def publish_source_object_sql_rows(
+        self,
+        sql_source: DuckLakeSqlSnapshotSource,
+        *,
+        data_table: RawDuckLakeTable,
+        provenance_table,
+        source_object_id: str,
+        mode: DuckLakeWriterMode,
+    ):
+        with self.transaction():
+            self.mark_source_object_parsed(source_object_id, table=provenance_table)
+            self.calls.append(
+                (
+                    "publish_sql_rows",
+                    {
+                        "table": data_table,
+                        "mode": mode,
+                        "sql": sql_source.sql.strip(),
+                    },
+                )
+            )
+            self.mark_source_object_ingested(source_object_id, row_count=0, table=provenance_table)
+        return DuckLakeWriteMetrics(
+            table=data_table,
+            mode=mode,
+            attempted_rows=0,
+            inserted_rows=0,
             matched_rows=0,
             replaced_rows=0,
         )
@@ -476,6 +509,82 @@ def test_publish_file_backed_rows_does_not_retry_non_conflict_failure(monkeypatc
         "mark_failed",
     ]
     assert sleep_calls == []
+
+
+def test_publish_file_backed_snapshot_rows_groups_write_and_success_provenance_after_initial_record() -> None:
+    result = make_cache_result(
+        "/tmp/market-orders-2026-01-01.csv.bz2",
+        dataset_name="market-orders",
+        source_url="https://example.com/market-orders-2026-01-01.csv.bz2",
+    )
+    writer = _FakeWriter()
+
+    outcome = publish_file_backed_snapshot_rows(
+        result,
+        writer,
+        source_system="everef",
+        endpoint="market_orders",
+        source_market_date=date(2026, 1, 1),
+        snapshot_ts=datetime(2026, 1, 1, tzinfo=UTC),
+        table_key=RawDuckLakeTable.MARKET_ORDERS,
+        sql_source=DuckLakeSqlSnapshotSource(sql="select 1"),
+    )
+
+    assert outcome.success is True
+    assert [call[0] for call in writer.calls] == [
+        "source_object_ingested_sha256",
+        "record",
+        "source_object_ingested_sha256",
+        "transaction_enter",
+        "mark_parsed",
+        "publish_sql_rows",
+        "mark_ingested",
+        "transaction_commit",
+    ]
+    assert writer.calls[1][1]["source_object_id"] == writer.calls[4][1]["source_object_id"]
+    assert writer.calls[1][1]["source_object_id"] == writer.calls[6][1]["source_object_id"]
+
+
+def test_publish_file_backed_snapshot_rows_raises_snapshot_scope_publish_error() -> None:
+    result = make_cache_result(
+        "/tmp/market-orders-2026-01-01.csv.bz2",
+        dataset_name="market-orders",
+        source_url="https://example.com/market-orders-2026-01-01.csv.bz2",
+    )
+    writer = _FakeWriter()
+
+    def fail_publish_sql_rows(
+        sql_source: DuckLakeSqlSnapshotSource,
+        *,
+        data_table: RawDuckLakeTable,
+        provenance_table,
+        source_object_id: str,
+        mode: DuckLakeWriterMode,
+    ):
+        writer.calls.append(("publish_sql_rows", {"sql": sql_source.sql, "table": data_table, "mode": mode}))
+        raise RuntimeError("boom")
+
+    writer.publish_source_object_sql_rows = fail_publish_sql_rows  # type: ignore[method-assign]
+
+    with pytest.raises(SnapshotScopePublishError, match="source_object_id"):
+        publish_file_backed_snapshot_rows(
+            result,
+            writer,
+            source_system="everef",
+            endpoint="market_orders",
+            source_market_date=date(2026, 1, 1),
+            snapshot_ts=datetime(2026, 1, 1, tzinfo=UTC),
+            table_key=RawDuckLakeTable.MARKET_ORDERS,
+            sql_source=DuckLakeSqlSnapshotSource(sql="select 1"),
+        )
+
+    assert [call[0] for call in writer.calls] == [
+        "source_object_ingested_sha256",
+        "record",
+        "source_object_ingested_sha256",
+        "publish_sql_rows",
+    ]
+    assert "mark_failed" not in [call[0] for call in writer.calls]
 
 
 def test_publish_file_backed_market_order_rows_does_not_retry_replace_table_conflict(monkeypatch) -> None:

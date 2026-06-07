@@ -5,6 +5,7 @@ import random
 import time
 from collections.abc import Callable
 from datetime import date, datetime
+from dataclasses import dataclass
 from typing import Any
 
 import pyarrow as pa
@@ -36,6 +37,14 @@ _DUCKLAKE_CONFLICT_JITTER_SECONDS = 0.1
 
 class ImmutableSnapshotSourceObjectChangedError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class _FileBackedPublicationContext:
+    metadata: dict[str, Any]
+    provenance_table: Any
+    source_date_str: str
+    source_object_id: str
 
 
 def _is_retryable_ducklake_conflict(exc: Exception) -> bool:
@@ -88,6 +97,37 @@ def _publish_transactional_rows_with_retry(
     key_columns: list[str],
     source_date_str: str,
 ):
+    return _publish_snapshot_rows_with_retry(
+        writer,
+        soid=soid,
+        sha256=sha256,
+        provenance_table=provenance_table,
+        table_key=table_key,
+        mode=mode,
+        source_date_str=source_date_str,
+        publish_rows=lambda: writer.publish_source_object_rows(
+            table,
+            data_table=table_key,
+            provenance_table=provenance_table,
+            source_object_id=soid,
+            mode=mode,
+            row_count=row_count,
+            key_columns=key_columns,
+        ),
+    )
+
+
+def _publish_snapshot_rows_with_retry(
+    writer: DuckLakeWriter,
+    *,
+    soid: str,
+    sha256: str,
+    provenance_table,
+    table_key: RawDuckLakeTable,
+    mode: DuckLakeWriterMode,
+    source_date_str: str,
+    publish_rows: Callable[[], Any],
+):
     for attempt in range(1, _DUCKLAKE_CONFLICT_MAX_ATTEMPTS + 1):
         if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS and _check_append_snapshot_source_object(
             writer,
@@ -99,15 +139,7 @@ def _publish_transactional_rows_with_retry(
         ):
             return None
         try:
-            return writer.publish_source_object_rows(
-                table,
-                data_table=table_key,
-                provenance_table=provenance_table,
-                source_object_id=soid,
-                mode=mode,
-                row_count=row_count,
-                key_columns=key_columns,
-            )
+            return publish_rows()
         except Exception as exc:
             should_retry = mode in _RETRYABLE_INSERT_MODES and _is_retryable_ducklake_conflict(exc)
             if not should_retry or attempt >= _DUCKLAKE_CONFLICT_MAX_ATTEMPTS:
@@ -125,6 +157,140 @@ def _publish_transactional_rows_with_retry(
                 delay_seconds,
             )
             time.sleep(delay_seconds)
+
+
+def _build_file_backed_publication_context(
+    result: CacheResult,
+    *,
+    source_system: str,
+    endpoint: str,
+    source_market_date: date,
+    snapshot_ts: datetime | None,
+    table_key: RawDuckLakeTable,
+) -> _FileBackedPublicationContext:
+    source_date_str = str(result.identity_key.get("source_date", "unknown"))
+    metadata = build_source_object_metadata(
+        result,
+        source_system,
+        endpoint,
+        source_market_date=source_market_date,
+        snapshot_ts=snapshot_ts,
+    )
+    return _FileBackedPublicationContext(
+        metadata=metadata,
+        provenance_table=provenance_table_for_data_table(table_key),
+        source_date_str=source_date_str,
+        source_object_id=metadata["source_object_id"],
+    )
+
+
+def _log_processed_source_file(
+    *,
+    source_date_str: str,
+    snapshot_ts: datetime | None,
+    log_context: dict[str, Any] | None,
+    table_key: RawDuckLakeTable,
+    metrics,
+) -> None:
+    extra_context = log_context or {}
+    if snapshot_ts is None:
+        logger.debug(
+            "Processed source file source_date=%s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
+            source_date_str,
+            table_key.value,
+            metrics.attempted_rows,
+            metrics.inserted_rows,
+            metrics.matched_rows,
+        )
+        return
+
+    logger.debug(
+        "Processed source file source_date=%s snapshot_ts=%s %s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
+        source_date_str,
+        snapshot_ts,
+        " ".join(f"{key}={value}" for key, value in extra_context.items()),
+        table_key.value,
+        metrics.attempted_rows,
+        metrics.inserted_rows,
+        metrics.matched_rows,
+    )
+
+
+def _publish_file_backed_source_object(
+    result: CacheResult,
+    writer: DuckLakeWriter,
+    *,
+    source_system: str,
+    endpoint: str,
+    source_market_date: date,
+    snapshot_ts: datetime | None,
+    table_key: RawDuckLakeTable,
+    log_context: dict[str, Any] | None,
+    skip_if_ingested: bool,
+    publish_rows: Callable[[_FileBackedPublicationContext], Any],
+    raise_snapshot_scope_error: bool,
+) -> PipelineProcessResult:
+    context = _build_file_backed_publication_context(
+        result,
+        source_system=source_system,
+        endpoint=endpoint,
+        source_market_date=source_market_date,
+        snapshot_ts=snapshot_ts,
+        table_key=table_key,
+    )
+
+    if skip_if_ingested and _check_append_snapshot_source_object(
+        writer,
+        soid=context.source_object_id,
+        sha256=result.version.sha256,
+        provenance_table=context.provenance_table,
+        table_key=table_key,
+        source_date_str=context.source_date_str,
+    ):
+        return PipelineProcessResult(success=True, source_date=context.source_date_str)
+
+    try:
+        writer.record_source_object(context.metadata, table=context.provenance_table)
+
+        metrics = publish_rows(context)
+        if metrics is None:
+            return PipelineProcessResult(success=True, source_date=context.source_date_str)
+
+        _log_processed_source_file(
+            source_date_str=context.source_date_str,
+            snapshot_ts=snapshot_ts,
+            log_context=log_context,
+            table_key=table_key,
+            metrics=metrics,
+        )
+        return PipelineProcessResult(
+            success=True,
+            source_date=context.source_date_str,
+            write_metrics=(metrics,),
+        )
+    except ImmutableSnapshotSourceObjectChangedError:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to process %s", result.identity_key)
+        if raise_snapshot_scope_error:
+            raise SnapshotScopePublishError(
+                source_object_id=context.source_object_id,
+                provenance_table=context.provenance_table,
+                metadata=context.metadata,
+                source_date=context.source_date_str,
+            ) from exc
+        try:
+            writer.mark_source_object_failed(
+                context.source_object_id,
+                reason="see log for details",
+                table=context.provenance_table,
+            )
+        except Exception:
+            pass
+        return PipelineProcessResult(
+            success=False,
+            source_date=context.source_date_str,
+        )
 
 
 def parse_csv_to_arrow(
@@ -178,36 +344,13 @@ def publish_file_backed_rows(
     snapshot_ts: datetime | None = None,
     log_context: dict[str, Any] | None = None,
 ) -> PipelineProcessResult:
-    source_date_str = str(result.identity_key.get("source_date", "unknown"))
-    metadata = build_source_object_metadata(
-        result,
-        source_system,
-        endpoint,
-        source_market_date=source_market_date,
-        snapshot_ts=snapshot_ts,
-    )
-    soid = metadata["source_object_id"]
-    provenance_table = provenance_table_for_data_table(table_key)
-
-    if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS and _check_append_snapshot_source_object(
-        writer,
-        soid=soid,
-        sha256=result.version.sha256,
-        provenance_table=provenance_table,
-        table_key=table_key,
-        source_date_str=source_date_str,
-    ):
-        return PipelineProcessResult(success=True, source_date=source_date_str)
-
-    try:
-        writer.record_source_object(metadata, table=provenance_table)
-
+    def publish_rows(context: _FileBackedPublicationContext):
         table = parse_table(result)
         n = len(table)
 
         table = table.append_column(
             "source_object_id",
-            pa.array([soid] * n, type=pa.utf8()),
+            pa.array([context.source_object_id] * n, type=pa.utf8()),
         )
         table = table.append_column(
             "source_market_date",
@@ -223,56 +366,29 @@ def publish_file_backed_rows(
             writer,
             table=table,
             row_count=n,
-            soid=soid,
+            soid=context.source_object_id,
             sha256=result.version.sha256,
-            provenance_table=provenance_table,
+            provenance_table=context.provenance_table,
             table_key=table_key,
             mode=mode,
             key_columns=key_columns,
-            source_date_str=source_date_str,
+            source_date_str=context.source_date_str,
         )
-        if metrics is None:
-            return PipelineProcessResult(success=True, source_date=source_date_str)
+        return metrics
 
-        extra_context = log_context or {}
-        if snapshot_ts is None:
-            logger.debug(
-                "Processed source file source_date=%s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
-                source_date_str,
-                table_key.value,
-                metrics.attempted_rows,
-                metrics.inserted_rows,
-                metrics.matched_rows,
-            )
-        else:
-            logger.debug(
-                "Processed source file source_date=%s snapshot_ts=%s %s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
-                source_date_str,
-                snapshot_ts,
-                " ".join(f"{key}={value}" for key, value in extra_context.items()),
-                table_key.value,
-                metrics.attempted_rows,
-                metrics.inserted_rows,
-                metrics.matched_rows,
-            )
-
-        return PipelineProcessResult(
-            success=True,
-            source_date=source_date_str,
-            write_metrics=(metrics,),
-        )
-    except ImmutableSnapshotSourceObjectChangedError:
-        raise
-    except Exception:
-        logger.exception("Failed to process %s", result.identity_key)
-        try:
-            writer.mark_source_object_failed(soid, reason="see log for details", table=provenance_table)
-        except Exception:
-            pass
-        return PipelineProcessResult(
-            success=False,
-            source_date=source_date_str,
-        )
+    return _publish_file_backed_source_object(
+        result,
+        writer,
+        source_system=source_system,
+        endpoint=endpoint,
+        source_market_date=source_market_date,
+        snapshot_ts=snapshot_ts,
+        table_key=table_key,
+        log_context=log_context,
+        skip_if_ingested=mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+        publish_rows=publish_rows,
+        raise_snapshot_scope_error=False,
+    )
 
 
 def publish_file_backed_snapshot_rows(
@@ -287,87 +403,34 @@ def publish_file_backed_snapshot_rows(
     sql_source: DuckLakeSqlSnapshotSource,
     log_context: dict[str, Any] | None = None,
 ) -> PipelineProcessResult:
-    source_date_str = str(result.identity_key.get("source_date", "unknown"))
-    metadata = build_source_object_metadata(
+    def publish_rows(context: _FileBackedPublicationContext):
+        return _publish_snapshot_rows_with_retry(
+            writer,
+            soid=context.source_object_id,
+            sha256=result.version.sha256,
+            provenance_table=context.provenance_table,
+            table_key=table_key,
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+            source_date_str=context.source_date_str,
+            publish_rows=lambda: writer.publish_source_object_sql_rows(
+                sql_source,
+                data_table=table_key,
+                provenance_table=context.provenance_table,
+                source_object_id=context.source_object_id,
+                mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+            ),
+        )
+
+    return _publish_file_backed_source_object(
         result,
-        source_system,
-        endpoint,
+        writer,
+        source_system=source_system,
+        endpoint=endpoint,
         source_market_date=source_market_date,
         snapshot_ts=snapshot_ts,
-    )
-    soid = metadata["source_object_id"]
-    provenance_table = provenance_table_for_data_table(table_key)
-
-    if _check_append_snapshot_source_object(
-        writer,
-        soid=soid,
-        sha256=result.version.sha256,
-        provenance_table=provenance_table,
         table_key=table_key,
-        source_date_str=source_date_str,
-    ):
-        return PipelineProcessResult(success=True, source_date=source_date_str)
-
-    try:
-        writer.record_source_object(metadata, table=provenance_table)
-
-        metrics = None
-        for attempt in range(1, _DUCKLAKE_CONFLICT_MAX_ATTEMPTS + 1):
-            if _check_append_snapshot_source_object(
-                writer,
-                soid=soid,
-                sha256=result.version.sha256,
-                provenance_table=provenance_table,
-                table_key=table_key,
-                source_date_str=source_date_str,
-            ):
-                return PipelineProcessResult(success=True, source_date=source_date_str)
-            try:
-                metrics = writer.publish_source_object_sql_rows(
-                    sql_source,
-                    data_table=table_key,
-                    provenance_table=provenance_table,
-                    source_object_id=soid,
-                    mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
-                )
-                break
-            except Exception as exc:
-                should_retry = _is_retryable_ducklake_conflict(exc)
-                if not should_retry or attempt >= _DUCKLAKE_CONFLICT_MAX_ATTEMPTS:
-                    raise
-                delay_seconds = (_DUCKLAKE_CONFLICT_BASE_DELAY_SECONDS * attempt) + random.uniform(
-                    0.0, _DUCKLAKE_CONFLICT_JITTER_SECONDS
-                )
-                logger.warning(
-                    "Retrying DuckLake insert-style publication after conflict source_date=%s table=%s mode=%s attempt=%d max_attempts=%d sleep_seconds=%.3f",
-                    source_date_str,
-                    table_key.value,
-                    DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS.value,
-                    attempt + 1,
-                    _DUCKLAKE_CONFLICT_MAX_ATTEMPTS,
-                    delay_seconds,
-                )
-                time.sleep(delay_seconds)
-
-        extra_context = log_context or {}
-        logger.debug(
-            "Processed source file source_date=%s snapshot_ts=%s %s table=%s attempted_rows=%d inserted_rows=%d matched_rows=%d",
-            source_date_str,
-            snapshot_ts,
-            " ".join(f"{key}={value}" for key, value in extra_context.items()),
-            table_key.value,
-            metrics.attempted_rows,
-            metrics.inserted_rows,
-            metrics.matched_rows,
-        )
-        return PipelineProcessResult(success=True, source_date=source_date_str, write_metrics=(metrics,))
-    except ImmutableSnapshotSourceObjectChangedError:
-        raise
-    except Exception as exc:
-        logger.exception("Failed to process %s", result.identity_key)
-        raise SnapshotScopePublishError(
-            source_object_id=soid,
-            provenance_table=provenance_table,
-            metadata=metadata,
-            source_date=source_date_str,
-        ) from exc
+        log_context=log_context,
+        skip_if_ingested=True,
+        publish_rows=publish_rows,
+        raise_snapshot_scope_error=True,
+    )
