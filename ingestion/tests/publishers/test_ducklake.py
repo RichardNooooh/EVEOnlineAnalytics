@@ -24,6 +24,7 @@ class FakeRelation:
 class FakeConnection:
     def __init__(self) -> None:
         self.calls: list[tuple[str, list[str] | None]] = []
+        self.events: list[tuple[str, str | None]] = []
         self.relation = FakeRelation()
         self.arrow_tables: list[pa.Table] = []
         self.closed = False
@@ -35,6 +36,7 @@ class FakeConnection:
         if self.raise_on_execute is not None and self.raise_on_execute in query:
             raise RuntimeError("boom")
         self.calls.append((query, params))
+        self.events.append(("execute", query))
         return self
 
     def fetchall(self) -> list[tuple[object, ...]]:
@@ -47,6 +49,7 @@ class FakeConnection:
 
     def from_arrow(self, arrow_table: pa.Table) -> FakeRelation:
         self.arrow_tables.append(arrow_table)
+        self.events.append(("from_arrow", None))
         return self.relation
 
     def close(self) -> None:
@@ -117,6 +120,54 @@ def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
     assert "custom_raw" in attach_call[0]
     assert "/data/custom/raw" in attach_call[0]
     assert "custom_metadata" in attach_call[0]
+
+
+def test_writer_configures_postgres_pool_before_ducklake_attach(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(
+        DuckLakeAttachConfig(
+            attach_uri="ducklake:postgres:dbname=raw host=postgres",
+            data_path="/data/custom/raw",
+            postgres_pool_max_connections=32,
+            postgres_pool_wait_timeout_millis=120000,
+            postgres_pool_acquire_mode="wait",
+        )
+    ):
+        pass
+
+    queries = _queries(con)
+    attach_index = next(index for index, query in enumerate(queries) if "ATTACH " in query)
+
+    assert queries.index("SET pg_pool_max_connections = 32") < attach_index
+    assert queries.index("SET pg_pool_wait_timeout_millis = 120000") < attach_index
+    assert queries.index("SET pg_pool_acquire_mode = 'wait'") < attach_index
+
+
+def test_bootstrap_repairs_missing_columns(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    bootstrap_raw_ducklake()
+
+    queries = _queries(con)
+
+    assert any(
+        query.lstrip().startswith("ALTER TABLE ")
+        and RawDuckLakeTable.MARKET_ORDERS.value in query
+        and "ADD COLUMN IF NOT EXISTS station_id BIGINT" in query
+        for query in queries
+    )
+    assert any(
+        query.lstrip().startswith("ALTER TABLE ")
+        and RawDuckLakeTable.MARKET_ORDERS.value in query
+        and "ADD COLUMN IF NOT EXISTS constellation_id BIGINT" in query
+        for query in queries
+    )
+    assert con.closed is True
 
 
 def test_writer_replaces_table(monkeypatch) -> None:
@@ -486,6 +537,64 @@ def test_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
     assert queries.count("BEGIN") == 1
     assert queries.count("COMMIT") == 1
     assert "ROLLBACK" not in queries
+
+
+def test_transaction_rolls_back_when_commit_fails(monkeypatch) -> None:
+    con = FakeConnection()
+    con.raise_on_execute = "COMMIT"
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        with pytest.raises(RuntimeError, match="boom"):
+            with writer.transaction():
+                pass
+        assert writer._transaction_depth == 0
+
+    queries = _queries(con)
+    assert "BEGIN" in queries
+    assert "ROLLBACK" in queries
+
+
+def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transaction(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [(1,), (0,), (1,)]
+    arrow_table = pa.table({"order_id": [10], "price": [99.5]})
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        writer._validate_write_request(
+            arrow_table,
+            table=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+            key_columns=["order_id"],
+        )
+        with writer._prepare_arrow_source(arrow_table) as source_name:
+            with writer.transaction():
+                writer.upsert_source_object(
+                    {"source_object_id": "soid-1", "status": "parsed"},
+                    table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
+                )
+                writer._write_from_prepared_source(
+                    arrow_table,
+                    source_name=source_name,
+                    table=RawDuckLakeTable.MARKET_ORDERS,
+                    mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+                    key_columns=["order_id"],
+                )
+
+    event_names = [event[0] for event in con.events]
+    begin_index = next(i for i, event in enumerate(con.events) if event == ("execute", "BEGIN"))
+    raw_merge_index = next(
+        i
+        for i, event in enumerate(con.events)
+        if event[0] == "execute" and "MERGE INTO" in event[1] and RawDuckLakeTable.MARKET_ORDERS.value in event[1]
+    )
+
+    assert event_names.count("from_arrow") == 1
+    assert event_names.index("from_arrow") < begin_index
+    assert not any(event[0] == "from_arrow" for event in con.events[begin_index:raw_merge_index])
 
 
 def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:

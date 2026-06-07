@@ -11,6 +11,9 @@ def run_raw_bootstrap(config: DuckLakeBootstrapCliConfig) -> int:
         config.ducklake.ducklake_catalog,
         data_path=f"{config.data_root}/datasets/ducklake/raw",
         metadata_schema=config.ducklake.ducklake_metadata_schema,
+        postgres_pool_max_connections=config.ducklake.pg_pool_max_connections,
+        postgres_pool_wait_timeout_millis=config.ducklake.pg_pool_wait_timeout_millis,
+        postgres_pool_acquire_mode=config.ducklake.pg_pool_acquire_mode,
     )
     with hold_ducklake_lock_domains(
         catalog_url=config.ducklake.ducklake_catalog,

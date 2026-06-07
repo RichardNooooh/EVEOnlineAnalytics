@@ -178,12 +178,13 @@ def test_process_result_uses_insert_missing_keys_mode(monkeypatch: pytest.Monkey
         lambda result, read_options=None, parse_options=None: pa.table({"order_id": [1]}),
     )
 
-    writer.write.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
+    writer._write_from_prepared_source.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
 
     outcome = _process_result(result, writer)
     assert outcome.success is True
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
-    call_kwargs = writer.write.call_args.kwargs
+    writer.write.assert_not_called()
+    call_kwargs = writer._write_from_prepared_source.call_args.kwargs
     assert call_kwargs["mode"].value == "insert_missing_keys"
     assert call_kwargs["key_columns"] == ["source_object_id", "order_id"]

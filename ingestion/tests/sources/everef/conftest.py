@@ -110,6 +110,9 @@ def make_everef_pipeline_config(config_cls: type[Any], tmp_path: Any, **kwargs: 
             ducklake_catalog="postgresql://fake:fake@localhost:5432/fake",
             ducklake_metadata_schema="test_schema",
             lock_wait_timeout_seconds=60.0,
+            pg_pool_max_connections=32,
+            pg_pool_wait_timeout_millis=120000,
+            pg_pool_acquire_mode="wait",
         ),
         **kwargs,
     )
