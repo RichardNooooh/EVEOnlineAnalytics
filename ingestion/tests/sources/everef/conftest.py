@@ -31,16 +31,32 @@ class FakeConnection:
         self.arrow_tables: list[pa.Table] = []
         self.closed = False
         self.fetchall_result: list[tuple[object, ...]] = []
-        self.fetchone_results: list[tuple[object, ...]] = []
+        self.fetchone_results: list[tuple[object, ...] | None] = []
+        self.provenance_objects: dict[str, dict[str, object]] = {}
 
     def execute(self, query: str, params: list[str] | None = None) -> FakeConnection:
         self.calls.append((query, params))
+        self.fetchall_result = []
+        normalized_query = " ".join(query.split()).upper()
+        if normalized_query.startswith("MERGE INTO") and "SOURCE_OBJECT_ID" in normalized_query and params:
+            self.provenance_objects[str(params[0])] = {"source_object_id": params[0]}
+        elif normalized_query.startswith("UPDATE") and "RETURNING SOURCE_OBJECT_ID" in normalized_query and params:
+            source_object_id = str(params[-1])
+            self.fetchall_result = [(source_object_id,)] if source_object_id in self.provenance_objects else []
+        elif (
+            normalized_query.startswith("SELECT 1")
+            and "SOURCE_OBJECT_ID" in normalized_query
+            and "SHA256" in normalized_query
+        ):
+            self.fetchone_results.append(None)
+        elif normalized_query.startswith("SELECT SHA256") and "SOURCE_OBJECT_ID" in normalized_query:
+            self.fetchone_results.append(None)
         return self
 
     def fetchall(self) -> list[tuple[object, ...]]:
         return self.fetchall_result
 
-    def fetchone(self) -> tuple[object, ...]:
+    def fetchone(self) -> tuple[object, ...] | None:
         if self.fetchone_results:
             return self.fetchone_results.pop(0)
         return (0,)
@@ -105,6 +121,7 @@ def make_everef_pipeline_config(config_cls: type[Any], tmp_path: Any, **kwargs: 
         raw_files=RawFilesCliConfig(
             raw_root=str(tmp_path / "raw"),
             raw_ledger_url="postgresql://fake:fake@localhost:5432/fake",
+            raw_download_workers=4,
         ),
         ducklake=DuckLakeCliConfig(
             ducklake_catalog="postgresql://fake:fake@localhost:5432/fake",

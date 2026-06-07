@@ -95,9 +95,7 @@ def test_process_result_is_idempotent_for_same_market_orders_source_object(share
 
     assert second_outcome.success is True
     assert second_outcome.source_date == "2026-01-01"
-    assert len(second_outcome.write_metrics) == 1
-    assert second_outcome.write_metrics[0].inserted_rows == 0
-    assert second_outcome.write_metrics[0].matched_rows == 1
+    assert second_outcome.write_metrics == ()
 
     rows = shared_con.execute(
         f'SELECT order_id, price FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}" ORDER BY price'

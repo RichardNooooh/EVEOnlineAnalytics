@@ -19,6 +19,7 @@ Output: CacheResult with status HIT (local) or STORED (downloaded).
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -91,6 +92,7 @@ class Cache:
         source_name: str = "everef",
         raw_root: str | Path = DEFAULT_RAW_ROOT,
         ledger_url: str = DEFAULT_RAW_LEDGER_URL,
+        raw_download_workers: int = 4,
         client: HttpRawObjectClient | None = None,
         ledger: RawObjectLedger | None = None,
     ) -> None:
@@ -105,6 +107,8 @@ class Cache:
                 segmentation and ledger grouping.
             raw_root: Root directory where downloaded files are stored.
             ledger_url: PostgreSQL URL for the ledger database.
+            raw_download_workers: Maximum concurrent raw object downloads. Only
+                applies when using the default HTTP client.
             client: Optional HTTP client override.  A default
                 ``HttpRawObjectClient`` is created when omitted.
             ledger: Optional ledger override.  A default ``RawObjectLedger`` is
@@ -121,6 +125,10 @@ class Cache:
         self._update_mode = update_mode
         self._source_name = validate_path_segment(source_name, field_name="source_name")
         self._raw_root = Path(raw_root)
+        if raw_download_workers < 1:
+            raise ValueError("raw_download_workers must be at least 1")
+        self._raw_download_workers = raw_download_workers
+        self._has_injected_client = client is not None
         self._client = client or HttpRawObjectClient()
         self._ledger = ledger or RawObjectLedger(ledger_url=ledger_url)
         self._pubtrack: PublicationTracker | None = None
@@ -207,10 +215,9 @@ class Cache:
         plans = [self._build_plan(obj) for obj in object_list]
         states_by_hash = self._load_current_states([plan.ref for plan in plans])
 
+        fetched_results = self._get_many_from_plans(plans, states_by_hash)
         results: list[CacheResult] = []
-        for plan in plans:
-            state = states_by_hash.get(plan.ref.identity_hash)
-            result = self._get_from_plan(plan, state)
+        for result in fetched_results:
             if mode is GetMode.CHANGED and not result.changed:
                 continue
             results.append(result)
@@ -280,15 +287,39 @@ class Cache:
         self,
         plan: FetchPlan,
         state: CurrentRawObjectState | None,
+        *,
+        client: HttpRawObjectClient | None = None,
     ) -> CacheResult:
         if state is None:
-            return self._fetch_new(plan)
+            return self._fetch_new(plan, client=client)
 
         self._require_update_mode_match(state.raw_object)
         if self._can_use_snapshot_local_hit(plan, state):
             return self._record_hit(plan, state)
 
-        return self._revalidate_or_store(plan, state)
+        return self._revalidate_or_store(plan, state, client=client)
+
+    def _get_many_from_plans(
+        self,
+        plans: list[FetchPlan],
+        states_by_hash: dict[str, CurrentRawObjectState | None],
+    ) -> list[CacheResult]:
+        if self._raw_download_workers <= 1 or self._has_injected_client:
+            return [self._get_from_plan(plan, states_by_hash.get(plan.ref.identity_hash)) for plan in plans]
+
+        def fetch_one(plan: FetchPlan) -> CacheResult:
+            client = HttpRawObjectClient()
+            try:
+                return self._get_from_plan(
+                    plan,
+                    states_by_hash.get(plan.ref.identity_hash),
+                    client=client,
+                )
+            finally:
+                client.close()
+
+        with ThreadPoolExecutor(max_workers=self._raw_download_workers) as executor:
+            return list(executor.map(fetch_one, plans))
 
     def _require_update_mode_match(self, raw_object_entry: RawObjectEntry) -> None:
         if raw_object_entry.ref.update_mode is not self._update_mode:
@@ -297,14 +328,14 @@ class Cache:
                 f"stored={raw_object_entry.ref.update_mode.value} requested={self._update_mode.value}"
             )
 
-    def _fetch_new(self, plan: FetchPlan) -> CacheResult:
-        read_result = self._read_source(plan, request_headers={})
+    def _fetch_new(self, plan: FetchPlan, *, client: HttpRawObjectClient | None = None) -> CacheResult:
+        read_result = self._read_source(plan, request_headers={}, client=client)
         if read_result.status is ReadStatus.NOT_MODIFIED:
             logger.info(
                 "not-modified response but no ledger state; re-reading source_url=%s",
                 plan.source_url,
             )
-            read_result = self._read_source(plan, request_headers={})
+            read_result = self._read_source(plan, request_headers={}, client=client)
         return self._record_store(plan, _ensure_downloaded(read_result))
 
     def _can_use_snapshot_local_hit(
@@ -318,10 +349,13 @@ class Cache:
         self,
         plan: FetchPlan,
         state: CurrentRawObjectState,
+        *,
+        client: HttpRawObjectClient | None = None,
     ) -> CacheResult:
         read_result = self._read_source(
             plan,
             request_headers=_request_headers_for(state, plan.ref.update_mode),
+            client=client,
         )
         if read_result.status is ReadStatus.NOT_MODIFIED:
             if _file_exists(state.current_version.local_path):
@@ -330,7 +364,7 @@ class Cache:
                 "not-modified response but local state incomplete; re-reading source_url=%s",
                 plan.source_url,
             )
-            read_result = self._read_source(plan, request_headers={})
+            read_result = self._read_source(plan, request_headers={}, client=client)
         return self._record_store(plan, _ensure_downloaded(read_result))
 
     def _read_source(
@@ -338,8 +372,10 @@ class Cache:
         plan: FetchPlan,
         *,
         request_headers: Mapping[str, str],
+        client: HttpRawObjectClient | None = None,
     ) -> ReadResult:
-        return self._client.read(
+        active_client = client or self._client
+        return active_client.read(
             source_url=plan.source_url,
             request_headers=dict(request_headers),
             temp_path=plan.temp_path,

@@ -223,6 +223,12 @@ def _build_shared_parents() -> dict[str, argparse.ArgumentParser]:
         default=DEFAULT_RAW_LEDGER_URL,
         help="Raw source-file ledger URL.",
     )
+    runtime_parent.add_argument(
+        "--raw-download-workers",
+        default=4,
+        type=int,
+        help="Maximum concurrent raw object downloads.",
+    )
 
     ducklake_parent = argparse.ArgumentParser(add_help=False)
     ducklake_parent.add_argument(

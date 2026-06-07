@@ -9,8 +9,13 @@ from eve_ingest.ducklake.locks import (
     ducklake_lock_domains_for_tables,
     hold_ducklake_lock_domains,
 )
-from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.writer import DuckLakeWriter, _ensure_expected_partitioning, bootstrap_raw_ducklake
+from eve_ingest.ducklake.raw_tables import (
+    DuckLakeTableTarget,
+    DuckLakeWriterMode,
+    RawDuckLakeProvenanceTable,
+    RawDuckLakeTable,
+)
 
 
 class FakeRelation:
@@ -30,6 +35,8 @@ class FakeConnection:
         self.closed = False
         self.raise_on_execute: str | None = None
         self.fetchall_result: list[tuple[object, ...]] = []
+        self._next_fetchall_result: list[tuple[object, ...]] | None = None
+        self.source_object_update_rows: list[tuple[object, ...]] = [("soid-1",)]
         self.fetchone_results: list[tuple[object, ...]] = []
 
     def execute(self, query: str, params: list[str] | None = None) -> FakeConnection:
@@ -37,9 +44,15 @@ class FakeConnection:
             raise RuntimeError("boom")
         self.calls.append((query, params))
         self.events.append(("execute", query))
+        if "RETURNING source_object_id" in query:
+            self._next_fetchall_result = self.source_object_update_rows
         return self
 
     def fetchall(self) -> list[tuple[object, ...]]:
+        if self._next_fetchall_result is not None:
+            result = self._next_fetchall_result
+            self._next_fetchall_result = None
+            return result
         return self.fetchall_result
 
     def fetchone(self) -> tuple[object, ...]:
@@ -170,6 +183,31 @@ def test_bootstrap_repairs_missing_columns(monkeypatch) -> None:
     assert con.closed is True
 
 
+def test_bootstrap_partitions_snapshot_order_tables(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    bootstrap_raw_ducklake()
+
+    queries = _queries(con)
+
+    assert any(
+        query.lstrip().startswith("ALTER TABLE ")
+        and RawDuckLakeTable.MARKET_ORDERS.value in query
+        and "SET PARTITIONED BY" in query
+        and '"source_market_date"' in query
+        for query in queries
+    )
+    assert any(
+        query.lstrip().startswith("ALTER TABLE ")
+        and RawDuckLakeTable.FUZZWORK_ORDERS.value in query
+        and "SET PARTITIONED BY" in query
+        and '"source_market_date"' in query
+        for query in queries
+    )
+
+
 def test_writer_replaces_table(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (0,)]
@@ -198,7 +236,7 @@ def test_writer_replaces_table(monkeypatch) -> None:
     assert con.closed is True
 
 
-def test_writer_merges_with_keys(monkeypatch) -> None:
+def test_writer_authoritative_mode_merges_with_keys(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (0,), (2,)]
     arrow_table = pa.table({"id": [1, 2], "value": [10, 20]})
@@ -208,8 +246,8 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
     with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         writer.write(
             arrow_table,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
             key_columns=["id"],
         )
 
@@ -222,17 +260,61 @@ def test_writer_merges_with_keys(monkeypatch) -> None:
     assert "WHEN NOT MATCHED THEN INSERT BY NAME" in merge_queries[0]
 
 
+def test_writer_append_snapshot_rows_inserts_by_name_without_merge_or_counts(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [(1,)]
+    arrow_table = pa.table(
+        {
+            "price": [10.0, 20.0],
+            "order_id": [1, 2],
+            "source_object_id": ["soid-1", "soid-1"],
+            "source_market_date": ["2026-01-01", "2026-01-01"],
+            "snapshot_ts": ["2026-01-01", "2026-01-01"],
+        }
+    )
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        metrics = writer.write(
+            arrow_table,
+            table=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+        )
+
+    queries = _queries(con)
+    insert_queries = [query for query in queries if query.lstrip().startswith("INSERT INTO")]
+
+    assert len(insert_queries) == 1
+    assert "BY NAME" in insert_queries[0]
+    assert "SELECT * FROM" in insert_queries[0]
+    assert not any("MERGE INTO" in query for query in queries)
+    assert not any("WHERE EXISTS" in query or "WHERE NOT EXISTS" in query for query in queries)
+    assert metrics.attempted_rows == 2
+    assert metrics.inserted_rows == 2
+    assert metrics.matched_rows == 0
+    assert metrics.replaced_rows == 0
+
+
 @pytest.mark.parametrize(
     "mode",
     [
-        DuckLakeWriterMode.INSERT_MISSING_KEYS,
         DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+        DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
     ],
 )
 def test_writer_insert_modes_require_bootstrapped_table(monkeypatch, mode: DuckLakeWriterMode) -> None:
     con = FakeConnection()
     con.fetchone_results = [(0,)]
-    arrow_table = pa.table({"id": [1], "source_market_date": ["2026-01-01"], "value": [10]})
+    arrow_table = pa.table(
+        {
+            "id": [1],
+            "source_object_id": ["soid-1"],
+            "source_market_date": ["2026-01-01"],
+            "snapshot_ts": ["2026-01-01"],
+            "value": [10],
+        }
+    )
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
@@ -240,9 +322,11 @@ def test_writer_insert_modes_require_bootstrapped_table(monkeypatch, mode: DuckL
         with pytest.raises(RuntimeError, match="eve-ingest ducklake bootstrap raw"):
             writer.write(
                 arrow_table,
-                table=RawDuckLakeTable.MARKET_ORDERS,
+                table=RawDuckLakeTable.MARKET_ORDERS
+                if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
+                else RawDuckLakeTable.MARKET_HISTORY,
                 mode=mode,
-                key_columns=["id"],
+                key_columns=[] if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS else ["id"],
             )
 
     assert not any("CREATE TABLE IF NOT EXISTS" in query for query in _queries(con))
@@ -258,8 +342,8 @@ def test_writer_returns_write_metrics(monkeypatch) -> None:
     with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         metrics = writer.write(
             arrow_table,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
             key_columns=["id"],
         )
 
@@ -324,7 +408,7 @@ def test_writer_rejects_invalid_key_columns(
             writer.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_HISTORY,
-                mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+                mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
                 key_columns=key_columns,
             )
 
@@ -352,7 +436,7 @@ def test_writer_rejects_declared_mode_mismatch_before_arrow_view_or_mutation(mon
 
     with DuckLakeWriter(
         lock_token=_test_lock_token(),
-        declared_mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+        declared_mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
         dataset_name="market-orders",
     ) as writer:
         with pytest.raises(
@@ -360,7 +444,7 @@ def test_writer_rejects_declared_mode_mismatch_before_arrow_view_or_mutation(mon
             match=(
                 "DuckLake writer mode does not match publisher declaration "
                 "dataset=market-orders table=raw_market_orders "
-                "declared_mode=insert_missing_keys requested_mode=replace_table"
+                "declared_mode=assert_partition_coverage_insert_missing_keys requested_mode=replace_table"
             ),
         ):
             writer.write(
@@ -422,8 +506,8 @@ def test_writer_requires_lock_token_for_source_object(monkeypatch) -> None:
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter() as writer:
-        with pytest.raises(DuckLakeLockViolationError, match="requires DuckLakeLockToken"):
-            writer.upsert_source_object(
+        with pytest.raises(DuckLakeLockViolationError, match="require DuckLakeLockToken"):
+            writer.record_source_object(
                 {"source_object_id": "soid-1", "status": "failed"},
                 table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
             )
@@ -442,7 +526,7 @@ def test_writer_rejects_wrong_lock_token_for_source_object(monkeypatch) -> None:
 
     with DuckLakeWriter(lock_token=token) as writer:
         with pytest.raises(DuckLakeLockViolationError, match="raw_market_orders_objects"):
-            writer.upsert_source_object(
+            writer.record_source_object(
                 {"source_object_id": "soid-1", "status": "failed"},
                 table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
             )
@@ -517,6 +601,43 @@ def test_replace_table_rejects_key_columns(monkeypatch) -> None:
     assert not any(query.lstrip().startswith("CREATE OR REPLACE TABLE ") for query in _queries(con))
 
 
+def test_append_snapshot_rows_rejects_key_columns(monkeypatch) -> None:
+    con = FakeConnection()
+    arrow_table = pa.table({"id": [1]})
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        with pytest.raises(ValueError, match="APPEND_SNAPSHOT_ROWS does not accept key_columns"):
+            writer.write(
+                arrow_table,
+                table=RawDuckLakeTable.MARKET_ORDERS,
+                mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+                key_columns=["id"],
+            )
+
+    assert con.arrow_tables == []
+
+
+def test_append_snapshot_rows_requires_provenance_and_snapshot_columns(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        with pytest.raises(
+            ValueError,
+            match="APPEND_SNAPSHOT_ROWS requires arrow_table columns: source_object_id, source_market_date, snapshot_ts",
+        ):
+            writer.write(
+                pa.table({"order_id": [1]}),
+                table=RawDuckLakeTable.MARKET_ORDERS,
+                mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+            )
+
+    assert con.arrow_tables == []
+
+
 def test_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
     con = FakeConnection()
 
@@ -525,18 +646,32 @@ def test_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
     with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
         with writer.transaction():
             with writer.transaction():
-                writer.upsert_source_object(
-                    {
-                        "source_object_id": "soid-1",
-                        "status": "parsed",
-                    },
-                    table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,
-                )
+                writer.mark_source_object_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
 
     queries = _queries(con)
     assert queries.count("BEGIN") == 1
     assert queries.count("COMMIT") == 1
     assert "ROLLBACK" not in queries
+
+
+def test_nested_transaction_inner_failure_marks_outer_rollback_only(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        with pytest.raises(RuntimeError, match="rollback-only"):
+            with writer.transaction():
+                try:
+                    with writer.transaction():
+                        raise ValueError("inner")
+                except ValueError:
+                    pass
+
+    queries = _queries(con)
+    assert queries.count("BEGIN") == 1
+    assert "ROLLBACK" in queries
+    assert "COMMIT" not in queries
 
 
 def test_transaction_rolls_back_when_commit_fails(monkeypatch) -> None:
@@ -559,29 +694,26 @@ def test_transaction_rolls_back_when_commit_fails(monkeypatch) -> None:
 def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transaction(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (0,), (1,)]
-    arrow_table = pa.table({"order_id": [10], "price": [99.5]})
+    arrow_table = pa.table({"type_id": [10], "price": [99.5], "source_market_date": ["2026-01-01"]})
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        writer._validate_write_request(
+        writer.validate_write_request(
             arrow_table,
-            table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            key_columns=["type_id"],
         )
-        with writer._prepare_arrow_source(arrow_table) as source_name:
+        with writer.prepare_arrow_source(arrow_table) as source_name:
             with writer.transaction():
-                writer.upsert_source_object(
-                    {"source_object_id": "soid-1", "status": "parsed"},
-                    table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
-                )
-                writer._write_from_prepared_source(
+                writer.mark_source_object_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
+                writer.write_prepared_source(
                     arrow_table,
                     source_name=source_name,
-                    table=RawDuckLakeTable.MARKET_ORDERS,
-                    mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-                    key_columns=["order_id"],
+                    table=RawDuckLakeTable.MARKET_HISTORY,
+                    mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+                    key_columns=["type_id"],
                 )
 
     event_names = [event[0] for event in con.events]
@@ -589,7 +721,7 @@ def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transacti
     raw_merge_index = next(
         i
         for i, event in enumerate(con.events)
-        if event[0] == "execute" and "MERGE INTO" in event[1] and RawDuckLakeTable.MARKET_ORDERS.value in event[1]
+        if event[0] == "execute" and "MERGE INTO" in event[1] and RawDuckLakeTable.MARKET_HISTORY.value in event[1]
     )
 
     assert event_names.count("from_arrow") == 1
@@ -601,7 +733,14 @@ def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(0,), (0,), (1,)]
     table_a = pa.table({"id": [1]})
-    table_b = pa.table({"order_id": [10]})
+    table_b = pa.table(
+        {
+            "order_id": [10],
+            "source_object_id": ["soid-1"],
+            "source_market_date": ["2026-01-01"],
+            "snapshot_ts": ["2026-01-01"],
+        }
+    )
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
     monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
@@ -611,8 +750,7 @@ def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
         metrics_b = writer.write(
             table_b,
             table=RawDuckLakeTable.MARKET_ORDERS,
-            mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
-            key_columns=["order_id"],
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
         )
         assert writer.write_history == (metrics_a, metrics_b)
 
@@ -627,13 +765,13 @@ def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
     assert con.closed is True
 
 
-def test_upsert_source_object_uses_merge(monkeypatch) -> None:
+def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) -> None:
     con = FakeConnection()
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
 
     with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        writer.upsert_source_object(
+        writer.record_source_object(
             {
                 "source_object_id": "soid-1",
                 "source_system": "everef",
@@ -644,19 +782,122 @@ def test_upsert_source_object_uses_merge(monkeypatch) -> None:
             },
             table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
         )
-        writer.upsert_source_object(
-            {
-                "source_object_id": "soid-1",
-                "status": "ingested",
-                "status_reason": None,
-            },
-            table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
+        writer.mark_source_object_ingested(
+            "soid-1", row_count=7, table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS
         )
 
     merge_queries = [call for call in con.calls if call[0].lstrip().startswith("MERGE INTO")]
-    assert len(merge_queries) == 2
+    update_queries = [call for call in con.calls if call[0].lstrip().startswith("UPDATE")]
+    assert len(merge_queries) == 1
+    assert len(update_queries) == 1
     assert "source.source_object_id" in merge_queries[0][0]
-    assert merge_queries[1][1] == ["soid-1", "ingested", None]
+    assert update_queries[0][1][-1] == "soid-1"
+
+
+def test_mark_source_object_status_raises_when_row_missing(monkeypatch) -> None:
+    con = FakeConnection()
+    con.source_object_update_rows = []
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        with pytest.raises(RuntimeError, match="Missing source object provenance row"):
+            writer.mark_source_object_failed(
+                "missing-soid",
+                reason="boom",
+                table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
+            )
+
+
+def test_ensure_expected_partitioning_skips_alter_when_metadata_matches(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr(
+        "eve_ingest.ducklake.writer._ducklake_partition_columns", lambda *args, **kwargs: ("source_market_date",)
+    )
+
+    _ensure_expected_partitioning(
+        con,
+        alias="raw_lake",
+        target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
+        partition_columns=("source_market_date",),
+    )
+
+    assert not any("SET PARTITIONED BY" in query for query in _queries(con))
+
+
+def test_ensure_expected_partitioning_emits_exact_target_when_missing(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer._ducklake_partition_columns", lambda *args, **kwargs: ())
+
+    _ensure_expected_partitioning(
+        con,
+        alias="raw_lake",
+        target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
+        partition_columns=("source_market_date",),
+    )
+
+    partition_queries = [query for query in _queries(con) if "SET PARTITIONED BY" in query]
+    assert len(partition_queries) == 1
+    assert 'ALTER TABLE "raw_lake"."raw"."raw_market_orders"' in partition_queries[0]
+    assert 'SET PARTITIONED BY ("source_market_date")' in partition_queries[0]
+
+
+def test_ensure_expected_partitioning_raises_when_metadata_differs(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr(
+        "eve_ingest.ducklake.writer._ducklake_partition_columns", lambda *args, **kwargs: ("region_id",)
+    )
+
+    with pytest.raises(RuntimeError, match="partitioning differs"):
+        _ensure_expected_partitioning(
+            con,
+            alias="raw_lake",
+            target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
+            partition_columns=("source_market_date",),
+        )
+
+
+@pytest.mark.parametrize(("fetchone_result", "expected"), [((1,), True), (None, False)])
+def test_source_object_version_is_ingested_queries_status_and_sha(monkeypatch, fetchone_result, expected) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [fetchone_result]
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        assert (
+            writer.source_object_version_is_ingested(
+                "soid-1", sha256="abc123", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS
+            )
+            is expected
+        )
+
+    calls = con.calls
+    assert calls[-1][1] == ["soid-1", "abc123"]
+    assert "status = 'ingested'" in calls[-1][0]
+    assert "sha256 = ?" in calls[-1][0]
+
+
+@pytest.mark.parametrize(("fetchone_result", "expected"), [(("abc123",), "abc123"), (None, None)])
+def test_source_object_ingested_sha256_queries_status(monkeypatch, fetchone_result, expected) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [fetchone_result]
+
+    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+
+    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+        assert (
+            writer.source_object_ingested_sha256("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
+            == expected
+        )
+
+    calls = con.calls
+    assert calls[-1][1] == ["soid-1"]
+    assert "SELECT sha256" in calls[-1][0]
+    assert "status = 'ingested'" in calls[-1][0]
 
 
 def test_bootstrap_raw_ducklake_creates_all_raw_and_provenance_tables(monkeypatch) -> None:

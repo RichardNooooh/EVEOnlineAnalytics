@@ -33,9 +33,13 @@ def build_raw_files_config(args: argparse.Namespace) -> RawFilesCliConfig:
         raise ValueError("raw_ledger_url must not be empty")
     if not str(args.raw_ledger_url).startswith(("postgresql://", "postgres://")):
         raise ValueError("raw_ledger_url must be a PostgreSQL URL")
+    raw_download_workers = int(args.raw_download_workers)
+    if raw_download_workers < 1:
+        raise ValueError("raw_download_workers must be at least 1")
     return RawFilesCliConfig(
         raw_root=str(Path(args.data_root) / "raw"),
         raw_ledger_url=args.raw_ledger_url,
+        raw_download_workers=raw_download_workers,
     )
 
 
