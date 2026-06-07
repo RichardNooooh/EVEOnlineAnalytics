@@ -31,9 +31,11 @@ sql-lint: ## Lint transformation SQL with SQLFluff
 	uv run --project transformation sqlfluff lint transformation
 
 ingestion-image: ## Build ingestion job image
+	docker rmi $(INGESTION_IMAGE) 2>/dev/null || true
 	docker build -f ingestion/Dockerfile -t $(INGESTION_IMAGE) ingestion
 
 ingestion-image-rebuild: ## Rebuild ingestion job image without cache
+	docker rmi $(INGESTION_IMAGE) 2>/dev/null || true
 	docker build --pull --no-cache -f ingestion/Dockerfile -t $(INGESTION_IMAGE) ingestion
 
 ingestion-image-smoke: ingestion-image ## Smoke check ingestion job image entrypoint
