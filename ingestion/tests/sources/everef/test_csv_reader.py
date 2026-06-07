@@ -38,6 +38,65 @@ class _FakeWriter:
     def upsert_source_object(self, data: dict, *, table) -> None:
         self.calls.append(("upsert", data.copy()))
 
+    def _validate_write_request(
+        self,
+        arrow_table: pa.Table,
+        *,
+        table: RawDuckLakeTable,
+        mode: DuckLakeWriterMode,
+        key_columns: list[str],
+    ) -> None:
+        self.calls.append(
+            (
+                "validate_write",
+                {
+                    "table": table,
+                    "mode": mode,
+                    "key_columns": key_columns,
+                    "rows": len(arrow_table),
+                },
+            )
+        )
+
+    @contextmanager
+    def _prepare_arrow_source(self, arrow_table: pa.Table):
+        self.calls.append(("prepare_source", {"rows": len(arrow_table), "columns": tuple(arrow_table.column_names)}))
+        try:
+            yield "prepared_source"
+        finally:
+            self.calls.append(("drop_source", "prepared_source"))
+
+    def _write_from_prepared_source(
+        self,
+        arrow_table: pa.Table,
+        *,
+        source_name: str,
+        table: RawDuckLakeTable,
+        mode: DuckLakeWriterMode,
+        key_columns: list[str],
+    ):
+        self.calls.append(
+            (
+                "write_prepared",
+                {
+                    "source_name": source_name,
+                    "table": table,
+                    "mode": mode,
+                    "key_columns": key_columns,
+                    "rows": len(arrow_table),
+                    "columns": tuple(arrow_table.column_names),
+                },
+            )
+        )
+        return DuckLakeWriteMetrics(
+            table=table,
+            mode=mode,
+            attempted_rows=len(arrow_table),
+            inserted_rows=len(arrow_table),
+            matched_rows=0,
+            replaced_rows=0,
+        )
+
     def write(
         self,
         arrow_table: pa.Table,
@@ -91,16 +150,19 @@ def test_publish_file_backed_rows_groups_write_and_success_provenance_after_init
     assert outcome.success is True
     assert [call[0] for call in writer.calls] == [
         "upsert",
+        "validate_write",
+        "prepare_source",
         "transaction_enter",
         "upsert",
-        "write",
+        "write_prepared",
         "upsert",
         "transaction_commit",
+        "drop_source",
     ]
-    assert writer.calls[1][0] == "transaction_enter"
-    assert writer.calls[2][1]["status"] == "parsed"
-    assert writer.calls[3][1]["columns"] == ("type_id", "average", "source_object_id", "source_market_date")
-    assert writer.calls[4][1]["status"] == "ingested"
+    assert writer.calls[3][0] == "transaction_enter"
+    assert writer.calls[4][1]["status"] == "parsed"
+    assert writer.calls[5][1]["columns"] == ("type_id", "average", "source_object_id", "source_market_date")
+    assert writer.calls[6][1]["status"] == "ingested"
 
 
 def test_publish_file_backed_rows_marks_failure_after_transaction_rollback() -> None:
@@ -115,14 +177,15 @@ def test_publish_file_backed_rows_marks_failure_after_transaction_rollback() -> 
     def fail_write(
         arrow_table: pa.Table,
         *,
+        source_name: str,
         table: RawDuckLakeTable,
         mode: DuckLakeWriterMode,
         key_columns: list[str],
     ):
-        writer.calls.append(("write", {"rows": len(arrow_table)}))
+        writer.calls.append(("write_prepared", {"source_name": source_name, "rows": len(arrow_table)}))
         raise RuntimeError("boom")
 
-    writer.write = fail_write  # type: ignore[method-assign]
+    writer._write_from_prepared_source = fail_write  # type: ignore[method-assign]
 
     outcome = publish_file_backed_rows(
         result,
@@ -140,10 +203,13 @@ def test_publish_file_backed_rows_marks_failure_after_transaction_rollback() -> 
     assert outcome.success is False
     assert [call[0] for call in writer.calls] == [
         "upsert",
+        "validate_write",
+        "prepare_source",
         "transaction_enter",
         "upsert",
-        "write",
+        "write_prepared",
         "transaction_rollback",
+        "drop_source",
         "upsert",
     ]
     assert writer.calls[-1][1]["status"] == "failed"
@@ -181,17 +247,106 @@ def test_publish_file_backed_rows_retries_retryable_ducklake_conflict(caplog, mo
     assert outcome.success is True
     assert [call[0] for call in writer.calls] == [
         "upsert",
+        "validate_write",
+        "prepare_source",
         "transaction_enter",
         "upsert",
-        "write",
+        "write_prepared",
         "upsert",
         "transaction_commit_error",
         "transaction_enter",
         "upsert",
-        "write",
+        "write_prepared",
         "upsert",
         "transaction_commit",
+        "drop_source",
     ]
+    assert sleep_calls == [pytest.approx(0.25)]
+    assert "Retrying DuckLake insert-style publication after conflict" in caplog.text
+
+
+def test_publish_file_backed_rows_retries_retryable_ducklake_conflict_after_rollback(caplog, monkeypatch) -> None:
+    result = make_cache_result(
+        "/tmp/market-orders-2026-01-01.csv.bz2",
+        dataset_name="market-orders",
+        source_url="https://example.com/market-orders-2026-01-01.csv.bz2",
+    )
+    writer = _FakeWriter()
+    parsed_table = pa.table({"order_id": [1], "price": [10.0]})
+    sleep_calls: list[float] = []
+    write_attempts = 0
+
+    def fail_once_write(
+        arrow_table: pa.Table,
+        *,
+        source_name: str,
+        table: RawDuckLakeTable,
+        mode: DuckLakeWriterMode,
+        key_columns: list[str],
+    ):
+        nonlocal write_attempts
+        write_attempts += 1
+        writer.calls.append(
+            (
+                "write_prepared",
+                {
+                    "source_name": source_name,
+                    "table": table,
+                    "mode": mode,
+                    "key_columns": key_columns,
+                    "rows": len(arrow_table),
+                    "columns": tuple(arrow_table.column_names),
+                    "attempt": write_attempts,
+                },
+            )
+        )
+        if write_attempts == 1:
+            raise RuntimeError("ducklake_snapshot primary key constraint violation")
+        return DuckLakeWriteMetrics(
+            table=table,
+            mode=mode,
+            attempted_rows=len(arrow_table),
+            inserted_rows=len(arrow_table),
+            matched_rows=0,
+            replaced_rows=0,
+        )
+
+    writer._write_from_prepared_source = fail_once_write  # type: ignore[method-assign]
+    monkeypatch.setattr(csv_reader.random, "uniform", lambda start, end: 0.05)
+    monkeypatch.setattr(csv_reader.time, "sleep", sleep_calls.append)
+    caplog.set_level("WARNING")
+
+    outcome = publish_file_backed_rows(
+        result,
+        writer,
+        source_system="everef",
+        endpoint="market_orders",
+        source_market_date=date(2026, 1, 1),
+        table_key=RawDuckLakeTable.MARKET_ORDERS,
+        mode=DuckLakeWriterMode.INSERT_MISSING_KEYS,
+        key_columns=["order_id"],
+        parse_table=lambda _: parsed_table,
+        snapshot_ts=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert outcome.success is True
+    assert [call[0] for call in writer.calls] == [
+        "upsert",
+        "validate_write",
+        "prepare_source",
+        "transaction_enter",
+        "upsert",
+        "write_prepared",
+        "transaction_rollback",
+        "transaction_enter",
+        "upsert",
+        "write_prepared",
+        "upsert",
+        "transaction_commit",
+        "drop_source",
+    ]
+    assert writer.calls[5][1]["attempt"] == 1
+    assert writer.calls[9][1]["attempt"] == 2
     assert sleep_calls == [pytest.approx(0.25)]
     assert "Retrying DuckLake insert-style publication after conflict" in caplog.text
 
@@ -225,11 +380,14 @@ def test_publish_file_backed_rows_does_not_retry_non_conflict_failure(monkeypatc
     assert outcome.success is False
     assert [call[0] for call in writer.calls] == [
         "upsert",
+        "validate_write",
+        "prepare_source",
         "transaction_enter",
         "upsert",
-        "write",
+        "write_prepared",
         "upsert",
         "transaction_commit_error",
+        "drop_source",
         "upsert",
     ]
     assert sleep_calls == []
@@ -263,11 +421,14 @@ def test_publish_file_backed_market_order_rows_does_not_retry_replace_table_conf
     assert outcome.success is False
     assert [call[0] for call in writer.calls] == [
         "upsert",
+        "validate_write",
+        "prepare_source",
         "transaction_enter",
         "upsert",
-        "write",
+        "write_prepared",
         "upsert",
         "transaction_commit_error",
+        "drop_source",
         "upsert",
     ]
     assert sleep_calls == []

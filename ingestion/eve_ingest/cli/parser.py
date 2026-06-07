@@ -12,6 +12,9 @@ from eve_ingest.util import (
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+    DEFAULT_DUCKLAKE_PG_POOL_ACQUIRE_MODE,
+    DEFAULT_DUCKLAKE_PG_POOL_MAX_CONNECTIONS,
+    DEFAULT_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS,
     DEFAULT_RAW_LEDGER_URL,
 )
 
@@ -236,6 +239,22 @@ def _build_shared_parents() -> dict[str, argparse.ArgumentParser]:
         "--ducklake-lock-wait-timeout-seconds",
         default=DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS,
         help="DuckLake advisory lock wait timeout in seconds.",
+    )
+    ducklake_parent.add_argument(
+        "--ducklake-pg-pool-max-connections",
+        default=DEFAULT_DUCKLAKE_PG_POOL_MAX_CONNECTIONS,
+        help="DuckDB Postgres extension pool max connections before DuckLake attach.",
+    )
+    ducklake_parent.add_argument(
+        "--ducklake-pg-pool-wait-timeout-millis",
+        default=DEFAULT_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS,
+        help="DuckDB Postgres extension pool wait timeout in milliseconds.",
+    )
+    ducklake_parent.add_argument(
+        "--ducklake-pg-pool-acquire-mode",
+        default=DEFAULT_DUCKLAKE_PG_POOL_ACQUIRE_MODE,
+        choices=("force", "wait", "try"),
+        help="DuckDB Postgres extension pool acquire mode.",
     )
 
     return {

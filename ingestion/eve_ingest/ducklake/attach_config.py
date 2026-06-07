@@ -21,6 +21,9 @@ class DuckLakeAttachConfig:
     metadata_schema: str = "main"
     alias: str = DEFAULT_DUCKLAKE_ALIAS
     override_data_path: bool = True
+    postgres_pool_max_connections: int | None = None
+    postgres_pool_wait_timeout_millis: int | None = None
+    postgres_pool_acquire_mode: str | None = None
 
 
 def build_ducklake_attach_config_from_url(
@@ -29,6 +32,9 @@ def build_ducklake_attach_config_from_url(
     data_path: str | None = None,
     metadata_schema: str | None = None,
     alias: str | None = None,
+    postgres_pool_max_connections: int | None = None,
+    postgres_pool_wait_timeout_millis: int | None = None,
+    postgres_pool_acquire_mode: str | None = None,
 ) -> DuckLakeAttachConfig:
     """Build a DuckLakeAttachConfig from an arbitrary PostgreSQL URL.
 
@@ -63,6 +69,9 @@ def build_ducklake_attach_config_from_url(
         data_path=data_path or DEFAULT_DUCKLAKE_RAW_DATA_PATH,
         metadata_schema=metadata_schema or DEFAULT_DUCKLAKE_METADATA_SCHEMA,
         alias=alias or DEFAULT_DUCKLAKE_ALIAS,
+        postgres_pool_max_connections=postgres_pool_max_connections,
+        postgres_pool_wait_timeout_millis=postgres_pool_wait_timeout_millis,
+        postgres_pool_acquire_mode=postgres_pool_acquire_mode,
     )
 
 

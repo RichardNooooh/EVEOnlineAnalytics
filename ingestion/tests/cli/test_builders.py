@@ -14,6 +14,9 @@ from eve_ingest.util import (
     DEFAULT_DUCKLAKE_CATALOG,
     DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS,
     DEFAULT_DUCKLAKE_METADATA_SCHEMA,
+    DEFAULT_DUCKLAKE_PG_POOL_ACQUIRE_MODE,
+    DEFAULT_DUCKLAKE_PG_POOL_MAX_CONNECTIONS,
+    DEFAULT_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS,
     DEFAULT_RAW_LEDGER_URL,
     DEFAULT_RAW_ROOT,
 )
@@ -41,6 +44,9 @@ def test_market_history_uses_runtime_defaults() -> None:
     assert config.ducklake.ducklake_catalog == DEFAULT_DUCKLAKE_CATALOG
     assert config.ducklake.ducklake_metadata_schema == DEFAULT_DUCKLAKE_METADATA_SCHEMA
     assert config.ducklake.lock_wait_timeout_seconds == DEFAULT_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS
+    assert config.ducklake.pg_pool_max_connections == DEFAULT_DUCKLAKE_PG_POOL_MAX_CONNECTIONS
+    assert config.ducklake.pg_pool_wait_timeout_millis == DEFAULT_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS
+    assert config.ducklake.pg_pool_acquire_mode == DEFAULT_DUCKLAKE_PG_POOL_ACQUIRE_MODE
 
 
 @pytest.mark.parametrize(
@@ -93,6 +99,32 @@ def test_market_history_uses_runtime_defaults() -> None:
                 "0",
             ],
             "ducklake_lock_wait_timeout_seconds must be greater than 0",
+        ),
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-01-01",
+                "--end-date",
+                "2025-01-31",
+                "--ducklake-pg-pool-max-connections",
+                "-1",
+            ],
+            "ducklake_pg_pool_max_connections must be non-negative",
+        ),
+        (
+            [
+                "everef",
+                "market-history",
+                "--start-date",
+                "2025-01-01",
+                "--end-date",
+                "2025-01-31",
+                "--ducklake-pg-pool-wait-timeout-millis",
+                "0",
+            ],
+            "ducklake_pg_pool_wait_timeout_millis must be greater than 0",
         ),
     ],
 )

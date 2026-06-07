@@ -1,16 +1,26 @@
 from __future__ import annotations
 
 import json
+import tarfile
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+import pyarrow as pa
+
+from eve_ingest.ducklake.raw_tables import (
+    DuckLakeWriteMetrics,
+    DuckLakeWriterMode,
+    RawDuckLakeProvenanceTable,
+    RawDuckLakeTable,
+)
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.reference_data import (
     PUBLISHER_SPEC,
     _build_cache_objects,
     _parse_json_to_table,
     _process_member,
+    _process_references_result,
 )
 from tests.sources.everef.conftest import make_cache_result
 
@@ -218,3 +228,104 @@ class TestProcessMember:
         assert ok is False
         assert metrics is None
         writer.write.assert_not_called()
+
+
+class _ReferenceWriter:
+    def __init__(self, *, fail_write: bool = False) -> None:
+        self.calls: list[tuple[str, object]] = []
+        self.in_transaction = False
+        self.fail_write = fail_write
+
+    @contextmanager
+    def transaction(self):
+        self.calls.append(("transaction_enter", None))
+        self.in_transaction = True
+        try:
+            yield
+        except Exception:
+            self.calls.append(("transaction_rollback", None))
+            raise
+        else:
+            self.calls.append(("transaction_commit", None))
+        finally:
+            self.in_transaction = False
+
+    def upsert_source_object(self, data: dict, *, table) -> None:
+        assert self.in_transaction is True
+        self.calls.append(("upsert", data.copy()))
+
+    def _validate_write_request(self, arrow_table: pa.Table, *, table, mode, key_columns=()) -> None:
+        assert self.in_transaction is False
+        self.calls.append(("validate_write", {"table": table, "mode": mode, "rows": len(arrow_table)}))
+
+    @contextmanager
+    def _prepare_arrow_source(self, arrow_table: pa.Table):
+        assert self.in_transaction is False
+        source_name = f"source_{len([call for call in self.calls if call[0] == 'prepare_source'])}"
+        self.calls.append(("prepare_source", {"source_name": source_name, "rows": len(arrow_table)}))
+        try:
+            yield source_name
+        finally:
+            self.calls.append(("drop_source", source_name))
+
+    def _write_from_prepared_source(self, arrow_table: pa.Table, *, source_name: str, table, mode, key_columns=()):
+        assert self.in_transaction is True
+        self.calls.append(("write_prepared", {"source_name": source_name, "table": table, "rows": len(arrow_table)}))
+        if self.fail_write:
+            raise RuntimeError("boom")
+        return DuckLakeWriteMetrics(
+            table=table,
+            mode=mode,
+            attempted_rows=len(arrow_table),
+            inserted_rows=len(arrow_table),
+            matched_rows=0,
+            replaced_rows=0,
+        )
+
+
+def _write_reference_archive(path: Path, members: dict[str, object]) -> None:
+    source_dir = path.parent / "archive_members"
+    source_dir.mkdir()
+    for name, payload in members.items():
+        (source_dir / name).write_text(json.dumps(payload))
+
+    with tarfile.open(path, mode="w:xz") as archive:
+        for name in members:
+            archive.add(source_dir / name, arcname=name)
+
+
+def test_process_references_prepares_arrow_sources_before_ducklake_transaction(tmp_path: Path) -> None:
+    archive_path = tmp_path / "reference-data-latest.tar.xz"
+    _write_reference_archive(
+        archive_path,
+        {
+            "meta.json": {"version": 1},
+            "market_groups.json": {
+                "1857": {
+                    "market_group_id": 1857,
+                    "name": {"en": "Minerals"},
+                    "description": {"en": "Mined goods"},
+                    "parent_group_id": 533,
+                    "has_types": True,
+                }
+            },
+        },
+    )
+    result = make_cache_result(str(archive_path), dataset_name="reference-data", identity_key={"source_date": "latest"})
+    writer = _ReferenceWriter()
+
+    outcome = _process_references_result(result, writer)  # type: ignore[arg-type]
+
+    assert outcome.success is True
+    assert [call[0] for call in writer.calls] == [
+        "validate_write",
+        "prepare_source",
+        "transaction_enter",
+        "upsert",
+        "upsert",
+        "write_prepared",
+        "upsert",
+        "transaction_commit",
+        "drop_source",
+    ]
+    assert outcome.write_metrics[0].table is RawDuckLakeTable.REFERENCE_MARKET_GROUPS

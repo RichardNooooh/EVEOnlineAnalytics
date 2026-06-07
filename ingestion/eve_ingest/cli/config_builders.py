@@ -51,10 +51,22 @@ def build_ducklake_config(args: argparse.Namespace) -> DuckLakeCliConfig:
     timeout_seconds = float(args.ducklake_lock_wait_timeout_seconds)
     if timeout_seconds <= 0:
         raise ValueError("ducklake_lock_wait_timeout_seconds must be greater than 0")
+    pg_pool_max_connections = int(args.ducklake_pg_pool_max_connections)
+    if pg_pool_max_connections < 0:
+        raise ValueError("ducklake_pg_pool_max_connections must be non-negative")
+    pg_pool_wait_timeout_millis = int(args.ducklake_pg_pool_wait_timeout_millis)
+    if pg_pool_wait_timeout_millis <= 0:
+        raise ValueError("ducklake_pg_pool_wait_timeout_millis must be greater than 0")
+    pg_pool_acquire_mode = str(args.ducklake_pg_pool_acquire_mode)
+    if pg_pool_acquire_mode not in {"force", "wait", "try"}:
+        raise ValueError("ducklake_pg_pool_acquire_mode must be one of: force, wait, try")
     return DuckLakeCliConfig(
         ducklake_catalog=args.ducklake_catalog,
         ducklake_metadata_schema=args.ducklake_metadata_schema,
         lock_wait_timeout_seconds=timeout_seconds,
+        pg_pool_max_connections=pg_pool_max_connections,
+        pg_pool_wait_timeout_millis=pg_pool_wait_timeout_millis,
+        pg_pool_acquire_mode=pg_pool_acquire_mode,
     )
 
 

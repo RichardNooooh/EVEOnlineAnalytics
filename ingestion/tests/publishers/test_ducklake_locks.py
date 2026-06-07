@@ -250,6 +250,9 @@ def test_raw_bootstrap_acquires_migration_and_all_raw_domains(monkeypatch) -> No
             ducklake_catalog="postgresql://user:pass@localhost:5432/db",
             ducklake_metadata_schema="eve_market",
             lock_wait_timeout_seconds=12.5,
+            pg_pool_max_connections=32,
+            pg_pool_wait_timeout_millis=120000,
+            pg_pool_acquire_mode="wait",
         ),
     )
 

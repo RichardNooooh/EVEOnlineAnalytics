@@ -114,6 +114,8 @@ _RAW_TABLE_COLUMN_DEFINITIONS: Final[dict[RawDuckLakeTable, tuple[str, ...]]] = 
         "is_buy_order BOOLEAN",
         "reported_by BIGINT",
         "http_last_modified TIMESTAMP",
+        "station_id BIGINT",
+        "constellation_id BIGINT",
         "source_object_id VARCHAR",
         "source_market_date DATE",
         "snapshot_ts TIMESTAMP WITH TIME ZONE",

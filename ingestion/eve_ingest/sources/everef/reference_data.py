@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Mapping
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from typing import Any
 
@@ -25,6 +26,9 @@ from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult, run_pi
 from eve_ingest.workflows.publisher_specs import PublisherSpec
 
 logger = logging.getLogger("eve_ingest.sources.everef")
+
+
+type PreparedReferenceMember = tuple[str, RawDuckLakeTable, pa.Table, str]
 
 _REFERENCE_TABLES: dict[str, RawDuckLakeTable] = {
     "types": RawDuckLakeTable.REFERENCE_TYPES,
@@ -234,11 +238,8 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
     }
 
     try:
-        with writer.transaction():
-            metadata = build_source_object_metadata(result, "everef", "reference_data")
-            writer.upsert_source_object(metadata, table=provenance_table)
-
-            with ExtractedTarball(result.path) as archive:
+        with ExtractedTarball(result.path) as archive:
+            with ExitStack() as prepared_sources:
                 json_members = list(archive.iter_json_files())
                 if not json_members:
                     logger.warning(
@@ -247,15 +248,6 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
                         result.path,
                     )
                     raise ValueError("no JSON files in archive")
-
-                writer.upsert_source_object(
-                    {
-                        "source_object_id": soid,
-                        "status": "parsed",
-                        "parsed_at": datetime.now(UTC),
-                    },
-                    table=provenance_table,
-                )
 
                 logger.info(
                     "Reference archive summary source_date=%s member_count=%d first=%s last=%s",
@@ -267,15 +259,20 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
 
                 member_success = 0
                 member_failed = 0
+                prepared_members: list[PreparedReferenceMember] = []
                 metrics: list[DuckLakeWriteMetrics] = []
                 for member in json_members:
-                    ok, write_metrics = _process_member(str(member.path), member.archive_name, result, writer)
-                    if ok:
+                    try:
+                        prepared_member = _prepare_member_source(
+                            str(member.path), member.archive_name, writer, prepared_sources
+                        )
                         member_success += 1
-                        if write_metrics is not None:
-                            metrics.append(write_metrics)
-                    else:
+                        if prepared_member is not None:
+                            prepared_members.append(prepared_member)
+                    except Exception:
+                        logger.exception("Failed to process archive_member=%s", member.archive_name)
                         member_failed += 1
+                        break
 
                 logger.info(
                     "Reference archive result source_date=%s member_success=%d member_failed=%d",
@@ -295,15 +292,43 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
                     logger.error("No reference files were successfully processed")
                     raise ValueError("no members processed")
 
-                writer.upsert_source_object(
-                    {
-                        "source_object_id": soid,
-                        "status": "ingested",
-                        "ingested_at": datetime.now(UTC),
-                        "status_reason": None,
-                    },
-                    table=provenance_table,
-                )
+                with writer.transaction():
+                    metadata = build_source_object_metadata(result, "everef", "reference_data")
+                    writer.upsert_source_object(metadata, table=provenance_table)
+                    writer.upsert_source_object(
+                        {
+                            "source_object_id": soid,
+                            "status": "parsed",
+                            "parsed_at": datetime.now(UTC),
+                        },
+                        table=provenance_table,
+                    )
+
+                    for archive_name, table_key, table, source_name in prepared_members:
+                        write_metrics = writer._write_from_prepared_source(
+                            table,
+                            source_name=source_name,
+                            table=table_key,
+                            mode=DuckLakeWriterMode.REPLACE_TABLE,
+                        )
+                        logger.debug(
+                            "Published reference table=%s rows=%d archive_member=%s replaced_rows=%d",
+                            table_key.value,
+                            table.num_rows,
+                            archive_name,
+                            write_metrics.replaced_rows,
+                        )
+                        metrics.append(write_metrics)
+
+                    writer.upsert_source_object(
+                        {
+                            "source_object_id": soid,
+                            "status": "ingested",
+                            "ingested_at": datetime.now(UTC),
+                            "status_reason": None,
+                        },
+                        table=provenance_table,
+                    )
                 return PipelineProcessResult(
                     success=True,
                     source_date=str(result.identity_key.get("source_date", "unknown")),
@@ -319,6 +344,32 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
             success=False,
             source_date=str(result.identity_key.get("source_date", "unknown")),
         )
+
+
+def _prepare_member_source(
+    member_path: str,
+    archive_name: str,
+    writer: DuckLakeWriter,
+    prepared_sources: ExitStack,
+) -> PreparedReferenceMember | None:
+    filename = archive_name
+    if filename.endswith(".json"):
+        filename = filename[:-5]
+
+    table_info = _REFERENCE_TABLES.get(filename)
+    if table_info is None:
+        logger.warning("Skipping unknown reference file archive_member=%s", archive_name)
+        return None
+
+    table_key = table_info
+    table = _parse_json_to_table(member_path, archive_name)
+    if table.num_rows == 0:
+        logger.warning("Zero-row table for archive_member=%s", archive_name)
+        return None
+
+    writer._validate_write_request(table, table=table_key, mode=DuckLakeWriterMode.REPLACE_TABLE)
+    source_name = prepared_sources.enter_context(writer._prepare_arrow_source(table))
+    return archive_name, table_key, table, source_name
 
 
 def run_pipeline(config: EverefReferencesCliConfig) -> int:
