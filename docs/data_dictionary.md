@@ -47,6 +47,9 @@ Expected contract elements:
 - `raw_market_orders`, `raw_fuzzwork_orders`, and `raw_market_history` use
   `source_object_id` as a foreign key for lineage instead of storing
   row-level provenance
+- `raw_market_orders` and `raw_fuzzwork_orders` use `source_object_id` as the snapshot
+  replay and idempotency boundary; `source_date` is the writer publication and lock batch
+  scope
 - reference row tables carry payload columns only; their provenance is the
   archive object row
 
@@ -67,8 +70,7 @@ Expected contract elements:
 - publication metadata recorded through DuckLake catalog state, contracts, and
   supplemental manifests where useful
 - dataset class is source-date-authoritative
-- current publication behavior uses assert-partition-coverage plus insert-missing
-  semantics for each source market date
+- current publication behavior validates the covered source-date scope before publication
 
 ### `raw_market_orders`
 
@@ -82,8 +84,10 @@ Expected contract elements:
 - buy or sell side flags
 - price, volume, range, and location fields from the source snapshot
 - dataset class is snapshot-oriented
-- publication behavior uses idempotent insert-missing-key semantics so replay of the
-  same snapshot does not duplicate rows
+- publication behavior is append-only per `source_object_id` snapshot object, with replay
+  deduped by raw publication/provenance state
+- `source_date` is the publication and lock batch scope
+- DuckLake table partitions use `source_market_date`
 
 ### `raw_fuzzwork_orders`
 
@@ -95,8 +99,10 @@ Expected contract elements:
 - snapshot timestamp
 - order row fields preserved from the source TSV snapshot
 - dataset class is snapshot-oriented
-- publication behavior uses idempotent insert-missing-key semantics so replay of the
-  same snapshot does not duplicate rows
+- publication behavior is append-only per `source_object_id` snapshot object, with replay
+  deduped by raw publication/provenance state
+- `source_date` is the publication and lock batch scope
+- DuckLake table partitions use `source_market_date`
 
 ### Reference Tables
 

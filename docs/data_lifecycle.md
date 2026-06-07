@@ -43,8 +43,9 @@ Current examples:
 
 Writer behavior should follow dataset semantics and publication scope.
 
-- snapshot-oriented publication uses idempotent insert-missing-key behavior so repeated
-  processing of the same snapshot does not duplicate rows
+- snapshot-oriented publication is append-only at the source object or snapshot object
+  boundary; repeated processing of the same snapshot is deduped by raw
+  publication/provenance state keyed by `source_object_id`
 - source-partition-authoritative publication validates the covered partition scope and
   preserves an explicit replacement boundary for that source partition
 - full-extract-authoritative publication replaces the visible table contents for the
@@ -85,10 +86,11 @@ Everef market-history source `date`.
 
 Current raw publication semantics:
 
-- `market_orders` and `fuzzwork_orders` publish snapshot data with idempotent
-  insert-missing-key semantics
-- `market_history` publishes source-date-authoritative data and currently applies
-  assert-partition-coverage plus insert-missing semantics for each source date
+- `market_orders` and `fuzzwork_orders` publish append-only snapshot objects keyed by
+  `source_object_id`; `source_date` is the writer publication and lock batch scope, while
+  `source_object_id` is the replay and idempotency boundary
+- `market_history` publishes source-date-authoritative data and validates the covered
+  source-date scope before publication
 - `references` publishes latest full extracts using full-table replacement semantics
 - raw provenance is published into dataset-scoped support tables instead of a shared
   cross-dataset provenance table
@@ -119,9 +121,14 @@ The architecture expects source corrections and replay.
 - DuckLake table state must make the visible replacement scope explicit
 - supplemental manifests may record publication metadata where useful
 
-Snapshot datasets follow a different correction shape: replay may republish a previously
-seen snapshot idempotently, but later snapshots do not implicitly retract rows observed
-in earlier snapshots.
+Snapshot datasets follow a different correction shape: replay may skip a previously seen
+snapshot object idempotently through raw publication/provenance state, but later snapshots
+do not implicitly retract rows observed in earlier snapshots.
+
+For raw order partition rebuilds, stop writers, back up or snapshot DuckLake catalog
+metadata and storage, rebuild/drop the raw order DuckLake tables or the raw catalog,
+bootstrap raw schema and provenance tables, rerun backfill from raw cache or source,
+verify `source_market_date` partitions, then resume writers.
 
 ## Single-Writer Rules
 
