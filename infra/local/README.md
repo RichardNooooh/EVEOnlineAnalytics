@@ -99,6 +99,12 @@ tag. The Makefile reads the same setting, so `make ingestion-image` and
 `make ingestion-image-rebuild` build the exact image tag Airflow will run by
 default.
 
+Local Airflow also includes a manual `bootstrap_backfill_all` DAG. It runs raw
+DuckLake bootstrap first, then fans out to market orders, market history,
+fuzzwork orders, and references using one shared `start_date` / `end_date`
+parameter set for the date-range tasks. The existing per-dataset backfill DAGs
+remain available for targeted reruns.
+
 Set `EVE_MARKET_INGESTION_FORCE_PULL=true` in `infra/local/.env` only when you
 want Airflow to pull the configured image before each task run. Leave it `false`
 for the default local `eve-market-ingestion:local` workflow so DockerOperator uses
