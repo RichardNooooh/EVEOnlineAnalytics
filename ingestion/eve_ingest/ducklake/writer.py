@@ -603,26 +603,11 @@ class DuckLakeWriter:
             return metrics
 
         if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS:
-            _require_table(
-                con,
-                alias=self._attach.alias,
-                target=target,
-            )
-            con.execute(
-                f"""
-                INSERT INTO {quoted_target} BY NAME
-                SELECT * FROM {quoted_source}
-                """
-            )
-            metrics = DuckLakeWriteMetrics(
+            metrics = self._append_snapshot_prepared_source(
+                source_name=source_name,
                 table=table,
-                mode=mode,
                 attempted_rows=len(arrow_table),
-                inserted_rows=len(arrow_table),
-                matched_rows=0,
-                replaced_rows=0,
             )
-            self._record_write_metrics(metrics, key_columns=key_columns)
             return metrics
 
         _require_table(
@@ -681,38 +666,6 @@ class DuckLakeWriter:
         )
         self._record_write_metrics(metrics, key_columns=key_columns)
         return metrics
-
-    @contextmanager
-    def _prepare_arrow_source(self, arrow_table: pa.Table) -> Iterator[str]:
-        with self.prepare_arrow_source(arrow_table) as source_name:
-            yield source_name
-
-    def _validate_write_request(
-        self,
-        arrow_table: pa.Table,
-        *,
-        table: RawDuckLakeTable,
-        mode: DuckLakeWriterMode,
-        key_columns: Sequence[str] = (),
-    ) -> None:
-        self.validate_write_request(arrow_table, table=table, mode=mode, key_columns=key_columns)
-
-    def _write_from_prepared_source(
-        self,
-        arrow_table: pa.Table,
-        *,
-        source_name: str,
-        table: RawDuckLakeTable,
-        mode: DuckLakeWriterMode,
-        key_columns: Sequence[str] = (),
-    ) -> DuckLakeWriteMetrics:
-        return self.write_prepared_source(
-            arrow_table,
-            source_name=source_name,
-            table=table,
-            mode=mode,
-            key_columns=key_columns,
-        )
 
     def _record_write_metrics(self, metrics: DuckLakeWriteMetrics, *, key_columns: Sequence[str]) -> None:
         self._write_history.append(metrics)
