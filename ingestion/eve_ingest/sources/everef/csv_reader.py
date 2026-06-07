@@ -4,7 +4,7 @@ import logging
 import random
 import time
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import Any
 
 import pyarrow as pa
@@ -15,7 +15,6 @@ from eve_ingest.ducklake.writer import DuckLakeWriter
 from eve_ingest.ducklake.raw_tables import (
     DuckLakeWriterMode,
     RawDuckLakeTable,
-    compute_source_object_id,
     provenance_table_for_data_table,
 )
 from eve_ingest.sources.everef.provenance import build_source_object_metadata
@@ -25,12 +24,16 @@ from eve_ingest.util import file_size
 logger = logging.getLogger("eve_ingest.sources.everef")
 
 _RETRYABLE_INSERT_MODES = {
-    DuckLakeWriterMode.INSERT_MISSING_KEYS,
+    DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
     DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
 }
 _DUCKLAKE_CONFLICT_MAX_ATTEMPTS = 3
 _DUCKLAKE_CONFLICT_BASE_DELAY_SECONDS = 0.2
 _DUCKLAKE_CONFLICT_JITTER_SECONDS = 0.1
+
+
+class ImmutableSnapshotSourceObjectChangedError(ValueError):
+    pass
 
 
 def _is_retryable_ducklake_conflict(exc: Exception) -> bool:
@@ -42,13 +45,41 @@ def _is_retryable_ducklake_conflict(exc: Exception) -> bool:
     )
 
 
+def _check_append_snapshot_source_object(
+    writer: DuckLakeWriter,
+    *,
+    soid: str,
+    sha256: str,
+    provenance_table,
+    table_key: RawDuckLakeTable,
+    source_date_str: str,
+) -> bool:
+    existing_sha256 = writer.source_object_ingested_sha256(soid, table=provenance_table)
+    if existing_sha256 is None:
+        return False
+    if existing_sha256 == sha256:
+        logger.info(
+            "Skipping already ingested source object version source_date=%s table=%s source_object_id=%s sha256_prefix=%s",
+            source_date_str,
+            table_key.value,
+            soid,
+            sha256[:16],
+        )
+        return True
+    raise ImmutableSnapshotSourceObjectChangedError(
+        "Append snapshot source object changed after ingestion; snapshot URLs are expected immutable "
+        f"source_date={source_date_str} table={table_key.value} source_object_id={soid} "
+        f"existing_sha256_prefix={existing_sha256[:16]} new_sha256_prefix={sha256[:16]}"
+    )
+
+
 def _publish_transactional_rows_with_retry(
     writer: DuckLakeWriter,
     *,
     table: pa.Table,
-    source_name: str,
     row_count: int,
     soid: str,
+    sha256: str,
     provenance_table,
     table_key: RawDuckLakeTable,
     mode: DuckLakeWriterMode,
@@ -56,36 +87,25 @@ def _publish_transactional_rows_with_retry(
     source_date_str: str,
 ):
     for attempt in range(1, _DUCKLAKE_CONFLICT_MAX_ATTEMPTS + 1):
+        if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS and _check_append_snapshot_source_object(
+            writer,
+            soid=soid,
+            sha256=sha256,
+            provenance_table=provenance_table,
+            table_key=table_key,
+            source_date_str=source_date_str,
+        ):
+            return None
         try:
-            with writer.transaction():
-                writer.upsert_source_object(
-                    {
-                        "source_object_id": soid,
-                        "status": "parsed",
-                        "parsed_at": datetime.now(UTC),
-                    },
-                    table=provenance_table,
-                )
-
-                metrics = writer._write_from_prepared_source(
-                    table,
-                    source_name=source_name,
-                    table=table_key,
-                    mode=mode,
-                    key_columns=key_columns,
-                )
-
-                writer.upsert_source_object(
-                    {
-                        "source_object_id": soid,
-                        "status": "ingested",
-                        "ingested_at": datetime.now(UTC),
-                        "row_count": row_count,
-                        "status_reason": None,
-                    },
-                    table=provenance_table,
-                )
-                return metrics
+            return writer.publish_source_object_rows(
+                table,
+                data_table=table_key,
+                provenance_table=provenance_table,
+                source_object_id=soid,
+                mode=mode,
+                row_count=row_count,
+                key_columns=key_columns,
+            )
         except Exception as exc:
             should_retry = mode in _RETRYABLE_INSERT_MODES and _is_retryable_ducklake_conflict(exc)
             if not should_retry or attempt >= _DUCKLAKE_CONFLICT_MAX_ATTEMPTS:
@@ -157,18 +177,28 @@ def publish_file_backed_rows(
     log_context: dict[str, Any] | None = None,
 ) -> PipelineProcessResult:
     source_date_str = str(result.identity_key.get("source_date", "unknown"))
-    soid = compute_source_object_id(source_system, endpoint, result.version.source_url)
+    metadata = build_source_object_metadata(
+        result,
+        source_system,
+        endpoint,
+        source_market_date=source_market_date,
+        snapshot_ts=snapshot_ts,
+    )
+    soid = metadata["source_object_id"]
     provenance_table = provenance_table_for_data_table(table_key)
 
+    if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS and _check_append_snapshot_source_object(
+        writer,
+        soid=soid,
+        sha256=result.version.sha256,
+        provenance_table=provenance_table,
+        table_key=table_key,
+        source_date_str=source_date_str,
+    ):
+        return PipelineProcessResult(success=True, source_date=source_date_str)
+
     try:
-        metadata = build_source_object_metadata(
-            result,
-            source_system,
-            endpoint,
-            source_market_date=source_market_date,
-            snapshot_ts=snapshot_ts,
-        )
-        writer.upsert_source_object(metadata, table=provenance_table)
+        writer.record_source_object(metadata, table=provenance_table)
 
         table = parse_table(result)
         n = len(table)
@@ -187,20 +217,20 @@ def publish_file_backed_rows(
                 pa.array([snapshot_ts] * n, type=pa.timestamp("us", tz="UTC")),
             )
 
-        writer._validate_write_request(table, table=table_key, mode=mode, key_columns=key_columns)
-        with writer._prepare_arrow_source(table) as source_name:
-            metrics = _publish_transactional_rows_with_retry(
-                writer,
-                table=table,
-                source_name=source_name,
-                row_count=n,
-                soid=soid,
-                provenance_table=provenance_table,
-                table_key=table_key,
-                mode=mode,
-                key_columns=key_columns,
-                source_date_str=source_date_str,
-            )
+        metrics = _publish_transactional_rows_with_retry(
+            writer,
+            table=table,
+            row_count=n,
+            soid=soid,
+            sha256=result.version.sha256,
+            provenance_table=provenance_table,
+            table_key=table_key,
+            mode=mode,
+            key_columns=key_columns,
+            source_date_str=source_date_str,
+        )
+        if metrics is None:
+            return PipelineProcessResult(success=True, source_date=source_date_str)
 
         extra_context = log_context or {}
         if snapshot_ts is None:
@@ -229,17 +259,12 @@ def publish_file_backed_rows(
             source_date=source_date_str,
             write_metrics=(metrics,),
         )
+    except ImmutableSnapshotSourceObjectChangedError:
+        raise
     except Exception:
         logger.exception("Failed to process %s", result.identity_key)
         try:
-            writer.upsert_source_object(
-                {
-                    "source_object_id": soid,
-                    "status": "failed",
-                    "status_reason": "see log for details",
-                },
-                table=provenance_table,
-            )
+            writer.mark_source_object_failed(soid, reason="see log for details", table=provenance_table)
         except Exception:
             pass
         return PipelineProcessResult(

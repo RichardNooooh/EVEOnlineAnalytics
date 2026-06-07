@@ -4,7 +4,6 @@ import json
 import logging
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack
-from datetime import UTC, datetime
 from typing import Any
 
 import pyarrow as pa
@@ -18,7 +17,6 @@ from eve_ingest.ducklake.raw_tables import (
     DuckLakeWriterMode,
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
-    compute_source_object_id,
 )
 from eve_ingest.sources.everef.discovery import EVEREF_BASE
 from eve_ingest.sources.everef.provenance import build_source_object_metadata
@@ -229,10 +227,10 @@ def _process_member(
 
 
 def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
-    source_url = result.version.source_url
-    soid = compute_source_object_id("everef", "reference_data", source_url)
+    metadata = build_source_object_metadata(result, "everef", "reference_data")
+    soid = metadata["source_object_id"]
     provenance_table = RawDuckLakeProvenanceTable.REFERENCE_OBJECTS
-    failure_metadata = build_source_object_metadata(result, "everef", "reference_data") | {
+    failure_metadata = metadata | {
         "status": "failed",
         "status_reason": "see log for details",
     }
@@ -293,19 +291,11 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
                     raise ValueError("no members processed")
 
                 with writer.transaction():
-                    metadata = build_source_object_metadata(result, "everef", "reference_data")
-                    writer.upsert_source_object(metadata, table=provenance_table)
-                    writer.upsert_source_object(
-                        {
-                            "source_object_id": soid,
-                            "status": "parsed",
-                            "parsed_at": datetime.now(UTC),
-                        },
-                        table=provenance_table,
-                    )
+                    writer.record_source_object(metadata, table=provenance_table)
+                    writer.mark_source_object_parsed(soid, table=provenance_table)
 
                     for archive_name, table_key, table, source_name in prepared_members:
-                        write_metrics = writer._write_from_prepared_source(
+                        write_metrics = writer.write_prepared_source(
                             table,
                             source_name=source_name,
                             table=table_key,
@@ -320,15 +310,7 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
                         )
                         metrics.append(write_metrics)
 
-                    writer.upsert_source_object(
-                        {
-                            "source_object_id": soid,
-                            "status": "ingested",
-                            "ingested_at": datetime.now(UTC),
-                            "status_reason": None,
-                        },
-                        table=provenance_table,
-                    )
+                    writer.mark_source_object_ingested(soid, row_count=0, table=provenance_table)
                 return PipelineProcessResult(
                     success=True,
                     source_date=str(result.identity_key.get("source_date", "unknown")),
@@ -337,7 +319,7 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
     except Exception:
         logger.exception("Failed to process %s", result.identity_key)
         try:
-            writer.upsert_source_object(failure_metadata, table=provenance_table)
+            writer.record_source_object(failure_metadata, table=provenance_table)
         except Exception:
             pass
         return PipelineProcessResult(
@@ -367,8 +349,8 @@ def _prepare_member_source(
         logger.warning("Zero-row table for archive_member=%s", archive_name)
         return None
 
-    writer._validate_write_request(table, table=table_key, mode=DuckLakeWriterMode.REPLACE_TABLE)
-    source_name = prepared_sources.enter_context(writer._prepare_arrow_source(table))
+    writer.validate_write_request(table, table=table_key, mode=DuckLakeWriterMode.REPLACE_TABLE)
+    source_name = prepared_sources.enter_context(writer.prepare_arrow_source(table))
     return archive_name, table_key, table, source_name
 
 
