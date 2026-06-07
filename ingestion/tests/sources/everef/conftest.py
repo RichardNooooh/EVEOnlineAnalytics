@@ -105,6 +105,7 @@ def make_everef_pipeline_config(config_cls: type[Any], tmp_path: Any, **kwargs: 
         raw_files=RawFilesCliConfig(
             raw_root=str(tmp_path / "raw"),
             raw_ledger_url="postgresql://fake:fake@localhost:5432/fake",
+            raw_download_workers=4,
         ),
         ducklake=DuckLakeCliConfig(
             ducklake_catalog="postgresql://fake:fake@localhost:5432/fake",

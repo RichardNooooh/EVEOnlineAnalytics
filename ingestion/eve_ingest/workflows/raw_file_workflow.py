@@ -94,6 +94,7 @@ def run_pipeline(
         update_mode=publisher_spec.update_mode,
         raw_root=f"{config.data_root}/raw",
         ledger_url=config.raw_files.raw_ledger_url,
+        raw_download_workers=config.raw_files.raw_download_workers,
     ) as cache:
         results = cache.get_many(objects, mode=GetMode.UNPUBLISHED)
         total_processable = len(results)
