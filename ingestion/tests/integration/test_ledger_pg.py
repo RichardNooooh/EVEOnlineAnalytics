@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger.models import RawObjectRef
-from eve_ingest.raw_objects.ledger.schema import raw_object_versions, raw_objects
+from eve_ingest.raw_objects.ledger.schema import _METADATA, raw_object_versions, raw_objects
 from eve_ingest.raw_objects.primitives import UpdateMode
 
 
@@ -29,6 +29,53 @@ def test_schema_bootstraps_on_first_transaction(pg_url: str) -> None:
         )
     assert result is None
     ledger.close()
+
+
+@pytest.mark.integration
+def test_concurrent_first_transactions_bootstrap_schema_once(pg_url: str) -> None:
+    worker_count = 6
+    reset_ledger = RawObjectLedger(ledger_url=pg_url)
+    with reset_ledger._engine.begin() as con:
+        _METADATA.drop_all(con)
+    reset_ledger.close()
+
+    start = Barrier(worker_count)
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        ledger = RawObjectLedger(ledger_url=pg_url)
+        try:
+            start.wait(timeout=5)
+            with ledger.transaction() as tx:
+                result = tx.reader.load_raw_object(
+                    ref=RawObjectRef(
+                        source_name="test",
+                        dataset_name="test_ds",
+                        identity_hash="concurrent-bootstrap-missing",
+                        identity_key={"k": "v"},
+                        update_mode=UpdateMode.SNAPSHOT,
+                    )
+                )
+                assert result is None
+        except BaseException as exc:  # pragma: no cover - surfaced through assertion below
+            errors.append(exc)
+        finally:
+            ledger.close()
+
+    threads = [Thread(target=worker) for _ in range(worker_count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert errors == []
+    assert all(thread.is_alive() is False for thread in threads)
+
+    ledger = RawObjectLedger(ledger_url=pg_url)
+    with ledger._engine.begin() as con:
+        count = con.execute(select(func.count()).select_from(raw_objects)).scalar_one()
+    ledger.close()
+    assert count == 0
 
 
 @pytest.mark.integration

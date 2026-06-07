@@ -7,17 +7,21 @@ sub-accessors for reading, writing, plan resolution, and publication tracking.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from types import TracebackType
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from eve_ingest.raw_objects.ledger.row_mappers import normalize_ledger_url
 from eve_ingest.raw_objects.ledger.publication_repository import PublicationTrackerTx
 from eve_ingest.raw_objects.ledger.reader import RawObjectReader
 from eve_ingest.raw_objects.ledger.schema import _METADATA
 from eve_ingest.raw_objects.ledger.writer import RawObjectWriter
+
+
+_BOOTSTRAP_LOCK_DOMAIN = "raw-ledger:bootstrap"
 
 
 # ── transaction result ─────────────────────────────────────────────────
@@ -89,5 +93,15 @@ class RawObjectLedger:
         if self._bootstrapped:
             return
         with self._engine.begin() as con:
+            if con.dialect.name == "postgresql":
+                con.execute(
+                    text("select pg_advisory_xact_lock(:lock_key)"),
+                    {"lock_key": _bootstrap_lock_key()},
+                )
             _METADATA.create_all(con)
         self._bootstrapped = True
+
+
+def _bootstrap_lock_key() -> int:
+    digest = hashlib.blake2b(_BOOTSTRAP_LOCK_DOMAIN.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="big", signed=True)
