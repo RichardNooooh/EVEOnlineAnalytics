@@ -92,6 +92,7 @@ def build_ingestion_task(*, task_id: str, command: list[str]) -> DockerOperator:
         environment={
             "HOME": f"{DLT_SCRATCH_ROOT}/home",
             "TMPDIR": f"{DLT_SCRATCH_ROOT}/tmp",
+            "INGEST_LOG_LEVEL": os.environ.get("INGEST_LOG_LEVEL", "INFO"),
             "EVE_DLT_STATE_DIR": f"{DLT_SCRATCH_ROOT}/dlt",
             "DLT_DATA_DIR": f"{DLT_SCRATCH_ROOT}/dlt",
             "DLT_LOCAL_DIR": f"{DLT_SCRATCH_ROOT}/local",
