@@ -4,12 +4,11 @@ import bz2
 import logging
 import re
 import shutil
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-
-from collections.abc import Iterator
 
 from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
 from eve_ingest.cli.config import EverefCliConfig

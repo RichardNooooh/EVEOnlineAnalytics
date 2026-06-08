@@ -108,6 +108,7 @@ class _FakeWriter:
         provenance_table,
         source_object_id: str,
         mode: DuckLakeWriterMode,
+        row_count: int | None = None,
     ):
         with self.transaction():
             self.mark_source_object_parsed(source_object_id, table=provenance_table)
@@ -560,6 +561,7 @@ def test_publish_file_backed_snapshot_rows_raises_snapshot_scope_publish_error()
         provenance_table,
         source_object_id: str,
         mode: DuckLakeWriterMode,
+        row_count: int | None = None,
     ):
         writer.calls.append(("publish_sql_rows", {"sql": sql_source.sql, "table": data_table, "mode": mode}))
         raise RuntimeError("boom")
