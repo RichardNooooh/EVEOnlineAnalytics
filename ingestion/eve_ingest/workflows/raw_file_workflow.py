@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -16,13 +17,12 @@ from eve_ingest.ducklake.locks import (
     DuckLakeLockTimeoutError,
     hold_ducklake_lock_domains,
 )
-from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode
+from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics, DuckLakeWriterMode
 from eve_ingest.ducklake.writer import DuckLakeWriter
 from eve_ingest.raw_objects import Cache, CacheObject, CacheResult, GetMode, UpdateMode
 from eve_ingest.raw_objects.ledger.models import PublicationContext
-from eve_ingest.workflows.publisher_specs import PublisherSpec
 from eve_ingest.workflows.publication_errors import SnapshotScopePublishError
+from eve_ingest.workflows.publisher_specs import PublisherSpec
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,23 @@ class PipelineProcessResult:
     write_metrics: tuple[DuckLakeWriteMetrics, ...] = ()
 
 
+@dataclass
+class _PipelineRunState:
+    success: int = 0
+    failed: int = 0
+    successful_results: list[CacheResult] = field(default_factory=list)
+    per_day_success: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    per_day_failed: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    per_day_metrics: dict[str, DuckLakeWriteMetrics] = field(default_factory=dict)
+
+
+@dataclass
+class _ScopeWriteResult:
+    scope_successful_results: list[CacheResult] = field(default_factory=list)
+    success: int = 0
+    failed: int = 0
+
+
 ############################
 # Pipeline
 ############################
@@ -78,8 +95,6 @@ def run_pipeline(
     )
 
     total_requested = len(objects)
-    success = 0
-    failed = 0
     per_day_requested = _count_by_source_date(objects)
     dataset_name = publisher_spec.dataset_name
 
@@ -98,111 +113,51 @@ def run_pipeline(
         ledger_url=config.raw_files.raw_ledger_url,
         raw_download_workers=config.raw_files.raw_download_workers,
     ) as cache:
-        results = cache.get_many(objects, mode=GetMode.UNPUBLISHED)
-        total_processable = len(results)
-        per_day_processable = _count_by_source_date(results)
-
-        if not results:
-            logger.info("No unpublished raw objects to process dataset=%s", dataset_name)
-            _log_pipeline_summary(
-                dataset_name=dataset_name,
-                requested_objects=total_requested,
-                processable_objects=0,
-                success=0,
-                failed=0,
-                marked_published=0,
-                exit_code=0,
-            )
+        loaded = load_results_or_exit(
+            cache=cache,
+            objects=objects,
+            dataset_name=dataset_name,
+            total_requested=total_requested,
+        )
+        if loaded is None:
             return 0
 
-        successful_results: list[CacheResult] = []
-        per_day_success: dict[str, int] = defaultdict(int)
-        per_day_failed: dict[str, int] = defaultdict(int)
-        per_day_metrics: dict[str, DuckLakeWriteMetrics] = {}
+        results, total_processable, per_day_processable = loaded
+        run_state = _PipelineRunState()
         for publication_scope, scope_results in _group_results_by_publication_scope(
             publisher_spec=publisher_spec,
             results=results,
         ).items():
-            with _hold_publication_domain_locks(
+            process_scope(
                 publisher_spec=publisher_spec,
+                publication_scope=publication_scope,
+                scope_results=scope_results,
+                cache=cache,
                 catalog_url=config.ducklake.ducklake_catalog,
-                publication_scopes=(publication_scope,),
-                source_date=_publication_scope_source_date(publication_scope, scope_results),
                 timeout_seconds=config.ducklake.lock_wait_timeout_seconds,
-            ) as lock_token:
-                scope_results = _filter_scope_results_after_lock(
-                    publisher_spec=publisher_spec,
-                    publication_scope=publication_scope,
-                    scope_results=scope_results,
-                    cache=cache,
-                )
-                if not scope_results:
-                    continue
+                attach_config=attach_config,
+                dataset_name=dataset_name,
+                process_one=process_one,
+                run_state=run_state,
+            )
 
-                scope_successful_results: list[CacheResult] = []
-                with DuckLakeWriter(
-                    attach_config,
-                    lock_token=lock_token,
-                    declared_mode=publisher_spec.writer_mode,
-                    dataset_name=dataset_name,
-                ) as writer:
-                    if _uses_snapshot_scope_batch(publisher_spec):
-                        batch_outcomes = _process_snapshot_scope_results(
-                            scope_results=scope_results,
-                            writer=writer,
-                            process_one=process_one,
-                        )
-                        for result, outcome in batch_outcomes:
-                            source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
-                            success += 1
-                            successful_results.append(result)
-                            scope_successful_results.append(result)
-                            per_day_success[source_date] += 1
-                            for metric in outcome.write_metrics:
-                                per_day_metrics[source_date] = _merge_metrics(per_day_metrics.get(source_date), metric)
-                    else:
-                        for result in scope_results:
-                            outcome = process_one(result, writer)
-                            source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
-                            if outcome.success:
-                                success += 1
-                                successful_results.append(result)
-                                scope_successful_results.append(result)
-                                per_day_success[source_date] += 1
-                            else:
-                                failed += 1
-                                per_day_failed[source_date] += 1
-                            for metric in outcome.write_metrics:
-                                per_day_metrics[source_date] = _merge_metrics(per_day_metrics.get(source_date), metric)
-                if _uses_snapshot_scope_batch(publisher_spec) and not scope_successful_results and scope_results:
-                    failed += 1
-                    source_date = _publication_scope_source_date(publication_scope, scope_results) or "unknown"
-                    per_day_failed[source_date] += 1
-
-                if scope_successful_results:
-                    _mark_successful_results_published(
-                        publication_scope=publication_scope,
-                        successful_results=scope_successful_results,
-                        cache=cache,
-                    )
-
-        if success and failed:
+        if run_state.success and run_state.failed:
             logger.warning(
                 "Partial publication dataset=%s success=%d failed=%d total=%d",
                 dataset_name,
-                success,
-                failed,
+                run_state.success,
+                run_state.failed,
                 total_requested,
             )
 
-    marked_published = len(successful_results)
-    exit_code = 1 if failed else 0
+    marked_published = len(run_state.successful_results)
+    exit_code = 1 if run_state.failed else 0
     _log_pipeline_summary(
         dataset_name=dataset_name,
         requested_objects=total_requested,
         processable_objects=total_processable,
-        success=success,
-        failed=failed,
+        success=run_state.success,
+        failed=run_state.failed,
         marked_published=marked_published,
         exit_code=exit_code,
     )
@@ -210,12 +165,204 @@ def run_pipeline(
         dataset_name=dataset_name,
         per_day_requested=per_day_requested,
         per_day_processable=per_day_processable,
-        per_day_success=per_day_success,
-        per_day_failed=per_day_failed,
-        per_day_metrics=per_day_metrics,
+        per_day_success=run_state.per_day_success,
+        per_day_failed=run_state.per_day_failed,
+        per_day_metrics=run_state.per_day_metrics,
     )
 
     return exit_code
+
+
+def load_results_or_exit(
+    *,
+    cache: Cache,
+    objects: list[CacheObject],
+    dataset_name: str,
+    total_requested: int,
+) -> tuple[list[CacheResult], int, dict[str, int]] | None:
+    results = cache.get_many(objects, mode=GetMode.UNPUBLISHED)
+    total_processable = len(results)
+    per_day_processable = _count_by_source_date(results)
+
+    if results:
+        return results, total_processable, per_day_processable
+
+    logger.info("No unpublished raw objects to process dataset=%s", dataset_name)
+    _log_pipeline_summary(
+        dataset_name=dataset_name,
+        requested_objects=total_requested,
+        processable_objects=0,
+        success=0,
+        failed=0,
+        marked_published=0,
+        exit_code=0,
+    )
+    return None
+
+
+def process_scope(
+    *,
+    publisher_spec: PublisherSpec,
+    publication_scope: str,
+    scope_results: list[CacheResult],
+    cache: Cache,
+    catalog_url: str,
+    timeout_seconds: float,
+    attach_config,
+    dataset_name: str,
+    process_one: Callable[[CacheResult, DuckLakeWriter], PipelineProcessResult],
+    run_state: _PipelineRunState,
+) -> None:
+    scope_started_at = time.perf_counter()
+    source_date = _publication_scope_source_date(publication_scope, scope_results)
+    with _hold_publication_domain_locks(
+        publisher_spec=publisher_spec,
+        catalog_url=catalog_url,
+        publication_scopes=(publication_scope,),
+        source_date=source_date,
+        timeout_seconds=timeout_seconds,
+    ) as lock_token:
+        scope_results = _filter_scope_results_after_lock(
+            publisher_spec=publisher_spec,
+            publication_scope=publication_scope,
+            scope_results=scope_results,
+            cache=cache,
+        )
+        if not scope_results:
+            return
+
+        scope_write = write_scope(
+            publisher_spec=publisher_spec,
+            scope_results=scope_results,
+            lock_token=lock_token,
+            attach_config=attach_config,
+            dataset_name=dataset_name,
+            process_one=process_one,
+            run_state=run_state,
+        )
+        finalize_scope(
+            publisher_spec=publisher_spec,
+            publication_scope=publication_scope,
+            scope_results=scope_results,
+            scope_successful_results=scope_write.scope_successful_results,
+            cache=cache,
+            run_state=run_state,
+        )
+        logger.debug(
+            "Publication scope complete dataset=%s publication_scope=%s source_date=%s object_count=%d success_count=%d elapsed_seconds=%.3f",
+            dataset_name,
+            publication_scope,
+            _publication_scope_source_date(publication_scope, scope_results),
+            len(scope_results),
+            len(scope_write.scope_successful_results),
+            time.perf_counter() - scope_started_at,
+        )
+
+
+def write_scope(
+    *,
+    publisher_spec: PublisherSpec,
+    scope_results: list[CacheResult],
+    lock_token,
+    attach_config,
+    dataset_name: str,
+    process_one: Callable[[CacheResult, DuckLakeWriter], PipelineProcessResult],
+    run_state: _PipelineRunState,
+) -> _ScopeWriteResult:
+    with DuckLakeWriter(
+        attach_config,
+        lock_token=lock_token,
+        declared_mode=publisher_spec.writer_mode,
+        dataset_name=dataset_name,
+    ) as writer:
+        if _uses_snapshot_scope_batch(publisher_spec):
+            return process_snapshot_scope(
+                scope_results=scope_results,
+                writer=writer,
+                process_one=process_one,
+                run_state=run_state,
+            )
+        return process_per_object_scope(
+            scope_results=scope_results,
+            writer=writer,
+            process_one=process_one,
+            run_state=run_state,
+        )
+
+
+def process_snapshot_scope(
+    *,
+    scope_results: list[CacheResult],
+    writer: DuckLakeWriter,
+    process_one: Callable[[CacheResult, DuckLakeWriter], PipelineProcessResult],
+    run_state: _PipelineRunState,
+) -> _ScopeWriteResult:
+    scope_write = _ScopeWriteResult()
+    batch_outcomes = _process_snapshot_scope_results(
+        scope_results=scope_results,
+        writer=writer,
+        process_one=process_one,
+    )
+    for result, outcome in batch_outcomes:
+        source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
+        scope_write.success += 1
+        scope_write.scope_successful_results.append(result)
+        run_state.success += 1
+        run_state.successful_results.append(result)
+        run_state.per_day_success[source_date] += 1
+        for metric in outcome.write_metrics:
+            run_state.per_day_metrics[source_date] = _merge_metrics(run_state.per_day_metrics.get(source_date), metric)
+    return scope_write
+
+
+def process_per_object_scope(
+    *,
+    scope_results: list[CacheResult],
+    writer: DuckLakeWriter,
+    process_one: Callable[[CacheResult, DuckLakeWriter], PipelineProcessResult],
+    run_state: _PipelineRunState,
+) -> _ScopeWriteResult:
+    scope_write = _ScopeWriteResult()
+    for result in scope_results:
+        outcome = process_one(result, writer)
+        source_date = outcome.source_date or str(result.identity_key.get("source_date", "unknown"))
+        if outcome.success:
+            scope_write.success += 1
+            scope_write.scope_successful_results.append(result)
+            run_state.success += 1
+            run_state.successful_results.append(result)
+            run_state.per_day_success[source_date] += 1
+        else:
+            scope_write.failed += 1
+            run_state.failed += 1
+            run_state.per_day_failed[source_date] += 1
+        for metric in outcome.write_metrics:
+            run_state.per_day_metrics[source_date] = _merge_metrics(run_state.per_day_metrics.get(source_date), metric)
+    return scope_write
+
+
+def finalize_scope(
+    *,
+    publisher_spec: PublisherSpec,
+    publication_scope: str,
+    scope_results: list[CacheResult],
+    scope_successful_results: list[CacheResult],
+    cache: Cache,
+    run_state: _PipelineRunState,
+) -> None:
+    if _uses_snapshot_scope_batch(publisher_spec) and not scope_successful_results and scope_results:
+        source_date = _publication_scope_source_date(publication_scope, scope_results) or "unknown"
+        run_state.failed += 1
+        run_state.per_day_failed[source_date] += 1
+
+    if not scope_successful_results:
+        return
+
+    _mark_successful_results_published(
+        publication_scope=publication_scope,
+        successful_results=scope_successful_results,
+        cache=cache,
+    )
 
 
 ############################

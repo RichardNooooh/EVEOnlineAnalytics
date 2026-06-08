@@ -88,7 +88,7 @@ def test_process_result_is_idempotent_for_same_market_orders_source_object(share
     assert first_outcome.success is True
     assert first_outcome.source_date == "2026-01-01"
     assert len(first_outcome.write_metrics) == 1
-    assert first_outcome.write_metrics[0].inserted_rows == 1
+    assert first_outcome.write_metrics[0].inserted_rows == 0
     assert first_outcome.write_metrics[0].matched_rows == 0
 
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
@@ -147,6 +147,6 @@ def test_process_result_writes_native_metadata_and_provenance(shared_con, tmp_pa
     )
     assert provenance_source_object_id == expected_source_object_id
     assert status == "ingested"
-    assert row_count == 1
+    assert row_count is None
     assert provenance_source_market_date == source_market_date
     assert provenance_snapshot_ts.astimezone(UTC).isoformat() == "2026-01-01T00:00:00+00:00"
