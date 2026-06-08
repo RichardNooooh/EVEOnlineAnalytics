@@ -251,7 +251,6 @@ class _ReferenceWriter:
             self.in_transaction = False
 
     def record_source_object(self, data: dict, *, table) -> None:
-        assert self.in_transaction is True
         self.calls.append(("record", data.copy()))
 
     def mark_source_object_parsed(self, source_object_id: str, *, table) -> None:
@@ -326,10 +325,10 @@ def test_process_references_prepares_arrow_sources_before_ducklake_transaction(t
 
     assert outcome.success is True
     assert [call[0] for call in writer.calls] == [
+        "record",
         "validate_write",
         "prepare_source",
         "transaction_enter",
-        "record",
         "mark_parsed",
         "write_prepared",
         "mark_ingested",
@@ -337,5 +336,6 @@ def test_process_references_prepares_arrow_sources_before_ducklake_transaction(t
         "drop_source",
     ]
     assert outcome.write_metrics[0].table is RawDuckLakeTable.REFERENCE_MARKET_GROUPS
-    assert writer.calls[3][1]["source_object_id"] == writer.calls[4][1]
-    assert writer.calls[3][1]["source_object_id"] == writer.calls[6][1]["source_object_id"]
+    assert writer.calls[0][1]["source_object_id"] == writer.calls[4][1]
+    assert writer.calls[0][1]["source_object_id"] == writer.calls[6][1]["source_object_id"]
+    assert writer.calls[6][1]["row_count"] == 1

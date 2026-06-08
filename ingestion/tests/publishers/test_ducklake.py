@@ -772,7 +772,6 @@ def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
 
 def test_publish_source_object_sql_rows_uses_temp_sql_view_and_no_arrow(monkeypatch) -> None:
     con = FakeConnection()
-    con.fetchone_results = [(1,)]
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
     monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
@@ -792,7 +791,7 @@ def test_publish_source_object_sql_rows_uses_temp_sql_view_and_no_arrow(monkeypa
     queries = _queries(con)
     assert any("CREATE OR REPLACE TEMP VIEW" in query for query in queries)
     assert any("INSERT INTO" in query and RawDuckLakeTable.MARKET_ORDERS.value in query for query in queries)
-    assert metrics.inserted_rows == 1
+    assert metrics.inserted_rows == 0
 
 
 def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) -> None:

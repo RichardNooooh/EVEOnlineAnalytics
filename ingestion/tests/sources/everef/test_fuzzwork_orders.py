@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
-from eve_ingest.ducklake.writer import DuckLakeSqlSnapshotSource
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.fuzzwork_orders import (
     PUBLISHER_SPEC,
@@ -176,9 +175,8 @@ def test_process_result_uses_append_snapshot_rows_mode(monkeypatch: pytest.Monke
     writer = MagicMock()
     writer.source_object_ingested_sha256.return_value = None
     writer.source_object_version_is_ingested.return_value = False
-
     writer.quote_sql_string.side_effect = lambda value: repr(value)
-    writer.publish_source_object_sql_rows.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
+    writer.publish_source_object_sql_rows.return_value = MagicMock(attempted_rows=0, inserted_rows=0, matched_rows=0)
 
     outcome = _process_result(result, writer)
     assert outcome.success is True
@@ -188,5 +186,23 @@ def test_process_result_uses_append_snapshot_rows_mode(monkeypatch: pytest.Monke
     call_args = writer.publish_source_object_sql_rows.call_args
     call_kwargs = call_args.kwargs
     assert call_kwargs["mode"] is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
-    assert isinstance(call_args.args[0], DuckLakeSqlSnapshotSource)
+    assert call_kwargs["row_count"] is None
     assert _FUZZWORK_SQL_SCHEMA.strip() in call_args.args[0].sql
+
+
+def test_fuzzwork_column_names_match_expected_layout() -> None:
+    assert _FUZZWORK_COLUMN_NAMES == [
+        "order_id",
+        "type_id",
+        "issued",
+        "is_buy_order",
+        "volume_remain",
+        "volume_total",
+        "min_volume",
+        "price",
+        "location_id",
+        "range",
+        "duration",
+        "region_id",
+        "order_set_id",
+    ]

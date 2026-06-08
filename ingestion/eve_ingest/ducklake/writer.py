@@ -715,19 +715,19 @@ class DuckLakeWriter:
         provenance_table: RawDuckLakeProvenanceTable,
         source_object_id: str,
         mode: DuckLakeWriterMode,
+        row_count: int | None = None,
     ) -> DuckLakeWriteMetrics:
         if mode is not DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS:
             raise ValueError("publish_source_object_sql_rows only supports APPEND_SNAPSHOT_ROWS")
         self._require_data_table_lock(data_table)
         with self.prepare_sql_source(sql_source) as source_name:
-            quoted_source = _ident(source_name)
-            row_count = int(self._con.execute(f"SELECT COUNT(*) FROM {quoted_source}").fetchone()[0])
+            attempted_rows = 0 if row_count is None else row_count
             with self.transaction():
                 self.mark_source_object_parsed(source_object_id, table=provenance_table)
                 metrics = self._append_snapshot_prepared_source(
                     source_name=source_name,
                     table=data_table,
-                    attempted_rows=row_count,
+                    attempted_rows=attempted_rows,
                 )
                 self.mark_source_object_ingested(source_object_id, row_count=row_count, table=provenance_table)
                 return metrics
@@ -814,7 +814,7 @@ class DuckLakeWriter:
         self,
         source_object_id: str,
         *,
-        row_count: int,
+        row_count: int | None,
         table: RawDuckLakeProvenanceTable,
     ) -> None:
         self._update_source_object_status(
