@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -153,25 +154,30 @@ def test_hold_ducklake_lock_domains_sets_timeout_orders_domains_and_logs_context
     monkeypatch.setattr("eve_ingest.ducklake.locks.psycopg.connect", lambda *args, **kwargs: connection)
 
     token = None
-    with caplog.at_level("INFO", logger="eve_ingest.ducklake"):
-        with hold_ducklake_lock_domains(
-            catalog_url="postgresql://user:pass@localhost:5432/db",
-            lock_domains=("ducklake:support:raw_market_orders_objects", "ducklake:raw:raw_market_orders"),
-            timeout_seconds=12.5,
-            context=DuckLakeLockContext(
-                dataset="market-history",
-                publication_scope="raw:market_history:source_date=2026-01-01",
-                table="raw_market_history",
-                source_date="2026-01-01",
-                airflow_run_id="airflow-run-123",
-            ),
-        ) as token:
-            assert isinstance(token, DuckLakeLockToken)
-            assert token.is_active is True
-            assert token.held_domains == (
-                "ducklake:raw:raw_market_orders",
-                "ducklake:support:raw_market_orders_objects",
-            )
+    duck_logger = logging.getLogger("eve_ingest.ducklake")
+    duck_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level("INFO", logger="eve_ingest.ducklake"):
+            with hold_ducklake_lock_domains(
+                catalog_url="postgresql://user:pass@localhost:5432/db",
+                lock_domains=("ducklake:support:raw_market_orders_objects", "ducklake:raw:raw_market_orders"),
+                timeout_seconds=12.5,
+                context=DuckLakeLockContext(
+                    dataset="market-history",
+                    publication_scope="raw:market_history:source_date=2026-01-01",
+                    table="raw_market_history",
+                    source_date="2026-01-01",
+                    airflow_run_id="airflow-run-123",
+                ),
+            ) as token:
+                assert isinstance(token, DuckLakeLockToken)
+                assert token.is_active is True
+                assert token.held_domains == (
+                    "ducklake:raw:raw_market_orders",
+                    "ducklake:support:raw_market_orders_objects",
+                )
+    finally:
+        duck_logger.removeHandler(caplog.handler)
 
     assert token is not None
     assert token.is_active is False

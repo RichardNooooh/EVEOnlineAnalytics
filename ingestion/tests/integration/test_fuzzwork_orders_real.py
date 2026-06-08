@@ -85,7 +85,7 @@ def test_process_result_is_idempotent_for_same_fuzzwork_orders_source_object(sha
     assert first_outcome.success is True
     assert first_outcome.source_date == "2026-01-01"
     assert len(first_outcome.write_metrics) == 1
-    assert first_outcome.write_metrics[0].inserted_rows == 0
+    assert first_outcome.write_metrics[0].inserted_rows == 1
     assert first_outcome.write_metrics[0].matched_rows == 0
 
     with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
@@ -137,7 +137,7 @@ def test_process_result_writes_native_tsv_columns_metadata_and_provenance(shared
     assert snapshot_ts.astimezone(UTC).isoformat() == "2026-01-01T00:00:00+00:00"
 
     provenance_rows = shared_con.execute(
-        f'''SELECT source_object_id, status, row_count, source_market_date
+        f'''SELECT source_object_id, status, source_market_date
         FROM "memory"."raw"."{RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS.value}"'''
     ).fetchall()
-    assert provenance_rows == [(expected_source_object_id, "ingested", None, source_market_date)]
+    assert provenance_rows == [(expected_source_object_id, "ingested", source_market_date)]

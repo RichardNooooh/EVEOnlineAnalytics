@@ -80,7 +80,6 @@ _SOURCE_OBJECT_COLUMN_DEFINITIONS: Final[tuple[str, ...]] = (
     "ingested_at TIMESTAMP",
     "status VARCHAR NOT NULL",
     "status_reason VARCHAR",
-    "row_count BIGINT",
 )
 
 _RAW_TABLE_COLUMN_DEFINITIONS: Final[dict[RawDuckLakeTable, tuple[str, ...]]] = {

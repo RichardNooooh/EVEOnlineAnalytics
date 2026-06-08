@@ -318,7 +318,6 @@ def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> P
 
                 writer.mark_source_object_ingested(
                     context.source_object_id,
-                    row_count=total_rows,
                     table=context.provenance_table,
                 )
             return tuple(metrics)

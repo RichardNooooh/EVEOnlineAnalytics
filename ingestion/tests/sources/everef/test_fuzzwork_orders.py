@@ -186,7 +186,6 @@ def test_process_result_uses_append_snapshot_rows_mode(monkeypatch: pytest.Monke
     call_args = writer.publish_source_object_sql_rows.call_args
     call_kwargs = call_args.kwargs
     assert call_kwargs["mode"] is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
-    assert call_kwargs["row_count"] is None
     assert _FUZZWORK_SQL_SCHEMA.strip() in call_args.args[0].sql
 
 
