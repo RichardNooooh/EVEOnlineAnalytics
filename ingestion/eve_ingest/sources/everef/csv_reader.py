@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from dataclasses import dataclass
 from typing import Any
@@ -12,8 +12,7 @@ import pyarrow as pa
 import pyarrow.csv as pac
 
 from eve_ingest.raw_objects import CacheResult
-from eve_ingest.ducklake.writer import DuckLakeWriter
-from eve_ingest.ducklake.writer import DuckLakeSqlSnapshotSource
+from eve_ingest.ducklake.writer import DuckLakeSqlSnapshotSource, DuckLakeWriter
 from eve_ingest.ducklake.raw_tables import (
     DuckLakeWriterMode,
     RawDuckLakeTable,
@@ -40,11 +39,15 @@ class ImmutableSnapshotSourceObjectChangedError(ValueError):
 
 
 @dataclass(frozen=True)
-class _FileBackedPublicationContext:
+class FileBackedPublicationContext:
     metadata: dict[str, Any]
     provenance_table: Any
     source_date_str: str
     source_object_id: str
+
+
+def _elapsed_seconds(start_time: float) -> float:
+    return time.perf_counter() - start_time
 
 
 def _is_retryable_ducklake_conflict(exc: Exception) -> bool:
@@ -166,8 +169,9 @@ def _build_file_backed_publication_context(
     endpoint: str,
     source_market_date: date,
     snapshot_ts: datetime | None,
-    table_key: RawDuckLakeTable,
-) -> _FileBackedPublicationContext:
+    table_key: RawDuckLakeTable | None,
+    provenance_table=None,
+) -> FileBackedPublicationContext:
     source_date_str = str(result.identity_key.get("source_date", "unknown"))
     metadata = build_source_object_metadata(
         result,
@@ -176,9 +180,9 @@ def _build_file_backed_publication_context(
         source_market_date=source_market_date,
         snapshot_ts=snapshot_ts,
     )
-    return _FileBackedPublicationContext(
+    return FileBackedPublicationContext(
         metadata=metadata,
-        provenance_table=provenance_table_for_data_table(table_key),
+        provenance_table=provenance_table or provenance_table_for_data_table(table_key),
         source_date_str=source_date_str,
         source_object_id=metadata["source_object_id"],
     )
@@ -216,7 +220,40 @@ def _log_processed_source_file(
     )
 
 
-def _publish_file_backed_source_object(
+def _log_file_backed_publication_success(
+    *,
+    context: FileBackedPublicationContext,
+    write_metrics: tuple[Any, ...],
+    elapsed_seconds: float,
+    snapshot_ts: datetime | None,
+    log_context: dict[str, Any] | None,
+    table_key: RawDuckLakeTable,
+) -> None:
+    metrics = write_metrics[0]
+    _log_processed_source_file(
+        source_date_str=context.source_date_str,
+        snapshot_ts=snapshot_ts,
+        log_context=log_context,
+        table_key=table_key,
+        metrics=metrics,
+    )
+    logger.debug(
+        "File-backed publication complete source_date=%s table=%s elapsed_seconds=%.3f",
+        context.source_date_str,
+        table_key.value,
+        elapsed_seconds,
+    )
+
+
+def _normalize_write_metrics(metrics: Any) -> tuple[Any, ...]:
+    if metrics is None:
+        return ()
+    if isinstance(metrics, Sequence):
+        return tuple(metrics)
+    return (metrics,)
+
+
+def publish_file_backed_source_object(
     result: CacheResult,
     writer: DuckLakeWriter,
     *,
@@ -224,11 +261,12 @@ def _publish_file_backed_source_object(
     endpoint: str,
     source_market_date: date,
     snapshot_ts: datetime | None,
-    table_key: RawDuckLakeTable,
-    log_context: dict[str, Any] | None,
+    table_key: RawDuckLakeTable | None,
+    provenance_table=None,
     skip_if_ingested: bool,
-    publish_rows: Callable[[_FileBackedPublicationContext], Any],
+    publish_rows: Callable[[FileBackedPublicationContext], Any],
     raise_snapshot_scope_error: bool,
+    log_success: Callable[[FileBackedPublicationContext, tuple[Any, ...], float], None] | None = None,
 ) -> PipelineProcessResult:
     context = _build_file_backed_publication_context(
         result,
@@ -237,36 +275,50 @@ def _publish_file_backed_source_object(
         source_market_date=source_market_date,
         snapshot_ts=snapshot_ts,
         table_key=table_key,
+        provenance_table=provenance_table,
     )
 
-    if skip_if_ingested and _check_append_snapshot_source_object(
-        writer,
-        soid=context.source_object_id,
-        sha256=result.version.sha256,
-        provenance_table=context.provenance_table,
-        table_key=table_key,
-        source_date_str=context.source_date_str,
+    started_at = time.monotonic()
+    if (
+        skip_if_ingested
+        and table_key is not None
+        and _check_append_snapshot_source_object(
+            writer,
+            soid=context.source_object_id,
+            sha256=result.version.sha256,
+            provenance_table=context.provenance_table,
+            table_key=table_key,
+            source_date_str=context.source_date_str,
+        )
     ):
         return PipelineProcessResult(success=True, source_date=context.source_date_str)
 
     try:
+        record_started_at = time.perf_counter()
         writer.record_source_object(context.metadata, table=context.provenance_table)
+        logger.debug(
+            "Recorded source object provenance source_date=%s table=%s duration_seconds=%.3f",
+            context.source_date_str,
+            "unknown" if table_key is None else table_key.value,
+            _elapsed_seconds(record_started_at),
+        )
 
-        metrics = publish_rows(context)
-        if metrics is None:
+        write_metrics = _normalize_write_metrics(publish_rows(context))
+        if not write_metrics:
+            logger.debug(
+                "File-backed publication complete source_date=%s table=%s elapsed_seconds=%.3f result=skipped",
+                context.source_date_str,
+                "unknown" if table_key is None else table_key.value,
+                time.monotonic() - started_at,
+            )
             return PipelineProcessResult(success=True, source_date=context.source_date_str)
 
-        _log_processed_source_file(
-            source_date_str=context.source_date_str,
-            snapshot_ts=snapshot_ts,
-            log_context=log_context,
-            table_key=table_key,
-            metrics=metrics,
-        )
+        if log_success is not None:
+            log_success(context, write_metrics, time.monotonic() - started_at)
         return PipelineProcessResult(
             success=True,
             source_date=context.source_date_str,
-            write_metrics=(metrics,),
+            write_metrics=write_metrics,
         )
     except ImmutableSnapshotSourceObjectChangedError:
         raise
@@ -298,6 +350,7 @@ def parse_csv_to_arrow(
     *,
     read_options: pac.ReadOptions | None = None,
     parse_options: pac.ParseOptions | None = None,
+    convert_options: pac.ConvertOptions | None = None,
 ) -> pa.Table:
     path = result.path
     source_date = str(result.identity_key["source_date"])
@@ -310,15 +363,22 @@ def parse_csv_to_arrow(
             content_length,
             expected,
         )
-    table = pac.read_csv(path, read_options=read_options, parse_options=parse_options)
+    parse_started_at = time.perf_counter()
+    table = pac.read_csv(
+        path,
+        read_options=read_options,
+        parse_options=parse_options,
+        convert_options=convert_options,
+    )
     n = len(table)
     logger.debug(
-        "Parsed CSV to Arrow source_date=%s rows=%d columns=%d path=%s sha256_prefix=%s",
+        "Parsed CSV to Arrow source_date=%s rows=%d columns=%d path=%s sha256_prefix=%s duration_seconds=%.3f",
         source_date,
         n,
         len(table.column_names),
         path,
         result.version.sha256[:16],
+        _elapsed_seconds(parse_started_at),
     )
     if n == 0:
         logger.warning(
@@ -344,10 +404,19 @@ def publish_file_backed_rows(
     snapshot_ts: datetime | None = None,
     log_context: dict[str, Any] | None = None,
 ) -> PipelineProcessResult:
-    def publish_rows(context: _FileBackedPublicationContext):
+    def publish_rows(context: FileBackedPublicationContext):
+        parse_started_at = time.perf_counter()
         table = parse_table(result)
         n = len(table)
+        logger.debug(
+            "Prepared file-backed source table source_date=%s table=%s rows=%d duration_seconds=%.3f",
+            context.source_date_str,
+            table_key.value,
+            n,
+            _elapsed_seconds(parse_started_at),
+        )
 
+        enrich_started_at = time.perf_counter()
         table = table.append_column(
             "source_object_id",
             pa.array([context.source_object_id] * n, type=pa.utf8()),
@@ -361,7 +430,15 @@ def publish_file_backed_rows(
                 "snapshot_ts",
                 pa.array([snapshot_ts] * n, type=pa.timestamp("us", tz="UTC")),
             )
+        logger.debug(
+            "Augmented file-backed source table source_date=%s table=%s rows=%d duration_seconds=%.3f",
+            context.source_date_str,
+            table_key.value,
+            n,
+            _elapsed_seconds(enrich_started_at),
+        )
 
+        publish_started_at = time.perf_counter()
         metrics = _publish_transactional_rows_with_retry(
             writer,
             table=table,
@@ -374,9 +451,27 @@ def publish_file_backed_rows(
             key_columns=key_columns,
             source_date_str=context.source_date_str,
         )
+        logger.debug(
+            "Published file-backed source table source_date=%s table=%s duration_seconds=%.3f",
+            context.source_date_str,
+            table_key.value,
+            _elapsed_seconds(publish_started_at),
+        )
         return metrics
 
-    return _publish_file_backed_source_object(
+    def log_success(
+        context: FileBackedPublicationContext, write_metrics: tuple[Any, ...], elapsed_seconds: float
+    ) -> None:
+        _log_file_backed_publication_success(
+            context=context,
+            write_metrics=write_metrics,
+            elapsed_seconds=elapsed_seconds,
+            snapshot_ts=snapshot_ts,
+            log_context=log_context,
+            table_key=table_key,
+        )
+
+    return publish_file_backed_source_object(
         result,
         writer,
         source_system=source_system,
@@ -384,10 +479,10 @@ def publish_file_backed_rows(
         source_market_date=source_market_date,
         snapshot_ts=snapshot_ts,
         table_key=table_key,
-        log_context=log_context,
         skip_if_ingested=mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
         publish_rows=publish_rows,
         raise_snapshot_scope_error=False,
+        log_success=log_success,
     )
 
 
@@ -403,7 +498,7 @@ def publish_file_backed_snapshot_rows(
     sql_source: DuckLakeSqlSnapshotSource,
     log_context: dict[str, Any] | None = None,
 ) -> PipelineProcessResult:
-    def publish_rows(context: _FileBackedPublicationContext):
+    def publish_rows(context: FileBackedPublicationContext):
         return _publish_snapshot_rows_with_retry(
             writer,
             soid=context.source_object_id,
@@ -418,10 +513,23 @@ def publish_file_backed_snapshot_rows(
                 provenance_table=context.provenance_table,
                 source_object_id=context.source_object_id,
                 mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+                row_count=None,
             ),
         )
 
-    return _publish_file_backed_source_object(
+    def log_success(
+        context: FileBackedPublicationContext, write_metrics: tuple[Any, ...], elapsed_seconds: float
+    ) -> None:
+        _log_file_backed_publication_success(
+            context=context,
+            write_metrics=write_metrics,
+            elapsed_seconds=elapsed_seconds,
+            snapshot_ts=snapshot_ts,
+            log_context=log_context,
+            table_key=table_key,
+        )
+
+    return publish_file_backed_source_object(
         result,
         writer,
         source_system=source_system,
@@ -429,8 +537,8 @@ def publish_file_backed_snapshot_rows(
         source_market_date=source_market_date,
         snapshot_ts=snapshot_ts,
         table_key=table_key,
-        log_context=log_context,
         skip_if_ingested=True,
         publish_rows=publish_rows,
         raise_snapshot_scope_error=True,
+        log_success=log_success,
     )
