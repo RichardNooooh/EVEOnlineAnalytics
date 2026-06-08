@@ -57,10 +57,8 @@ class _FakeWriter:
     def mark_source_object_parsed(self, source_object_id: str, *, table) -> None:
         self.calls.append(("mark_parsed", {"source_object_id": source_object_id, "table": table}))
 
-    def mark_source_object_ingested(self, source_object_id: str, *, row_count: int, table) -> None:
-        self.calls.append(
-            ("mark_ingested", {"source_object_id": source_object_id, "row_count": row_count, "table": table})
-        )
+    def mark_source_object_ingested(self, source_object_id: str, *, table) -> None:
+        self.calls.append(("mark_ingested", {"source_object_id": source_object_id, "table": table}))
 
     def mark_source_object_failed(self, source_object_id: str, *, reason: str, table) -> None:
         self.calls.append(("mark_failed", {"source_object_id": source_object_id, "reason": reason, "table": table}))
@@ -73,7 +71,6 @@ class _FakeWriter:
         provenance_table,
         source_object_id: str,
         mode: DuckLakeWriterMode,
-        row_count: int,
         key_columns: list[str],
     ):
         with self.transaction():
@@ -90,7 +87,7 @@ class _FakeWriter:
                     },
                 )
             )
-            self.mark_source_object_ingested(source_object_id, row_count=row_count, table=provenance_table)
+            self.mark_source_object_ingested(source_object_id, table=provenance_table)
         return DuckLakeWriteMetrics(
             table=data_table,
             mode=mode,
@@ -108,7 +105,6 @@ class _FakeWriter:
         provenance_table,
         source_object_id: str,
         mode: DuckLakeWriterMode,
-        row_count: int | None = None,
     ):
         with self.transaction():
             self.mark_source_object_parsed(source_object_id, table=provenance_table)
@@ -122,7 +118,7 @@ class _FakeWriter:
                     },
                 )
             )
-            self.mark_source_object_ingested(source_object_id, row_count=0, table=provenance_table)
+            self.mark_source_object_ingested(source_object_id, table=provenance_table)
         return DuckLakeWriteMetrics(
             table=data_table,
             mode=mode,
@@ -310,7 +306,6 @@ def test_publish_file_backed_rows_marks_failure_after_transaction_rollback() -> 
         provenance_table,
         source_object_id: str,
         mode: DuckLakeWriterMode,
-        row_count: int,
         key_columns: list[str],
     ):
         writer.calls.append(("publish_rows", {"rows": len(arrow_table)}))
@@ -355,40 +350,45 @@ def test_publish_file_backed_rows_retries_retryable_ducklake_conflict(caplog, mo
 
     monkeypatch.setattr(csv_reader.random, "uniform", lambda start, end: 0.05)
     monkeypatch.setattr(csv_reader.time, "sleep", sleep_calls.append)
-    caplog.set_level("WARNING")
+    everef_logger = logging.getLogger("eve_ingest.sources.everef")
+    everef_logger.addHandler(caplog.handler)
+    try:
+        caplog.set_level("WARNING")
 
-    outcome = publish_file_backed_rows(
-        result,
-        writer,
-        source_system="everef",
-        endpoint="market_orders",
-        source_market_date=date(2026, 1, 1),
-        table_key=RawDuckLakeTable.MARKET_ORDERS,
-        mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
-        key_columns=[],
-        parse_table=lambda _: parsed_table,
-        snapshot_ts=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+        outcome = publish_file_backed_rows(
+            result,
+            writer,
+            source_system="everef",
+            endpoint="market_orders",
+            source_market_date=date(2026, 1, 1),
+            table_key=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+            key_columns=[],
+            parse_table=lambda _: parsed_table,
+            snapshot_ts=datetime(2026, 1, 1, tzinfo=UTC),
+        )
 
-    assert outcome.success is True
-    assert [call[0] for call in writer.calls] == [
-        "source_object_ingested_sha256",
-        "record",
-        "source_object_ingested_sha256",
-        "transaction_enter",
-        "mark_parsed",
-        "publish_rows",
-        "mark_ingested",
-        "transaction_commit_error",
-        "source_object_ingested_sha256",
-        "transaction_enter",
-        "mark_parsed",
-        "publish_rows",
-        "mark_ingested",
-        "transaction_commit",
-    ]
-    assert sleep_calls == [pytest.approx(0.25)]
-    assert "Retrying DuckLake insert-style publication after conflict" in caplog.text
+        assert outcome.success is True
+        assert [call[0] for call in writer.calls] == [
+            "source_object_ingested_sha256",
+            "record",
+            "source_object_ingested_sha256",
+            "transaction_enter",
+            "mark_parsed",
+            "publish_rows",
+            "mark_ingested",
+            "transaction_commit_error",
+            "source_object_ingested_sha256",
+            "transaction_enter",
+            "mark_parsed",
+            "publish_rows",
+            "mark_ingested",
+            "transaction_commit",
+        ]
+        assert sleep_calls == [pytest.approx(0.25)]
+        assert "Retrying DuckLake insert-style publication after conflict" in caplog.text
+    finally:
+        everef_logger.removeHandler(caplog.handler)
 
 
 def test_publish_file_backed_rows_retries_retryable_ducklake_conflict_after_rollback(caplog, monkeypatch) -> None:
@@ -409,7 +409,6 @@ def test_publish_file_backed_rows_retries_retryable_ducklake_conflict_after_roll
         provenance_table,
         source_object_id: str,
         mode: DuckLakeWriterMode,
-        row_count: int,
         key_columns: list[str],
     ):
         nonlocal write_attempts
@@ -441,34 +440,39 @@ def test_publish_file_backed_rows_retries_retryable_ducklake_conflict_after_roll
     writer.publish_source_object_rows = fail_once_publish  # type: ignore[method-assign]
     monkeypatch.setattr(csv_reader.random, "uniform", lambda start, end: 0.05)
     monkeypatch.setattr(csv_reader.time, "sleep", sleep_calls.append)
-    caplog.set_level("WARNING")
+    everef_logger = logging.getLogger("eve_ingest.sources.everef")
+    everef_logger.addHandler(caplog.handler)
+    try:
+        caplog.set_level("WARNING")
 
-    outcome = publish_file_backed_rows(
-        result,
-        writer,
-        source_system="everef",
-        endpoint="market_orders",
-        source_market_date=date(2026, 1, 1),
-        table_key=RawDuckLakeTable.MARKET_ORDERS,
-        mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
-        key_columns=[],
-        parse_table=lambda _: parsed_table,
-        snapshot_ts=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+        outcome = publish_file_backed_rows(
+            result,
+            writer,
+            source_system="everef",
+            endpoint="market_orders",
+            source_market_date=date(2026, 1, 1),
+            table_key=RawDuckLakeTable.MARKET_ORDERS,
+            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+            key_columns=[],
+            parse_table=lambda _: parsed_table,
+            snapshot_ts=datetime(2026, 1, 1, tzinfo=UTC),
+        )
 
-    assert outcome.success is True
-    assert [call[0] for call in writer.calls] == [
-        "source_object_ingested_sha256",
-        "record",
-        "source_object_ingested_sha256",
-        "write_prepared",
-        "source_object_ingested_sha256",
-        "write_prepared",
-    ]
-    assert writer.calls[3][1]["attempt"] == 1
-    assert writer.calls[5][1]["attempt"] == 2
-    assert sleep_calls == [pytest.approx(0.25)]
-    assert "Retrying DuckLake insert-style publication after conflict" in caplog.text
+        assert outcome.success is True
+        assert [call[0] for call in writer.calls] == [
+            "source_object_ingested_sha256",
+            "record",
+            "source_object_ingested_sha256",
+            "write_prepared",
+            "source_object_ingested_sha256",
+            "write_prepared",
+        ]
+        assert writer.calls[3][1]["attempt"] == 1
+        assert writer.calls[5][1]["attempt"] == 2
+        assert sleep_calls == [pytest.approx(0.25)]
+        assert "Retrying DuckLake insert-style publication after conflict" in caplog.text
+    finally:
+        everef_logger.removeHandler(caplog.handler)
 
 
 def test_publish_file_backed_rows_does_not_retry_non_conflict_failure(monkeypatch) -> None:
@@ -561,7 +565,6 @@ def test_publish_file_backed_snapshot_rows_raises_snapshot_scope_publish_error()
         provenance_table,
         source_object_id: str,
         mode: DuckLakeWriterMode,
-        row_count: int | None = None,
     ):
         writer.calls.append(("publish_sql_rows", {"sql": sql_source.sql, "table": data_table, "mode": mode}))
         raise RuntimeError("boom")

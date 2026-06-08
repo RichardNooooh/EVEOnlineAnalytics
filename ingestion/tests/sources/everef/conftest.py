@@ -40,9 +40,8 @@ class FakeConnection:
         normalized_query = " ".join(query.split()).upper()
         if normalized_query.startswith("MERGE INTO") and "SOURCE_OBJECT_ID" in normalized_query and params:
             self.provenance_objects[str(params[0])] = {"source_object_id": params[0]}
-        elif normalized_query.startswith("UPDATE") and "RETURNING SOURCE_OBJECT_ID" in normalized_query and params:
-            source_object_id = str(params[-1])
-            self.fetchall_result = [(source_object_id,)] if source_object_id in self.provenance_objects else []
+        elif normalized_query.startswith("UPDATE") and "SOURCE_OBJECT_ID" in normalized_query and params:
+            pass
         elif (
             normalized_query.startswith("SELECT 1")
             and "SOURCE_OBJECT_ID" in normalized_query

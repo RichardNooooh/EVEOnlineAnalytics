@@ -40,8 +40,6 @@ class FakeConnection:
         self.closed = False
         self.raise_on_execute: str | None = None
         self.fetchall_result: list[tuple[object, ...]] = []
-        self._next_fetchall_result: list[tuple[object, ...]] | None = None
-        self.source_object_update_rows: list[tuple[object, ...]] = [("soid-1",)]
         self.fetchone_results: list[tuple[object, ...]] = []
 
     def execute(self, query: str, params: list[str] | None = None) -> FakeConnection:
@@ -49,15 +47,9 @@ class FakeConnection:
             raise RuntimeError("boom")
         self.calls.append((query, params))
         self.events.append(("execute", query))
-        if "RETURNING source_object_id" in query:
-            self._next_fetchall_result = self.source_object_update_rows
         return self
 
     def fetchall(self) -> list[tuple[object, ...]]:
-        if self._next_fetchall_result is not None:
-            result = self._next_fetchall_result
-            self._next_fetchall_result = None
-            return result
         return self.fetchall_result
 
     def fetchone(self) -> tuple[object, ...]:
@@ -215,7 +207,7 @@ def test_bootstrap_partitions_snapshot_order_tables(monkeypatch) -> None:
 
 def test_writer_replaces_table(monkeypatch) -> None:
     con = FakeConnection()
-    con.fetchone_results = [(1,), (0,)]
+    con.fetchone_results = [(1,), (0,), (2,)]
     arrow_table = pa.table({"b": [2], "a": [1]})
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
@@ -267,7 +259,7 @@ def test_writer_authoritative_mode_merges_with_keys(monkeypatch) -> None:
 
 def test_writer_append_snapshot_rows_inserts_by_name_without_merge_or_counts(monkeypatch) -> None:
     con = FakeConnection()
-    con.fetchone_results = [(1,)]
+    con.fetchone_results = [(1,), (2,)]
     arrow_table = pa.table(
         {
             "price": [10.0, 20.0],
@@ -360,7 +352,7 @@ def test_writer_returns_write_metrics(monkeypatch) -> None:
 
 def test_replace_table_returns_replaced_row_metrics(monkeypatch) -> None:
     con = FakeConnection()
-    con.fetchone_results = [(1,), (7,)]
+    con.fetchone_results = [(1,), (7,), (1,)]
     arrow_table = pa.table({"id": [1]})
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
@@ -772,6 +764,7 @@ def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
 
 def test_publish_source_object_sql_rows_uses_temp_sql_view_and_no_arrow(monkeypatch) -> None:
     con = FakeConnection()
+    con.fetchone_results = [(1,)]
 
     monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
     monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
@@ -791,7 +784,7 @@ def test_publish_source_object_sql_rows_uses_temp_sql_view_and_no_arrow(monkeypa
     queries = _queries(con)
     assert any("CREATE OR REPLACE TEMP VIEW" in query for query in queries)
     assert any("INSERT INTO" in query and RawDuckLakeTable.MARKET_ORDERS.value in query for query in queries)
-    assert metrics.inserted_rows == 0
+    assert metrics.inserted_rows == 1
 
 
 def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) -> None:
@@ -811,9 +804,7 @@ def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) 
             },
             table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
         )
-        writer.mark_source_object_ingested(
-            "soid-1", row_count=7, table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS
-        )
+        writer.mark_source_object_ingested("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
 
     merge_queries = [call for call in con.calls if call[0].lstrip().startswith("MERGE INTO")]
     update_queries = [call for call in con.calls if call[0].lstrip().startswith("UPDATE")]
@@ -821,21 +812,6 @@ def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) 
     assert len(update_queries) == 1
     assert "source.source_object_id" in merge_queries[0][0]
     assert update_queries[0][1][-1] == "soid-1"
-
-
-def test_mark_source_object_status_raises_when_row_missing(monkeypatch) -> None:
-    con = FakeConnection()
-    con.source_object_update_rows = []
-
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
-
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        with pytest.raises(RuntimeError, match="Missing source object provenance row"):
-            writer.mark_source_object_failed(
-                "missing-soid",
-                reason="boom",
-                table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
-            )
 
 
 def test_ensure_expected_partitioning_skips_alter_when_metadata_matches(monkeypatch) -> None:

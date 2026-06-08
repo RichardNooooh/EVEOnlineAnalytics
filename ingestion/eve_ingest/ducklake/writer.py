@@ -591,11 +591,12 @@ class DuckLakeWriter:
                     SELECT * FROM {quoted_source}
                     """
                 )
+            attempted_rows = int(con.execute(f"SELECT COUNT(*) FROM {quoted_source}").fetchone()[0])
             metrics = DuckLakeWriteMetrics(
                 table=table,
                 mode=mode,
-                attempted_rows=len(arrow_table),
-                inserted_rows=len(arrow_table),
+                attempted_rows=attempted_rows,
+                inserted_rows=attempted_rows,
                 matched_rows=0,
                 replaced_rows=replaced_rows,
             )
@@ -606,7 +607,6 @@ class DuckLakeWriter:
             metrics = self._append_snapshot_prepared_source(
                 source_name=source_name,
                 table=table,
-                attempted_rows=len(arrow_table),
             )
             return metrics
 
@@ -659,7 +659,7 @@ class DuckLakeWriter:
         metrics = DuckLakeWriteMetrics(
             table=table,
             mode=mode,
-            attempted_rows=len(arrow_table),
+            attempted_rows=matched_rows + inserted_rows,
             inserted_rows=inserted_rows,
             matched_rows=matched_rows,
             replaced_rows=0,
@@ -688,11 +688,8 @@ class DuckLakeWriter:
         provenance_table: RawDuckLakeProvenanceTable,
         source_object_id: str,
         mode: DuckLakeWriterMode,
-        row_count: int,
         key_columns: Sequence[str] = (),
     ) -> DuckLakeWriteMetrics:
-        """Mark parsed, write rows, and mark ingested in one transaction."""
-
         self.validate_write_request(arrow_table, table=data_table, mode=mode, key_columns=key_columns)
         with self.prepare_arrow_source(arrow_table) as source_name:
             with self.transaction():
@@ -704,7 +701,7 @@ class DuckLakeWriter:
                     mode=mode,
                     key_columns=key_columns,
                 )
-                self.mark_source_object_ingested(source_object_id, row_count=row_count, table=provenance_table)
+                self.mark_source_object_ingested(source_object_id, table=provenance_table)
                 return metrics
 
     def publish_source_object_sql_rows(
@@ -715,21 +712,18 @@ class DuckLakeWriter:
         provenance_table: RawDuckLakeProvenanceTable,
         source_object_id: str,
         mode: DuckLakeWriterMode,
-        row_count: int | None = None,
     ) -> DuckLakeWriteMetrics:
         if mode is not DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS:
             raise ValueError("publish_source_object_sql_rows only supports APPEND_SNAPSHOT_ROWS")
         self._require_data_table_lock(data_table)
         with self.prepare_sql_source(sql_source) as source_name:
-            attempted_rows = 0 if row_count is None else row_count
             with self.transaction():
                 self.mark_source_object_parsed(source_object_id, table=provenance_table)
                 metrics = self._append_snapshot_prepared_source(
                     source_name=source_name,
                     table=data_table,
-                    attempted_rows=attempted_rows,
                 )
-                self.mark_source_object_ingested(source_object_id, row_count=row_count, table=provenance_table)
+                self.mark_source_object_ingested(source_object_id, table=provenance_table)
                 return metrics
 
     def _append_snapshot_prepared_source(
@@ -737,7 +731,6 @@ class DuckLakeWriter:
         *,
         source_name: str,
         table: RawDuckLakeTable,
-        attempted_rows: int,
     ) -> DuckLakeWriteMetrics:
         con = self._con
         if con is None:
@@ -753,6 +746,7 @@ class DuckLakeWriter:
             SELECT * FROM {quoted_source}
             """
         )
+        attempted_rows = int(con.execute(f"SELECT COUNT(*) FROM {quoted_source}").fetchone()[0])
         metrics = DuckLakeWriteMetrics(
             table=table,
             mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
@@ -814,7 +808,6 @@ class DuckLakeWriter:
         self,
         source_object_id: str,
         *,
-        row_count: int | None,
         table: RawDuckLakeProvenanceTable,
     ) -> None:
         self._update_source_object_status(
@@ -823,7 +816,6 @@ class DuckLakeWriter:
             data={
                 "status": "ingested",
                 "ingested_at": datetime_now_utc(),
-                "row_count": row_count,
                 "status_reason": None,
             },
         )
@@ -882,17 +874,14 @@ class DuckLakeWriter:
         quoted_target = _table_sql(self._attach.alias, provenance_target_for(table))
         columns = list(data.keys())
         set_list = ", ".join(f"{_ident(column)} = ?" for column in columns)
-        rows = con.execute(
+        con.execute(
             f"""
             UPDATE {quoted_target}
             SET {set_list}
             WHERE source_object_id = ?
-            RETURNING source_object_id
             """,
             [*data.values(), source_object_id],
-        ).fetchall()
-        if not rows:
-            raise RuntimeError(f"Missing source object provenance row source_object_id={source_object_id}")
+        )
 
     def source_object_version_is_ingested(
         self,

@@ -91,7 +91,6 @@ def _publish_transactional_rows_with_retry(
     writer: DuckLakeWriter,
     *,
     table: pa.Table,
-    row_count: int,
     soid: str,
     sha256: str,
     provenance_table,
@@ -114,7 +113,6 @@ def _publish_transactional_rows_with_retry(
             provenance_table=provenance_table,
             source_object_id=soid,
             mode=mode,
-            row_count=row_count,
             key_columns=key_columns,
         ),
     )
@@ -442,7 +440,6 @@ def publish_file_backed_rows(
         metrics = _publish_transactional_rows_with_retry(
             writer,
             table=table,
-            row_count=n,
             soid=context.source_object_id,
             sha256=result.version.sha256,
             provenance_table=context.provenance_table,
@@ -513,7 +510,6 @@ def publish_file_backed_snapshot_rows(
                 provenance_table=context.provenance_table,
                 source_object_id=context.source_object_id,
                 mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
-                row_count=None,
             ),
         )
 

@@ -59,7 +59,6 @@ def test_source_object_schema_definition_is_shared() -> None:
         "ingested_at TIMESTAMP",
         "status VARCHAR NOT NULL",
         "status_reason VARCHAR",
-        "row_count BIGINT",
     )
 
 
