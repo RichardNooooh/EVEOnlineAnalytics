@@ -3,8 +3,7 @@ disable_existing_loggers: false
 
 formatters:
   standard:
-    format: '%(asctime)s [%(levelname)s|%(name)s] %(message)s'
-    datefmt: '%Y-%m-%dT%H:%M:%S%z'
+    format: '%(levelname)s [%(name)s]: %(message)s'
 
 handlers:
   stderr:
@@ -14,8 +13,8 @@ handlers:
     stream: ext://sys.stderr
 
 loggers:
-  ingest:
-    level: INFO
+  eve_ingest:
+    level: DEBUG
     handlers:
       - stderr
     propagate: false
