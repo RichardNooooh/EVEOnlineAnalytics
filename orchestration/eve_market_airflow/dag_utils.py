@@ -140,8 +140,8 @@ def build_backfill_dag(
 
     params = (
         {
-            "start_date": Param("2025-01-01", type="string"),
-            "end_date": Param("2025-01-03", type="string"),
+            "start_date": Param("2026-01-01", type="string"),
+            "end_date": Param("2026-01-01", type="string"),
         }
         if has_date_range
         else None
@@ -166,8 +166,8 @@ def build_backfill_dag(
 
 def build_bootstrap_backfill_dag(*, dag_id: str, tags: list[str]):
     params = {
-        "start_date": Param("2025-01-01", type="string"),
-        "end_date": Param("2025-01-03", type="string"),
+        "start_date": Param("2026-01-01", type="string"),
+        "end_date": Param("2026-01-01", type="string"),
     }
 
     @dag(
