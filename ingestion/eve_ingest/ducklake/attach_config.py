@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl, unquote, urlparse
 
 from eve_ingest.util import DEFAULT_DUCKLAKE_CATALOG, DEFAULT_DUCKLAKE_METADATA_SCHEMA, DEFAULT_DUCKLAKE_RAW_DATA_PATH
 
-logger = logging.getLogger("eve_ingest.ducklake")
+logger = logging.getLogger(__name__)
 
 DEFAULT_DUCKLAKE_ALIAS = "ducklake"
 DEFAULT_RAW_SCHEMA = "raw"

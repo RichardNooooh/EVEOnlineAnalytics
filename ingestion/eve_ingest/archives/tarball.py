@@ -10,7 +10,7 @@ from types import TracebackType
 import logging
 
 
-logger = logging.getLogger("eve_ingest.archives")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)

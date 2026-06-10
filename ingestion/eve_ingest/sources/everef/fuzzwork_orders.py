@@ -19,7 +19,7 @@ from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.runner import run_dataset_pipeline
 
-logger = logging.getLogger("eve_ingest.sources.everef")
+logger = logging.getLogger(__name__)
 
 _FUZZWORK_RE = re.compile(r'href="[^"]*(fuzzwork-orderset-\d+-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.csv\.gz)"')
 
@@ -28,7 +28,7 @@ PUBLISHER_SPEC = DatasetPublisherSpec(
     update_mode=UpdateMode.SNAPSHOT,
     data_tables=(RawDuckLakeTable.FUZZWORK_ORDERS,),
     provenance_tables=(RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS,),
-    write_policy=AppendSnapshotRows(batch_scope="source_date"),
+    write_policy=AppendSnapshotRows(),
     publication_scope=SourceDateScope("fuzzwork_orders"),
 )
 

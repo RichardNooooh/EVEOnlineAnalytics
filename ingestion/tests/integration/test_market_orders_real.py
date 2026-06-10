@@ -102,7 +102,7 @@ def test_process_result_is_idempotent_for_same_market_orders_source_object(share
             data_tables=(RawDuckLakeTable.MARKET_ORDERS,),
             provenance_tables=(RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,),
             publication_scope=SourceDateScope("market_orders"),
-            write_policy=AppendSnapshotRows(batch_scope="source_date"),
+            write_policy=AppendSnapshotRows(),
         )
         prep_ctx = SourcePreparationContext(session=session)
         service = PublicationService(
@@ -180,7 +180,7 @@ def test_process_result_writes_native_metadata_and_provenance(shared_con, tmp_pa
             data_tables=(RawDuckLakeTable.MARKET_ORDERS,),
             provenance_tables=(RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,),
             publication_scope=SourceDateScope("market_orders"),
-            write_policy=AppendSnapshotRows(batch_scope="source_date"),
+            write_policy=AppendSnapshotRows(),
         )
         prep_ctx = SourcePreparationContext(session=session)
         service = PublicationService(

@@ -25,7 +25,7 @@ from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.runner import run_dataset_pipeline
 from eve_ingest.sources.everef.discovery import EVEREF_BASE
 
-logger = logging.getLogger("eve_ingest.sources.everef")
+logger = logging.getLogger(__name__)
 
 
 _REFERENCE_TABLES: dict[str, RawDuckLakeTable] = {
