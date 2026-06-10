@@ -69,20 +69,49 @@ def build_listed_objects(
     url_prefix: str,
     filename_pattern: re.Pattern[str],
     identity_key_fn: Callable[[str, date], dict[str, str]],
+    client: EverefSnapshotClient | None = None,
+) -> list[CacheObject]:
+    if client is None:
+        with EverefSnapshotClient() as owned_client:
+            return _build_listed_objects(
+                start_date,
+                end_date,
+                url_prefix=url_prefix,
+                filename_pattern=filename_pattern,
+                identity_key_fn=identity_key_fn,
+                client=owned_client,
+            )
+    return _build_listed_objects(
+        start_date,
+        end_date,
+        url_prefix=url_prefix,
+        filename_pattern=filename_pattern,
+        identity_key_fn=identity_key_fn,
+        client=client,
+    )
+
+
+def _build_listed_objects(
+    start_date: date,
+    end_date: date,
+    *,
+    url_prefix: str,
+    filename_pattern: re.Pattern[str],
+    identity_key_fn: Callable[[str, date], dict[str, str]],
+    client: EverefSnapshotClient,
 ) -> list[CacheObject]:
     objects: list[CacheObject] = []
     date_count = 0
-    with EverefSnapshotClient() as client:
-        for d in iter_dates(start_date, end_date):
-            date_count += 1
-            filenames = list_snapshots(url_prefix, d, filename_pattern, client=client)
-            objects.extend(
-                CacheObject(
-                    source_url=f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/{filename}",
-                    identity_key=identity_key_fn(filename, d),
-                )
-                for filename in filenames
+    for d in iter_dates(start_date, end_date):
+        date_count += 1
+        filenames = list_snapshots(url_prefix, d, filename_pattern, client=client)
+        objects.extend(
+            CacheObject(
+                source_url=f"{EVEREF_BASE}/{url_prefix}/{d.year}/{d.isoformat()}/{filename}",
+                identity_key=identity_key_fn(filename, d),
             )
+            for filename in filenames
+        )
     logger.info(
         "Collect cache objects date_count=%d total_snapshots=%d",
         date_count,

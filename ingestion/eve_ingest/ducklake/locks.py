@@ -13,6 +13,31 @@ from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLa
 
 logger = logging.getLogger("eve_ingest.ducklake")
 
+############################
+# Lock Model Scope
+############################
+#
+# DuckLake advisory locks (this module) protect only DuckLake raw table mutations
+# and DuckLake provenance table mutations. They are acquired via PostgreSQL
+# pg_advisory_lock and released when the context manager exits.
+#
+# State NOT protected by these locks:
+#   - Raw-object ledger metadata and publication markers (PostgreSQL, managed
+#     via raw-object ledger transactions in PublicationTracker).
+#   - Raw filesystem files (downloaded archives on disk).
+#
+# These three systems (DuckLake, PostgreSQL raw-object ledger, raw filesystem)
+# are not transactionally coupled to each other. Each has its own consistency
+# boundary. See runner.py for the eventual-consistency discussion between
+# DuckLake commits and raw-object publication markers.
+#
+# Lock domains are derived from data and provenance table names only. They do
+# not cover publication-scope-level state such as raw-object ledger rows or
+# filesystem paths. Any code that mutates non-DuckLake state must not assume
+# it is protected by the DuckLake lock.
+#
+############################
+
 
 ############################
 # Lock Domains
@@ -107,6 +132,7 @@ class DuckLakeLockToken:
     """Proof that specific DuckLake advisory lock domains are currently held."""
 
     held_domains: tuple[str, ...]
+    # held_domains is immutable; _active is lifecycle state toggled only by the lock context manager.
     _active: bool = field(repr=False, compare=False)
 
     def __init__(
@@ -242,8 +268,7 @@ def hold_ducklake_lock_domains(
         timeout_seconds,
         log_context,
     )
-    connection = psycopg.connect(postgresql_uri(catalog_url), autocommit=True)
-    try:
+    with psycopg.connect(postgresql_uri(catalog_url), autocommit=True) as connection:
         timeout_ms = str(int(timeout_seconds * 1000))
         with connection.cursor() as cursor:
             cursor.execute("select set_config('statement_timeout', %s, false)", (timeout_ms,))
@@ -263,9 +288,7 @@ def hold_ducklake_lock_domains(
             yield token
         finally:
             object.__setattr__(token, "_active", False)
-    finally:
-        logger.info("Releasing DuckLake advisory locks domains=%s%s", list(ordered_domains), log_context)
-        connection.close()
+            logger.info("Releasing DuckLake advisory locks domains=%s%s", list(ordered_domains), log_context)
 
 
 ############################

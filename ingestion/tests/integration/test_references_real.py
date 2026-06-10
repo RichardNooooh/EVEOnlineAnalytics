@@ -15,6 +15,8 @@ from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLa
 from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
 from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.service import PublicationService
+from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.specs import DatasetPublisherSpec, ReplaceReferenceTables, StaticScope
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.reference_data import publish_one
@@ -131,7 +133,7 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
         ),
         provenance_tables=(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
         publication_scope=StaticScope("raw:references:full_extract"),
-        write_policy=ReplaceReferenceTables(transactional=True),
+        write_policy=ReplaceReferenceTables(),
     )
     result = make_cache_result(
         str(archive_path),
@@ -143,11 +145,17 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
     with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
         raw_tables = RawTablePublisher(session, lock_token=lock_token)
         provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
-        ctx = PublishContext(
-            spec=spec,
-            session=session,
+        prep_ctx = SourcePreparationContext(session=session)
+        service = PublicationService(
             raw_tables=raw_tables,
             provenance=provenance,
+            session=session,
+            spec=spec,
+        )
+        ctx = PublishContext(
+            spec=spec,
+            prep_ctx=prep_ctx,
+            service=service,
             publication_scope="raw:references:full_extract",
         )
         outcome = publish_one(result, ctx)
@@ -182,7 +190,7 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
 
     # Verify dataset-scoped provenance has an entry for the archive
     so_entries = shared_con.execute(
-        f'SELECT source_object_id, source_system, endpoint, status FROM "memory"."raw"."{RawDuckLakeProvenanceTable.REFERENCE_OBJECTS.value}"'
+        f'SELECT source_ref_id, source_system, endpoint, status FROM "memory"."raw"."{RawDuckLakeProvenanceTable.REFERENCE_OBJECTS.value}"'
     ).fetchall()
     assert len(so_entries) == 1
     assert so_entries[0][1] == "everef"
@@ -201,7 +209,7 @@ def test_process_references_result_marks_failed_on_archive_error(shared_con, tmp
         data_tables=(RawDuckLakeTable.REFERENCE_TYPES,),
         provenance_tables=(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
         publication_scope=StaticScope("raw:references:full_extract"),
-        write_policy=ReplaceReferenceTables(transactional=True),
+        write_policy=ReplaceReferenceTables(),
     )
     result = make_cache_result(
         str(broken_path),
@@ -213,11 +221,17 @@ def test_process_references_result_marks_failed_on_archive_error(shared_con, tmp
     with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
         raw_tables = RawTablePublisher(session, lock_token=lock_token)
         provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
-        ctx = PublishContext(
-            spec=spec,
-            session=session,
+        prep_ctx = SourcePreparationContext(session=session)
+        service = PublicationService(
             raw_tables=raw_tables,
             provenance=provenance,
+            session=session,
+            spec=spec,
+        )
+        ctx = PublishContext(
+            spec=spec,
+            prep_ctx=prep_ctx,
+            service=service,
             publication_scope="raw:references:full_extract",
         )
         with pytest.raises((ValueError, RuntimeError, tarfile.ReadError)):

@@ -38,18 +38,18 @@ class SourceObjectProvenanceRepository:
         self._require_provenance_table_lock(table)
         self._merge_source_object(metadata, table=table)
 
-    def mark_parsed(self, source_object_id: str, *, table: RawDuckLakeProvenanceTable) -> None:
+    def mark_parsed(self, source_ref_id: str, *, table: RawDuckLakeProvenanceTable) -> None:
         self._require_provenance_table_lock(table)
         self._update_source_object_status(
-            source_object_id,
+            source_ref_id,
             table=table,
             data={"status": "parsed", "parsed_at": datetime_now_utc(), "status_reason": None},
         )
 
-    def mark_ingested(self, source_object_id: str, *, table: RawDuckLakeProvenanceTable) -> None:
+    def mark_ingested(self, source_ref_id: str, *, table: RawDuckLakeProvenanceTable) -> None:
         self._require_provenance_table_lock(table)
         self._update_source_object_status(
-            source_object_id,
+            source_ref_id,
             table=table,
             data={
                 "status": "ingested",
@@ -60,21 +60,21 @@ class SourceObjectProvenanceRepository:
 
     def mark_failed(
         self,
-        source_object_id: str,
+        source_ref_id: str,
         *,
         table: RawDuckLakeProvenanceTable,
         reason: str,
     ) -> None:
         self._require_provenance_table_lock(table)
         self._update_source_object_status(
-            source_object_id,
+            source_ref_id,
             table=table,
             data={"status": "failed", "status_reason": reason},
         )
 
     def ingested_sha256(
         self,
-        source_object_id: str,
+        source_ref_id: str,
         *,
         table: RawDuckLakeProvenanceTable,
     ) -> str | None:
@@ -85,11 +85,11 @@ class SourceObjectProvenanceRepository:
             f"""
             SELECT sha256
             FROM {quoted_target}
-            WHERE source_object_id = ?
+            WHERE source_ref_id = ?
                 AND status = 'ingested'
             LIMIT 1
             """,
-            [source_object_id],
+            [source_ref_id],
         ).fetchone()
         if row is None:
             return None
@@ -97,7 +97,7 @@ class SourceObjectProvenanceRepository:
 
     def version_is_ingested(
         self,
-        source_object_id: str,
+        source_ref_id: str,
         *,
         sha256: str,
         table: RawDuckLakeProvenanceTable,
@@ -109,12 +109,12 @@ class SourceObjectProvenanceRepository:
             f"""
             SELECT 1
             FROM {quoted_target}
-            WHERE source_object_id = ?
+            WHERE source_ref_id = ?
                 AND status = 'ingested'
                 AND sha256 = ?
             LIMIT 1
             """,
-            [source_object_id, sha256],
+            [source_ref_id, sha256],
         ).fetchone()
         return row is not None
 
@@ -126,7 +126,7 @@ class SourceObjectProvenanceRepository:
         col_list = ", ".join(quote_identifier(c) for c in columns)
         select_list = ", ".join("?" for _ in columns)
         update_set = ", ".join(
-            f"{quote_identifier(k)} = source.{quote_identifier(k)}" for k in columns if k != "source_object_id"
+            f"{quote_identifier(k)} = source.{quote_identifier(k)}" for k in columns if k != "source_ref_id"
         )
         insert_cols = ", ".join(f"source.{quote_identifier(k)}" for k in columns)
         values = list(data.values())
@@ -135,7 +135,7 @@ class SourceObjectProvenanceRepository:
             f"""
             MERGE INTO {quoted_target} AS target
             USING (SELECT {select_list}) AS source({col_list})
-            ON target.source_object_id = source.source_object_id
+            ON target.source_ref_id = source.source_ref_id
             WHEN MATCHED THEN UPDATE SET {update_set}
             WHEN NOT MATCHED THEN INSERT ({col_list}) VALUES ({insert_cols})
             """,
@@ -144,20 +144,26 @@ class SourceObjectProvenanceRepository:
 
     def _update_source_object_status(
         self,
-        source_object_id: str,
+        source_ref_id: str,
         *,
         table: RawDuckLakeProvenanceTable,
         data: dict,
     ) -> None:
         con = self._session.connection
         quoted_target = table_sql(self._session.alias, provenance_target_for(table))
+        exists = con.execute(
+            f"SELECT 1 FROM {quoted_target} WHERE source_ref_id = ? LIMIT 1",
+            [source_ref_id],
+        ).fetchone()
+        if exists is None:
+            raise RuntimeError(f"Provenance row not found for source_ref_id={source_ref_id} table={table.value}")
         columns = list(data.keys())
         set_list = ", ".join(f"{quote_identifier(column)} = ?" for column in columns)
         con.execute(
             f"""
             UPDATE {quoted_target}
             SET {set_list}
-            WHERE source_object_id = ?
+            WHERE source_ref_id = ?
             """,
-            [*data.values(), source_object_id],
+            [*data.values(), source_ref_id],
         )

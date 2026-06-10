@@ -64,8 +64,8 @@ class RawDuckLakeProvenanceTable(StrEnum):
 ############################
 
 
-_SOURCE_OBJECT_COLUMN_DEFINITIONS: Final[tuple[str, ...]] = (
-    "source_object_id VARCHAR NOT NULL",
+_SOURCE_REF_COLUMN_DEFINITIONS: Final[tuple[str, ...]] = (
+    "source_ref_id VARCHAR NOT NULL",
     "source_system VARCHAR NOT NULL",
     "endpoint VARCHAR NOT NULL",
     "source_url VARCHAR NOT NULL",
@@ -93,7 +93,7 @@ _RAW_TABLE_COLUMN_DEFINITIONS: Final[dict[RawDuckLakeTable, tuple[str, ...]]] = 
         "http_last_modified TIMESTAMP",
         "region_id BIGINT",
         "type_id BIGINT",
-        "source_object_id VARCHAR",
+        "source_ref_id VARCHAR",
         "source_market_date DATE",
     ),
     RawDuckLakeTable.MARKET_ORDERS: (
@@ -115,7 +115,7 @@ _RAW_TABLE_COLUMN_DEFINITIONS: Final[dict[RawDuckLakeTable, tuple[str, ...]]] = 
         "http_last_modified TIMESTAMP",
         "station_id BIGINT",
         "constellation_id BIGINT",
-        "source_object_id VARCHAR",
+        "source_ref_id VARCHAR",
         "source_market_date DATE",
         "snapshot_ts TIMESTAMP WITH TIME ZONE",
     ),
@@ -133,7 +133,7 @@ _RAW_TABLE_COLUMN_DEFINITIONS: Final[dict[RawDuckLakeTable, tuple[str, ...]]] = 
         "duration BIGINT",
         "region_id BIGINT",
         "order_set_id BIGINT",
-        "source_object_id VARCHAR",
+        "source_ref_id VARCHAR",
         "source_market_date DATE",
         "snapshot_ts TIMESTAMP WITH TIME ZONE",
     ),
@@ -192,7 +192,7 @@ _PROVENANCE_TABLES_BY_DATA_TABLE: Final[dict[RawDuckLakeTable, RawDuckLakeProven
 ############################
 
 
-def compute_source_object_id(source_system: str, endpoint: str, source_url: str) -> str:
+def compute_source_ref_id(source_system: str, endpoint: str, source_url: str) -> str:
     raw = f"{source_system}|{endpoint}|{source_url}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -212,8 +212,8 @@ def provenance_table_for_data_table(table: RawDuckLakeTable) -> RawDuckLakeProve
         raise ValueError(f"No provenance table configured for raw data table: {table.value}") from exc
 
 
-def source_object_column_definitions() -> tuple[str, ...]:
-    return _SOURCE_OBJECT_COLUMN_DEFINITIONS
+def source_ref_column_definitions() -> tuple[str, ...]:
+    return _SOURCE_REF_COLUMN_DEFINITIONS
 
 
 def raw_table_column_definitions(table: RawDuckLakeTable) -> tuple[str, ...]:

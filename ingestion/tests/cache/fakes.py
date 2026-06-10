@@ -51,6 +51,12 @@ class InMemoryRawObjectReader:
                 result[oid] = max(versions, key=lambda v: v.version_number)
         return result
 
+    def list_all_version_paths(self) -> list[str]:
+        paths: list[str] = []
+        for versions in self._ledger._versions_by_object_id.values():
+            paths.extend(v.local_path for v in versions)
+        return paths
+
     def load_current_states(
         self,
         *,
