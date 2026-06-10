@@ -1,6 +1,6 @@
-"""Public types for the raw object cache.
+"""Public types for the raw object store.
 
-Types here are the public API surface for ``Cache`` callers.
+Types here are the public API surface for raw object store callers.
 Types that are internal implementation details live in separate modules:
 
 - ``client_types.py`` — HTTP read result types (``ReadStatus``, ``ReadResult``, etc.)
@@ -17,10 +17,10 @@ from eve_ingest.raw_objects.primitives import IdentityKey, UpdateMode
 from eve_ingest.raw_objects.ledger.models import RawObjectEntry, RawObjectVersion
 
 
-class CacheResultStatus(StrEnum):
-    """Result of cache lookup for one object.
+class AcquisitionStatus(StrEnum):
+    """Result of acquisition for one raw object.
 
-    `HIT` means cache reused existing local version. `STORED` means cache fetched
+    `HIT` means store reused existing local version. `STORED` means store fetched
     and recorded new local version.
     """
 
@@ -28,26 +28,24 @@ class CacheResultStatus(StrEnum):
     STORED = "stored"
 
 
-class GetMode(StrEnum):
-    """Filter mode for ``Cache.get_many()``.
+class AcquisitionMode(StrEnum):
+    """Filter mode for ``RawObjectStore.get_many()``.
 
     ``ALL`` returns every result. ``CHANGED`` (default) returns only newly
-    downloaded versions. ``UNPUBLISHED`` returns versions without a publication
-    marker.
+    downloaded versions.
     """
 
     ALL = "all"
     CHANGED = "changed"
-    UNPUBLISHED = "unpublished"
 
 
 @dataclass(frozen=True)
-class CacheObject:
+class RawObjectRequest:
     """Per-object description of one raw object to acquire.
 
     Example:
         ```python
-        object_ref = CacheObject(
+        object_ref = RawObjectRequest(
             source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
             identity_key={"source_date": "2026-01-01"},
         )
@@ -60,30 +58,30 @@ class CacheObject:
 
 
 @dataclass(frozen=True)
-class CacheResult:
-    """Current cached version for one raw object.
+class AcquiredRawObject:
+    """Current acquired version for one raw object.
 
     Example:
         ```python
-        result = cache.get(CacheObject(source_url=url, identity_key={"source": url}))
+        result = store.get(RawObjectRequest(source_url=url, identity_key={"source": url}))
         if result.changed:
             print("downloaded", result.path)
         ```
     """
 
-    status: CacheResultStatus
+    status: AcquisitionStatus
     raw_object: RawObjectEntry
     version: RawObjectVersion
 
     @property
     def path(self) -> str:
-        """Return local filesystem path for this cached version."""
+        """Return local filesystem path for this acquired version."""
 
         return self.version.local_path
 
     @property
     def identity_key(self) -> IdentityKey:
-        """Return logical identity used for cache lookup.
+        """Return logical identity used for raw object store lookup.
 
         Example:
             ```python
@@ -103,4 +101,4 @@ class CacheResult:
     def changed(self) -> bool:
         """Return true when this call downloaded and stored new version."""
 
-        return self.status is CacheResultStatus.STORED
+        return self.status is AcquisitionStatus.STORED

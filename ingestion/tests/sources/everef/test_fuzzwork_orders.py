@@ -76,7 +76,7 @@ class TestListSnapshots:
         assert "prefix=fuzzwork/ordersets" in caplog.text
 
 
-class TestBuildCacheObjects:
+class TestBuildRawObjectRequests:
     def test_creates_objects_for_snapshots(self) -> None:
         html = (
             '<html><body><a href="fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz">link1</a>'

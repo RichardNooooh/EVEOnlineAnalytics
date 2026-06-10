@@ -9,7 +9,7 @@ from eve_ingest.raw_objects.fetch_plan import FetchPlan
 from eve_ingest.raw_objects.http_client import HttpRawObjectClient
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, RawObjectEntry
-from eve_ingest.raw_objects.models import CacheResult
+from eve_ingest.raw_objects.models import AcquiredRawObject
 from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.store_helpers import file_exists
 
@@ -42,7 +42,7 @@ class RawObjectRepository:
 
     def load_current_states_for_results(
         self,
-        results: Iterable[CacheResult],
+        results: Iterable[AcquiredRawObject],
     ) -> dict[str, CurrentRawObjectState | None]:
         refs = [result.raw_object.ref for result in results]
         if not refs:
@@ -58,7 +58,7 @@ class RawObjectRepository:
         state: CurrentRawObjectState | None,
         *,
         client: HttpRawObjectClient | None = None,
-    ) -> CacheResult:
+    ) -> AcquiredRawObject:
         if state is None:
             return self._downloader.fetch_new(plan, client=client)
 
@@ -72,14 +72,14 @@ class RawObjectRepository:
 
     def filter_current_versions(
         self,
-        results: list[CacheResult],
-    ) -> tuple[list[CacheResult], int, int]:
+        results: list[AcquiredRawObject],
+    ) -> tuple[list[AcquiredRawObject], int, int]:
         mutable_results = [result for result in results if result.update_mode is UpdateMode.MUTABLE]
         if not mutable_results:
             return results, 0, 0
 
         current_states = self.load_current_states_for_results(mutable_results)
-        current_results: list[CacheResult] = []
+        current_results: list[AcquiredRawObject] = []
         stale_count = 0
         missing_stale_count = 0
 

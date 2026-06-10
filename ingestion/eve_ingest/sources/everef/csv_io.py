@@ -6,7 +6,7 @@ import time
 import pyarrow as pa
 import pyarrow.csv as pac
 
-from eve_ingest.raw_objects import CacheResult
+from eve_ingest.raw_objects import AcquiredRawObject
 from eve_ingest.util import file_size
 
 logger = logging.getLogger("eve_ingest.sources.everef")
@@ -17,7 +17,7 @@ def _elapsed_seconds(start_time: float) -> float:
 
 
 def parse_csv_to_arrow(
-    result: CacheResult,
+    result: AcquiredRawObject,
     *,
     read_options: pac.ReadOptions | None = None,
     parse_options: pac.ParseOptions | None = None,

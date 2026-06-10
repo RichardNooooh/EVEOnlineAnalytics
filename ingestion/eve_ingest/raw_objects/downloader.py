@@ -18,7 +18,7 @@ from eve_ingest.raw_objects.http_models import (
 )
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
-from eve_ingest.raw_objects.models import CacheResult, CacheResultStatus
+from eve_ingest.raw_objects.models import AcquiredRawObject, AcquisitionStatus
 from eve_ingest.raw_objects.file_store import RawObjectFileStore
 from eve_ingest.raw_objects.paths import build_final_path, detect_storage_encoding
 from eve_ingest.raw_objects.store_helpers import (
@@ -49,7 +49,7 @@ class RawObjectDownloader:
         self._ledger = ledger
         self._file_store = file_store
 
-    def fetch_new(self, plan: FetchPlan, *, client: HttpRawObjectClient | None = None) -> CacheResult:
+    def fetch_new(self, plan: FetchPlan, *, client: HttpRawObjectClient | None = None) -> AcquiredRawObject:
         read_result = self._read_source(plan, request_headers={}, client=client)
         if read_result.status is ReadStatus.NOT_MODIFIED:
             logger.info(
@@ -65,7 +65,7 @@ class RawObjectDownloader:
         state: CurrentRawObjectState,
         *,
         client: HttpRawObjectClient | None = None,
-    ) -> CacheResult:
+    ) -> AcquiredRawObject:
         read_result = self._read_source(
             plan,
             request_headers=request_headers_for(state, plan.ref.update_mode),
@@ -101,7 +101,7 @@ class RawObjectDownloader:
         state: CurrentRawObjectState,
         *,
         read_result: ReadResult | None = None,
-    ) -> CacheResult:
+    ) -> AcquiredRawObject:
         checked_at = read_result.fetched_at if read_result is not None else datetime.now(UTC)
         logger.debug(
             "RawObjectStore hit dataset=%s identity_hash=%s version=%d path=%s",
@@ -116,13 +116,13 @@ class RawObjectDownloader:
                 checked_at=checked_at,
                 revalidation=revalidation_for_hit(state, read_result),
             )
-        return CacheResult(
-            status=CacheResultStatus.HIT,
+        return AcquiredRawObject(
+            status=AcquisitionStatus.HIT,
             raw_object=raw_object,
             version=state.current_version,
         )
 
-    def _record_store(self, plan: FetchPlan, read_result: ModifiedRead) -> CacheResult:
+    def _record_store(self, plan: FetchPlan, read_result: ModifiedRead) -> AcquiredRawObject:
         final_path = build_final_path(
             raw_root=self._file_store._raw_root,
             plan=plan,
@@ -157,8 +157,8 @@ class RawObjectDownloader:
             final_path,
         )
 
-        return CacheResult(
-            status=CacheResultStatus.STORED,
+        return AcquiredRawObject(
+            status=AcquisitionStatus.STORED,
             raw_object=stored.raw_object,
             version=stored.version,
         )
@@ -168,11 +168,11 @@ class RawObjectDownloader:
         plans: list[FetchPlan],
         states_by_hash: dict[str, CurrentRawObjectState | None],
         get_from_plan: Callable,
-    ) -> list[CacheResult]:
+    ) -> list[AcquiredRawObject]:
         if self._raw_download_workers <= 1 or not self._owns_client:
             return [get_from_plan(plan, states_by_hash.get(plan.ref.identity_hash)) for plan in plans]
 
-        def fetch_one(plan: FetchPlan) -> CacheResult:
+        def fetch_one(plan: FetchPlan) -> AcquiredRawObject:
             client = HttpRawObjectClient()
             try:
                 return get_from_plan(

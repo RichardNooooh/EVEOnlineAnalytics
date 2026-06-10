@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from eve_ingest.raw_objects import CacheObject
+from eve_ingest.raw_objects import RawObjectRequest
 from eve_ingest.cli.config import EverefCliConfig, EverefReferencesCliConfig
 from eve_ingest.sources.everef import fuzzwork_orders, market_history, market_orders, reference_data
 from tests.sources.everef.conftest import install_pipeline_fakes, make_cache_result, make_everef_pipeline_config
@@ -74,7 +74,7 @@ def test_market_history_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path
         market_history,
         "discover_objects",
         lambda _config: [
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
                 identity_key={"source_date": "2026-01-01"},
             )
@@ -108,7 +108,7 @@ def test_market_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path:
         market_orders,
         "discover_objects",
         lambda _config: [
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
                 identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
             )
@@ -142,7 +142,7 @@ def test_fuzzwork_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_pat
         fuzzwork_orders,
         "discover_objects",
         lambda _config: [
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
                 identity_key={
                     "source_date": "2026-01-01",
@@ -181,7 +181,7 @@ def test_references_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
         reference_data,
         "discover_objects",
         lambda _config: [
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
                 identity_key={"source_date": "latest"},
             )

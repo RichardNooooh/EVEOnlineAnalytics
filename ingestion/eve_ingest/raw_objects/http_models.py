@@ -1,9 +1,9 @@
-"""HTTP read result types for the raw object cache.
+"""HTTP read result types for the raw object store.
 
 These types describe the outcome of an HTTP fetch: whether the origin
-returned new content (``ModifiedRead``) or confirmed the cached version
-is current (``NotModifiedRead``).  The cache's ``HttpRawObjectClient``
-produces these; ``Cache`` consumes them.
+returned new content (``ModifiedRead``) or confirmed the stored version
+is current (``NotModifiedRead``).  The store's ``HttpRawObjectClient``
+produces these; ``RawObjectStore`` consumes them.
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ from typing import Literal, TypeAlias
 
 
 class ReadStatus(StrEnum):
-    """Low-level HTTP read status from cache client.
+    """Low-level HTTP read status from store client.
 
-    ``NOT_MODIFIED`` means origin confirmed existing cached version still current.
+    ``NOT_MODIFIED`` means origin confirmed existing stored version still current.
     ``MODIFIED`` means client wrote fresh content to temporary storage.
     """
 

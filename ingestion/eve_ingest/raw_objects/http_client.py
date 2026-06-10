@@ -1,7 +1,7 @@
 """HTTP client for streaming raw source files to temporary paths.
 
 ``HttpRawObjectClient`` wraps ``requests`` with retry logic, SHA-256 digest
-computation, and conditional-request support so that the cache can download
+computation, and conditional-request support so that the store can download
 new content or detect unchanged mutable objects.
 """
 

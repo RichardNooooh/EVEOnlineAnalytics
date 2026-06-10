@@ -5,7 +5,7 @@ from datetime import date
 
 import pyarrow as pa
 
-from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
+from eve_ingest.raw_objects import RawObjectRequest, AcquiredRawObject, UpdateMode
 from eve_ingest.cli.config import EverefCliConfig
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.publication.specs import (
@@ -36,7 +36,7 @@ PUBLISHER_SPEC = DatasetPublisherSpec(
 )
 
 
-def discover_objects(config: EverefCliConfig) -> list[CacheObject]:
+def discover_objects(config: EverefCliConfig) -> list[RawObjectRequest]:
     return build_deterministic_objects(
         config.start_date,
         config.end_date,
@@ -45,7 +45,7 @@ def discover_objects(config: EverefCliConfig) -> list[CacheObject]:
     )
 
 
-def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
+def publish_one(raw_object: AcquiredRawObject, ctx: PublishContext) -> PublishResult:
     source_market_date = date.fromisoformat(str(raw_object.identity_key["source_date"]))
     table = parse_csv_to_arrow(raw_object)
     row_count = len(table)

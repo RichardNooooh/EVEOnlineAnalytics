@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from eve_ingest.sources.everef.provenance import parse_last_modified_timestamp
+from eve_ingest.ducklake.provenance_metadata import parse_last_modified_timestamp
 
 
 def test_parse_last_modified_timestamp_supports_iso_and_http_date() -> None:
@@ -15,7 +15,7 @@ def test_parse_last_modified_timestamp_supports_iso_and_http_date() -> None:
 
 
 def test_parse_last_modified_timestamp_returns_none_for_invalid_value(caplog: pytest.LogCaptureFixture) -> None:
-    logger = logging.getLogger("eve_ingest.sources.everef")
+    logger = logging.getLogger("eve_ingest.ducklake.provenance_metadata")
     logger.addHandler(caplog.handler)
     try:
         with caplog.at_level(logging.WARNING, logger=logger.name):
