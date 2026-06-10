@@ -23,7 +23,7 @@ from eve_ingest.publication.service import PublicationService
 from eve_ingest.publication.errors import SnapshotScopePublishError
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.runner import run_dataset_pipeline
-from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
+from eve_ingest.raw_objects import RawObjectRequest, AcquiredRawObject, UpdateMode
 from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, PublicationContext
 from eve_ingest.sources.everef.fuzzwork_orders import PUBLISHER_SPEC as FUZZWORK_ORDERS_SPEC
 from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC as MARKET_HISTORY_SPEC
@@ -34,19 +34,19 @@ from tests.sources.everef.conftest import make_cache_result, make_everef_pipelin
 
 class _FakePubtrack:
     def __init__(self) -> None:
-        self.calls: list[tuple[list[CacheResult], str | None, str | None]] = []
+        self.calls: list[tuple[list[AcquiredRawObject], str | None, str | None]] = []
         self.published_versions: set[tuple[str, str]] = set()
 
-    def filter_published(self, results: list[CacheResult]) -> set[tuple[str, str]]:
+    def filter_published(self, results: list[AcquiredRawObject]) -> set[tuple[str, str]]:
         return self.published_versions
 
-    def filter_unpublished(self, results: list[CacheResult]) -> list[CacheResult]:
+    def filter_unpublished(self, results: list[AcquiredRawObject]) -> list[AcquiredRawObject]:
         published = self.filter_published(results)
         return [r for r in results if (r.raw_object.ref.identity_hash, r.version.sha256) not in published]
 
     def mark_published_many(
         self,
-        results: list[CacheResult],
+        results: list[AcquiredRawObject],
         *,
         context: PublicationContext | None = None,
     ) -> None:
@@ -71,7 +71,7 @@ class _FakeStore:
     def ledger(self) -> object:
         return None
 
-    def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
+    def acquire_many(self, objects: list[RawObjectRequest]) -> list[AcquiredRawObject]:
         path = self.raw_root / "a.csv.bz2"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("data")
@@ -85,7 +85,9 @@ class _FakeStore:
             )
         ]
 
-    def load_current_states_for_results(self, results: list[CacheResult]) -> dict[str, CurrentRawObjectState | None]:
+    def load_current_states_for_results(
+        self, results: list[AcquiredRawObject]
+    ) -> dict[str, CurrentRawObjectState | None]:
         return {
             result.raw_object.ref.identity_hash: CurrentRawObjectState(
                 raw_object=result.raw_object,
@@ -94,12 +96,12 @@ class _FakeStore:
             for result in results
         }
 
-    def filter_current_versions(self, results: list[CacheResult]) -> tuple[list[CacheResult], int, int]:
+    def filter_current_versions(self, results: list[AcquiredRawObject]) -> tuple[list[AcquiredRawObject], int, int]:
         mutable_results = [r for r in results if r.update_mode is UpdateMode.MUTABLE]
         if not mutable_results:
             return results, 0, 0
         current_states = self.load_current_states_for_results(mutable_results)
-        current_results: list[CacheResult] = []
+        current_results: list[AcquiredRawObject] = []
         stale_count = 0
         missing_stale_count = 0
         for result in results:
@@ -212,7 +214,7 @@ def test_run_pipeline_does_not_mark_partial_snapshot_scope_published(
             super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
+        def acquire_many(self, objects: list[RawObjectRequest]) -> list[AcquiredRawObject]:
             path = self.raw_root / "a.csv.bz2"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("data")
@@ -269,8 +271,8 @@ def test_run_pipeline_does_not_mark_partial_snapshot_scope_published(
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [
-        CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"}),
-        CacheObject(source_url="https://example.com/b.csv.bz2", identity_key={"source_date": "2026-01-01"}),
+        RawObjectRequest(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"}),
+        RawObjectRequest(source_url="https://example.com/b.csv.bz2", identity_key={"source_date": "2026-01-01"}),
     ]
 
     pipeline_logger = logging.getLogger("eve_ingest.publication.runner")
@@ -314,7 +316,7 @@ def test_run_pipeline_logs_summary_and_day_summary(
         tmp_path,
     )
     objects = [
-        CacheObject(
+        RawObjectRequest(
             source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
             identity_key={"source_date": "2026-01-01"},
         )
@@ -372,7 +374,7 @@ def test_run_pipeline_rejects_writer_mode_mismatch_before_marking_published(monk
     monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
-    objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
+    objects = [RawObjectRequest(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
     def publish_one(result, ctx) -> PublishResult:
         ctx.replace_reference_tables(
@@ -414,7 +416,7 @@ def test_run_pipeline_locks_per_scope_and_threads_publication_context(monkeypatc
             super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
+        def acquire_many(self, objects: list[RawObjectRequest]) -> list[AcquiredRawObject]:
             path_a = self.raw_root / "a.csv.bz2"
             path_b = self.raw_root / "b.csv.bz2"
             path_a.parent.mkdir(parents=True, exist_ok=True)
@@ -459,8 +461,8 @@ def test_run_pipeline_locks_per_scope_and_threads_publication_context(monkeypatc
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [
-        CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"}),
-        CacheObject(source_url="https://example.com/b.csv.bz2", identity_key={"source_date": "2026-01-02"}),
+        RawObjectRequest(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"}),
+        RawObjectRequest(source_url="https://example.com/b.csv.bz2", identity_key={"source_date": "2026-01-02"}),
     ]
 
     def publish_one(result, ctx) -> PublishResult:
@@ -494,7 +496,7 @@ def test_run_pipeline_fails_whole_run_on_publication_lock_contention(monkeypatch
             super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
+        def acquire_many(self, objects: list[RawObjectRequest]) -> list[AcquiredRawObject]:
             return [
                 make_cache_result(
                     "/tmp/a.csv.bz2",
@@ -516,7 +518,7 @@ def test_run_pipeline_fails_whole_run_on_publication_lock_contention(monkeypatch
     monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
-    objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
+    objects = [RawObjectRequest(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
     def publish_one(result, ctx) -> PublishResult:
         captured.process_calls += 1
@@ -546,7 +548,7 @@ def test_run_pipeline_rechecks_publication_after_lock_and_skips(monkeypatch, tmp
             self.pubtrack.published_versions = shared_published_versions
             captured.pubtrack = self.pubtrack
 
-        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
+        def acquire_many(self, objects: list[RawObjectRequest]) -> list[AcquiredRawObject]:
             path = self.raw_root / "a.csv.bz2"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("data")
@@ -559,7 +561,7 @@ def test_run_pipeline_rechecks_publication_after_lock_and_skips(monkeypatch, tmp
             shared_published_versions.add((result.raw_object.ref.identity_hash, result.version.sha256))
             return [result]
 
-        def load_current_states_for_results(self, results: list[CacheResult]):
+        def load_current_states_for_results(self, results: list[AcquiredRawObject]):
             raise AssertionError("already-published results should be skipped before current-state lookup")
 
     class FakeSession(_FakeSession):
@@ -578,7 +580,7 @@ def test_run_pipeline_rechecks_publication_after_lock_and_skips(monkeypatch, tmp
     monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
-    objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
+    objects = [RawObjectRequest(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
     def publish_one(result, ctx) -> PublishResult:
         captured.process_calls += 1
@@ -607,7 +609,7 @@ def test_run_pipeline_skips_stale_mutable_result_after_lock(monkeypatch, tmp_pat
             super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
+        def acquire_many(self, objects: list[RawObjectRequest]) -> list[AcquiredRawObject]:
             path = self.raw_root / "a.csv.bz2"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("data")
@@ -621,7 +623,7 @@ def test_run_pipeline_skips_stale_mutable_result_after_lock(monkeypatch, tmp_pat
             ]
 
         def load_current_states_for_results(
-            self, results: list[CacheResult]
+            self, results: list[AcquiredRawObject]
         ) -> dict[str, CurrentRawObjectState | None]:
             result = results[0]
             current_version = replace(result.version, id="ver-2", sha256="def456")
@@ -649,7 +651,7 @@ def test_run_pipeline_skips_stale_mutable_result_after_lock(monkeypatch, tmp_pat
     monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
-    objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
+    objects = [RawObjectRequest(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
     def publish_one(result, ctx) -> PublishResult:
         captured.process_calls += 1
@@ -678,7 +680,7 @@ def test_run_pipeline_skips_stale_mutable_result_with_missing_file_after_lock(mo
             super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
+        def acquire_many(self, objects: list[RawObjectRequest]) -> list[AcquiredRawObject]:
             path = self.raw_root / "deleted.csv.bz2"
             return [
                 make_cache_result(
@@ -690,7 +692,7 @@ def test_run_pipeline_skips_stale_mutable_result_with_missing_file_after_lock(mo
             ]
 
         def load_current_states_for_results(
-            self, results: list[CacheResult]
+            self, results: list[AcquiredRawObject]
         ) -> dict[str, CurrentRawObjectState | None]:
             result = results[0]
             current_version = replace(result.version, id="ver-2", sha256="def456")
@@ -718,7 +720,7 @@ def test_run_pipeline_skips_stale_mutable_result_with_missing_file_after_lock(mo
     monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
-    objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
+    objects = [RawObjectRequest(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
     def publish_one(result, ctx) -> PublishResult:
         captured.process_calls += 1
@@ -747,7 +749,7 @@ def test_run_pipeline_skips_stale_reference_latest_result_after_lock(monkeypatch
             super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
+        def acquire_many(self, objects: list[RawObjectRequest]) -> list[AcquiredRawObject]:
             path = self.raw_root / "reference-data-latest.tar.xz"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("data")
@@ -762,7 +764,7 @@ def test_run_pipeline_skips_stale_reference_latest_result_after_lock(monkeypatch
             ]
 
         def load_current_states_for_results(
-            self, results: list[CacheResult]
+            self, results: list[AcquiredRawObject]
         ) -> dict[str, CurrentRawObjectState | None]:
             result = results[0]
             current_version = replace(result.version, id="ver-2", sha256="def456")
@@ -791,7 +793,7 @@ def test_run_pipeline_skips_stale_reference_latest_result_after_lock(monkeypatch
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [
-        CacheObject(
+        RawObjectRequest(
             source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
             identity_key={"source_date": "latest"},
         )
@@ -830,22 +832,22 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
     publication_lock = Lock()
     pubtrack_lock = Lock()
     published_versions: set[tuple[str, str]] = set()
-    pubtrack_calls: list[list[CacheResult]] = []
+    pubtrack_calls: list[list[AcquiredRawObject]] = []
     process_calls = 0
     writer_constructed = 0
 
     class SharedPubtrack:
-        def filter_published(self, results: list[CacheResult]) -> set[tuple[str, str]]:
+        def filter_published(self, results: list[AcquiredRawObject]) -> set[tuple[str, str]]:
             with pubtrack_lock:
                 return set(published_versions)
 
-        def filter_unpublished(self, results: list[CacheResult]) -> list[CacheResult]:
+        def filter_unpublished(self, results: list[AcquiredRawObject]) -> list[AcquiredRawObject]:
             published = self.filter_published(results)
             return [r for r in results if (r.raw_object.ref.identity_hash, r.version.sha256) not in published]
 
         def mark_published_many(
             self,
-            results: list[CacheResult],
+            results: list[AcquiredRawObject],
             *,
             context: PublicationContext | None = None,
         ) -> None:
@@ -874,12 +876,12 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
         def ledger(self) -> object:
             return None
 
-        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
+        def acquire_many(self, objects: list[RawObjectRequest]) -> list[AcquiredRawObject]:
             selected.wait(timeout=5)
             return [result]
 
         def load_current_states_for_results(
-            self, results: list[CacheResult]
+            self, results: list[AcquiredRawObject]
         ) -> dict[str, CurrentRawObjectState | None]:
             return {
                 selected_result.raw_object.ref.identity_hash: CurrentRawObjectState(
@@ -889,7 +891,7 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
                 for selected_result in results
             }
 
-        def filter_current_versions(self, results: list[CacheResult]) -> tuple[list[CacheResult], int, int]:
+        def filter_current_versions(self, results: list[AcquiredRawObject]) -> tuple[list[AcquiredRawObject], int, int]:
             return results, 0, 0
 
     class SerialLock:
@@ -920,7 +922,7 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
     monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
-    objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
+    objects = [RawObjectRequest(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
     exit_codes: list[int] = []
     errors: list[BaseException] = []
 

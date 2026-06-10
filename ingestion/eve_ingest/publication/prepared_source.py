@@ -8,14 +8,14 @@ import pyarrow as pa
 
 from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
 from eve_ingest.ducklake.session import SqlSource
-from eve_ingest.raw_objects.models import CacheResult
+from eve_ingest.raw_objects.models import AcquiredRawObject
 
 
 @dataclass(frozen=True)
 class PreparedSnapshotSqlSource:
     """A snapshot source ready for publication."""
 
-    raw_object: CacheResult
+    raw_object: AcquiredRawObject
     source_system: str
     endpoint: str
     source_market_date: date
@@ -29,7 +29,7 @@ class PreparedSnapshotSqlSource:
 class PreparedAuthoritativeArrowSource:
     """An authoritative partition source (e.g. market history) ready for publication."""
 
-    raw_object: CacheResult
+    raw_object: AcquiredRawObject
     source_system: str
     endpoint: str
     source_market_date: date
@@ -42,7 +42,7 @@ class PreparedAuthoritativeArrowSource:
 class PreparedReferenceTableSource:
     """One reference table replacement ready for publication."""
 
-    raw_object: CacheResult | None
+    raw_object: AcquiredRawObject | None
     source_system: str
     endpoint: str
     table: RawDuckLakeTable

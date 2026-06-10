@@ -42,7 +42,7 @@ def test_publisher_spec_declares_market_history_mutations() -> None:
     assert PUBLISHER_SPEC.scope_for({"source_date": "2026-01-01"}) == ("raw:market_history:source_date=2026-01-01")
 
 
-class TestBuildCacheObjects:
+class TestBuildRawObjectRequests:
     def test_dates_and_urls(self) -> None:
         objects = discover_objects(MagicMock(start_date=date(2026, 1, 1), end_date=date(2026, 1, 3)))
 

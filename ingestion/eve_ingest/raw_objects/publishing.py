@@ -1,4 +1,4 @@
-"""Tracks which cached raw object versions have been published."""
+"""Tracks which acquired raw object versions have been published."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from types import TracebackType
 
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger.models import PublicationContext, RawObjectRef
-from eve_ingest.raw_objects.models import CacheResult
+from eve_ingest.raw_objects.models import AcquiredRawObject
 
 
 class PublicationTracker:
-    """Tracks published versions of cached raw objects.
+    """Tracks published versions of acquired raw objects.
 
     Must be used as a context manager. Typically accessed through
     ``RawObjectStore.pubtrack``.
@@ -46,23 +46,23 @@ class PublicationTracker:
 
     def mark_published(
         self,
-        result: CacheResult,
+        result: AcquiredRawObject,
         *,
         context: PublicationContext | None = None,
     ) -> None:
-        """Record that one cached version has been published.
+        """Record that one acquired version has been published.
 
         Publication markers are idempotent for the same source, dataset, identity, and
         checksum.
 
         Args:
-            result: The cached version that was published.
+            result: The acquired version that was published.
             context: Optional publication scope and run id.  Defaults to an
                 empty context with the current timestamp.
 
         Example:
             ```python
-            cache.pubtrack.mark_published(
+            store.pubtrack.mark_published(
                 result,
                 context=PublicationContext(publication_scope="raw-market-history"),
             )
@@ -80,20 +80,20 @@ class PublicationTracker:
 
     def mark_published_many(
         self,
-        results: Iterable[CacheResult],
+        results: Iterable[AcquiredRawObject],
         *,
         context: PublicationContext | None = None,
     ) -> None:
-        """Record that many cached versions have been published.
+        """Record that many acquired versions have been published.
 
         Args:
-            results: Cached versions that were published.
+            results: Acquired versions that were published.
             context: Optional publication scope and run id shared across all
                 results.
 
         Example:
             ```python
-            cache.pubtrack.mark_published_many(
+            store.pubtrack.mark_published_many(
                 results,
                 context=PublicationContext(publication_scope="raw-market-orders"),
             )
@@ -110,11 +110,11 @@ class PublicationTracker:
             for group_key, pubs in grouped.items():
                 tx.publications.mark_published_many(pubs)
 
-    def is_published(self, result: CacheResult) -> bool:
-        """Return whether a cached version already has a publication marker.
+    def is_published(self, result: AcquiredRawObject) -> bool:
+        """Return whether an acquired version already has a publication marker.
 
         Args:
-            result: The cached version to check.
+            result: The acquired version to check.
 
         Returns:
             ``True`` when a marker exists for this source, dataset, identity,
@@ -122,7 +122,7 @@ class PublicationTracker:
 
         Example:
             ```python
-            if not cache.pubtrack.is_published(result):
+            if not store.pubtrack.is_published(result):
                 publish(result.path)
             ```
         """
@@ -133,11 +133,11 @@ class PublicationTracker:
                 sha256=result.version.sha256,
             )
 
-    def filter_published(self, results: Iterable[CacheResult]) -> set[tuple[str, str]]:
+    def filter_published(self, results: Iterable[AcquiredRawObject]) -> set[tuple[str, str]]:
         """Return set of ``(identity_hash, sha256)`` pairs that are published.
 
         Args:
-            results: Cached versions to check.
+            results: Acquired versions to check.
 
         Returns:
             Subset of input pairs that have existing publication markers,
@@ -164,11 +164,11 @@ class PublicationTracker:
                 published.update(tx.publications.filter_published(group_key=group_key, versions=versions))
         return published
 
-    def filter_unpublished(self, results: Iterable[CacheResult]) -> list[CacheResult]:
+    def filter_unpublished(self, results: Iterable[AcquiredRawObject]) -> list[AcquiredRawObject]:
         """Return results that have no publication marker.
 
         Args:
-            results: Cached versions to check.
+            results: Acquired versions to check.
 
         Returns:
             Input results that lack existing publication markers.

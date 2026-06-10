@@ -9,8 +9,8 @@ import pyarrow as pa
 
 from eve_ingest.ducklake.raw_tables import compute_source_ref_id
 from eve_ingest.ducklake.session import DuckLakeSession, SqlSource
-from eve_ingest.raw_objects.models import CacheResult
-from eve_ingest.sources.everef.provenance import build_source_object_metadata
+from eve_ingest.raw_objects.models import AcquiredRawObject
+from eve_ingest.ducklake.provenance_metadata import build_source_object_metadata
 
 
 @dataclass
@@ -48,7 +48,7 @@ class SourcePreparationContext:
 
     def build_source_object_metadata(
         self,
-        raw_object: CacheResult,
+        raw_object: AcquiredRawObject,
         source_system: str,
         endpoint: str,
         *,

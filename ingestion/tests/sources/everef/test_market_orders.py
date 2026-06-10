@@ -78,7 +78,7 @@ class TestListSnapshots:
         assert "prefix=market-orders/history" in caplog.text
 
 
-class TestBuildCacheObjects:
+class TestBuildRawObjectRequests:
     def test_creates_objects_for_snapshots(self) -> None:
         html = (
             '<html><body><a href="market-orders-2026-01-01_00-00-00.v3.csv.bz2">link1</a>'

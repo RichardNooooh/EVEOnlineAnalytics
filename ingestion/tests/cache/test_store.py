@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from eve_ingest.raw_objects import RawObjectStore, CacheObject, GetMode, UpdateMode
+from eve_ingest.raw_objects import RawObjectStore, RawObjectRequest, AcquisitionMode, UpdateMode
 from eve_ingest.raw_objects.http_models import (
     ModifiedRead,
     NotModifiedRead,
@@ -15,7 +15,7 @@ from eve_ingest.raw_objects.http_models import (
     RevalidationMetadata,
 )
 from eve_ingest.raw_objects.ledger.models import PublicationContext
-from eve_ingest.raw_objects.models import CacheResultStatus
+from eve_ingest.raw_objects.models import AcquisitionStatus
 from tests.cache.fakes import InMemoryRawObjectLedger
 
 
@@ -198,7 +198,7 @@ def test_get_explicit_identity_key_is_used(
         update_mode=UpdateMode.SNAPSHOT,
     ) as store:
         result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
                 identity_key={"source": "test"},
             )
@@ -233,17 +233,17 @@ def test_get_changed_returns_changed_objects(tmp_path: Path) -> None:
             ),
         ]
     )
-    first_object = CacheObject(
+    first_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
         identity_key={"source": "first"},
     )
-    second_object = CacheObject(
+    second_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2",
         identity_key={"source": "second"},
     )
 
     with _store(tmp_path=tmp_path, client=client, raw_download_workers=2) as store:
-        store.get_many([first_object], mode=GetMode.ALL)
+        store.get_many([first_object], mode=AcquisitionMode.ALL)
         changed_results = store.get_many([first_object, second_object])
 
     assert len(changed_results) == 1
@@ -264,7 +264,7 @@ def test_get_uses_explicit_source_path_for_non_everef_url(tmp_path: Path) -> Non
 
     with _store(tmp_path=tmp_path, client=client, source_name="example") as store:
         result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://example.com/downloads/file.csv",
                 source_path="vendor/market-orders/file.csv",
                 identity_key={"source": "test"},
@@ -280,17 +280,17 @@ def test_get_many_parallel_workers_preserve_result_order(tmp_path: Path, monkeyp
     monkeypatch.setattr("eve_ingest.raw_objects.http_client.HttpRawObjectClient", lambda: client)
     monkeypatch.setattr("eve_ingest.raw_objects.store.HttpRawObjectClient", lambda: client)
     monkeypatch.setattr("eve_ingest.raw_objects.downloader.HttpRawObjectClient", lambda: client)
-    first_object = CacheObject(
+    first_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/first.csv.bz2",
         identity_key={"source": "first"},
     )
-    second_object = CacheObject(
+    second_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/second.csv.bz2",
         identity_key={"source": "second"},
     )
 
     with _store(tmp_path=tmp_path, client=None, raw_download_workers=2) as store:
-        results = store.get_many([first_object, second_object], mode=GetMode.ALL)
+        results = store.get_many([first_object, second_object], mode=AcquisitionMode.ALL)
 
     assert [result.identity_key["source"] for result in results] == ["first", "second"]
     assert client.max_active_reads >= 2
@@ -308,21 +308,21 @@ def test_get_reuses_existing_snapshot_without_remote_read(tmp_path: Path) -> Non
     )
     with _store(tmp_path=tmp_path, client=first_client) as store:
         first_result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
                 identity_key={"source": "test"},
             )
         )
 
         second_result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
                 identity_key={"source": "test"},
             )
         )
 
-    assert first_result.status is CacheResultStatus.STORED
-    assert second_result.status is CacheResultStatus.HIT
+    assert first_result.status is AcquisitionStatus.STORED
+    assert second_result.status is AcquisitionStatus.HIT
     assert first_result.changed is True
     assert second_result.changed is False
     assert second_result.version.local_path == first_result.version.local_path
@@ -349,7 +349,7 @@ def test_get_rejects_update_mode_mismatch(tmp_path: Path) -> None:
 
     with _store(tmp_path=tmp_path, client=client, ledger=ledger) as store:
         store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
                 identity_key={"source": "test"},
             )
@@ -364,7 +364,7 @@ def test_get_rejects_update_mode_mismatch(tmp_path: Path) -> None:
     ) as store:
         with pytest.raises(ValueError, match="update_mode mismatch"):
             store.get(
-                CacheObject(
+                RawObjectRequest(
                     source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
                     identity_key={"source": "test"},
                 )
@@ -401,19 +401,19 @@ def test_get_uses_conditional_headers_for_mutable_files(tmp_path: Path) -> None:
         update_mode=UpdateMode.MUTABLE,
     ) as store:
         first_result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
                 identity_key=identity_key,
             )
         )
         result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
                 identity_key=identity_key,
             )
         )
 
-    assert result.status is CacheResultStatus.HIT
+    assert result.status is AcquisitionStatus.HIT
     assert result.changed is False
     assert "etag" not in Path(first_result.path).name
     assert first_client.calls[0][1] == {}
@@ -454,7 +454,7 @@ def test_get_uses_stored_revalidation_metadata_not_version_fields(
         ledger=ledger,
     ) as store:
         first_result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
                 identity_key=identity_key,
             )
@@ -467,13 +467,13 @@ def test_get_uses_stored_revalidation_metadata_not_version_fields(
         ]
 
         result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
                 identity_key=identity_key,
             )
         )
 
-    assert result.status is CacheResultStatus.HIT
+    assert result.status is AcquisitionStatus.HIT
     assert second_client.calls[0][1] == {"If-None-Match": '"etag-1"'}
 
 
@@ -514,7 +514,7 @@ def test_get_rereads_when_not_modified_but_local_file_missing(tmp_path: Path) ->
         update_mode=UpdateMode.MUTABLE,
     ) as store:
         seeded_result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
                 identity_key=identity_key,
             )
@@ -522,13 +522,13 @@ def test_get_rereads_when_not_modified_but_local_file_missing(tmp_path: Path) ->
 
         Path(seeded_result.version.local_path).unlink()
         result = store.get(
-            CacheObject(
+            RawObjectRequest(
                 source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
                 identity_key=identity_key,
             )
         )
 
-    assert result.status is CacheResultStatus.STORED
+    assert result.status is AcquisitionStatus.STORED
     assert next_client.calls[0][1] == {"If-None-Match": '"etag-1"'}
     assert next_client.calls[1][1] == {}
     assert Path(result.version.local_path).exists()
@@ -574,7 +574,7 @@ def test_get_keeps_one_current_mutable_copy_per_logical_object(tmp_path: Path) -
         result = None
         for _ in range(3):
             result = store.get(
-                CacheObject(
+                RawObjectRequest(
                     source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
                     identity_key=identity_key,
                 )
@@ -607,18 +607,19 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
             ),
         ]
     )
-    first_object = CacheObject(
+    first_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
         identity_key={"source": "first"},
     )
-    second_object = CacheObject(
+    second_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2",
         identity_key={"source": "second"},
     )
 
     with _store(tmp_path=tmp_path, client=client, ledger=ledger, raw_download_workers=2) as store:
-        store.get_many([first_object], mode=GetMode.ALL)
-        unpublished_results = store.get_many([first_object, second_object], mode=GetMode.UNPUBLISHED)
+        store.acquire_many([first_object])
+        all_results = store.acquire_many([first_object, second_object])
+        unpublished_results = store.pubtrack.filter_unpublished(all_results)
         store.pubtrack.mark_published_many(
             unpublished_results,
             context=PublicationContext(
@@ -626,10 +627,11 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
                 publisher_run_id="run-1",
             ),
         )
-        filtered_results = store.get_many([first_object, second_object], mode=GetMode.UNPUBLISHED)
+        all_results = store.acquire_many([first_object, second_object])
+        filtered_results = store.pubtrack.filter_unpublished(all_results)
 
     assert len(unpublished_results) == 2
-    assert unpublished_results[0].status is CacheResultStatus.HIT
+    assert unpublished_results[0].status is AcquisitionStatus.HIT
     assert {result.identity_key["source"] for result in unpublished_results} == {"first", "second"}
     assert filtered_results == []
     assert ledger.filter_published_calls >= 2
@@ -655,7 +657,7 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
     )
     first_store = _store(tmp_path=tmp_path, client=client)
     second_store = _store(tmp_path=tmp_path, client=client, ledger=InMemoryRawObjectLedger())
-    cache_object = CacheObject(
+    cache_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
         identity_key={"source": "test"},
     )
@@ -675,7 +677,7 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
 
 def test_build_plan_produces_unique_temp_paths(tmp_path: Path) -> None:
     store = _store(tmp_path=tmp_path, client=FakeClient([]))
-    cache_object = CacheObject(
+    cache_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
         identity_key={"source": "test"},
     )
@@ -695,7 +697,7 @@ def test_store_rejects_query_string_urls(tmp_path: Path) -> None:
     with store:
         with pytest.raises(ValueError, match="must not include query strings or fragments"):
             store.get(
-                CacheObject(
+                RawObjectRequest(
                     source_url="https://data.everef.net/file.csv.bz2?token=abc", identity_key={"source": "test"}
                 )
             )
@@ -710,7 +712,7 @@ def test_store_rejects_invalid_http_source_urls(tmp_path: Path, source_url: str)
 
     with store:
         with pytest.raises(ValueError, match="must be an https URL with a host"):
-            store.get(CacheObject(source_url=source_url, identity_key={"source": "test"}))
+            store.get(RawObjectRequest(source_url=source_url, identity_key={"source": "test"}))
 
 
 def test_store_accepts_non_everef_hosts_and_uncompressed_paths(tmp_path: Path) -> None:
@@ -725,7 +727,7 @@ def test_store_accepts_non_everef_hosts_and_uncompressed_paths(tmp_path: Path) -
     )
 
     with _store(tmp_path=tmp_path, client=client, source_name="other") as store:
-        result = store.get(CacheObject(source_url="https://example.com/file.csv", identity_key={"source": "test"}))
+        result = store.get(RawObjectRequest(source_url="https://example.com/file.csv", identity_key={"source": "test"}))
 
     assert result.raw_object.ref.source_name == "other"
     assert result.identity_key == {"source": "test"}
@@ -743,22 +745,22 @@ def test_get_all_returns_hits_and_stores(tmp_path: Path) -> None:
             _response(tmp_path=tmp_path, status=ReadStatus.MODIFIED, name="b", sha256="sha-b"),
         ]
     )
-    first_object = CacheObject(
+    first_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
         identity_key={"source": "first"},
     )
-    second_object = CacheObject(
+    second_object = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-02/file.csv.bz2",
         identity_key={"source": "second"},
     )
 
     with _store(tmp_path=tmp_path, client=SequenceClient([first_client, second_client])) as store:
         store.get(first_object)
-        results = store.get_many([first_object, second_object], mode=GetMode.ALL)
+        results = store.get_many([first_object, second_object], mode=AcquisitionMode.ALL)
 
     assert len(results) == 2
     statuses = {r.status for r in results}
-    assert statuses == {CacheResultStatus.HIT, CacheResultStatus.STORED}
+    assert statuses == {AcquisitionStatus.HIT, AcquisitionStatus.STORED}
 
 
 def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monkeypatch) -> None:
@@ -776,7 +778,7 @@ def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monke
     with pytest.raises(RuntimeError, match="boom"):
         with _store(tmp_path=tmp_path, client=client) as store:
             store.get(
-                CacheObject(
+                RawObjectRequest(
                     source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
                     identity_key={"source": "test"},
                 )

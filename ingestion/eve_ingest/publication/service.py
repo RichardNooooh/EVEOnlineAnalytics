@@ -26,7 +26,7 @@ from eve_ingest.publication.specs import (
     InsertMissingKeysAuthoritativePartition,
     ReplaceReferenceTables,
 )
-from eve_ingest.raw_objects.models import CacheResult
+from eve_ingest.raw_objects.models import AcquiredRawObject
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +205,7 @@ class PublicationService:
 
     def replace_tables(
         self,
-        raw_object: CacheResult,
+        raw_object: AcquiredRawObject,
         *,
         source_system: str,
         endpoint: str,

@@ -19,7 +19,7 @@ from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.service import PublicationService
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.specs import AppendSnapshotRows, DatasetPublisherSpec
-from eve_ingest.raw_objects import CacheObject, CacheResult
+from eve_ingest.raw_objects import RawObjectRequest, AcquiredRawObject
 from eve_ingest.raw_objects.ledger.models import PublicationContext
 from eve_ingest.raw_objects.publishing import PublicationTracker
 from eve_ingest.raw_objects.store import RawObjectStore
@@ -46,7 +46,7 @@ class PipelineRuntimeContext:
 class PipelineRunState:
     success: int = 0
     failed: int = 0
-    successful_results: list[CacheResult] = field(default_factory=list)
+    successful_results: list[AcquiredRawObject] = field(default_factory=list)
     per_day_success: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     per_day_failed: dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
@@ -60,8 +60,8 @@ def run_dataset_pipeline(
     *,
     config: PipelineConfigProtocol,
     spec: DatasetPublisherSpec,
-    discover_objects: Callable[..., list[CacheObject]],
-    publish_one: Callable[[CacheResult, PublishContext], PublishResult],
+    discover_objects: Callable[..., list[RawObjectRequest]],
+    publish_one: Callable[[AcquiredRawObject, PublishContext], PublishResult],
     runtime_context: PipelineRuntimeContext | None = None,
 ) -> int:
     objects = discover_objects(config)
@@ -123,11 +123,11 @@ def _process_publication_scope(
     config: PipelineConfigProtocol,
     spec: DatasetPublisherSpec,
     publication_scope: str,
-    scope_results: list[CacheResult],
+    scope_results: list[AcquiredRawObject],
     store: RawObjectStore,
     pubtrack: PublicationTracker,
     attach_config,
-    publish_one: Callable[[CacheResult, PublishContext], PublishResult],
+    publish_one: Callable[[AcquiredRawObject, PublishContext], PublishResult],
     run_state: PipelineRunState,
     runtime_context: PipelineRuntimeContext | None = None,
 ) -> None:
@@ -257,12 +257,12 @@ def _process_publication_scope(
 
 def _filter_scope_results_after_lock(
     *,
-    scope_results: list[CacheResult],
+    scope_results: list[AcquiredRawObject],
     store: RawObjectStore,
     pubtrack: PublicationTracker,
     spec: DatasetPublisherSpec,
     publication_scope: str,
-) -> list[CacheResult]:
+) -> list[AcquiredRawObject]:
     unpublished_results = pubtrack.filter_unpublished(scope_results)
     already_published_count = len(scope_results) - len(unpublished_results)
 
@@ -289,12 +289,12 @@ def _filter_scope_results_after_lock(
 
 def _publish_snapshot_scope_batch(
     *,
-    scope_results: list[CacheResult],
+    scope_results: list[AcquiredRawObject],
     ctx: PublishContext,
-    publish_one: Callable[[CacheResult, PublishContext], PublishResult],
+    publish_one: Callable[[AcquiredRawObject, PublishContext], PublishResult],
     run_state: PipelineRunState,
-) -> list[CacheResult]:
-    successful: list[tuple[CacheResult, PublishResult]] = []
+) -> list[AcquiredRawObject]:
+    successful: list[tuple[AcquiredRawObject, PublishResult]] = []
 
     try:
         with ctx.prep_ctx.session.transaction():
@@ -322,12 +322,12 @@ def _publish_snapshot_scope_batch(
 
 def _publish_per_object(
     *,
-    scope_results: list[CacheResult],
+    scope_results: list[AcquiredRawObject],
     ctx: PublishContext,
-    publish_one: Callable[[CacheResult, PublishContext], PublishResult],
+    publish_one: Callable[[AcquiredRawObject, PublishContext], PublishResult],
     run_state: PipelineRunState,
-) -> list[CacheResult]:
-    successful: list[CacheResult] = []
+) -> list[AcquiredRawObject]:
+    successful: list[AcquiredRawObject] = []
 
     for raw_object in scope_results:
         try:
@@ -352,7 +352,7 @@ def _publish_per_object(
 
 def _record_success(
     run_state: PipelineRunState,
-    raw_object: CacheResult,
+    raw_object: AcquiredRawObject,
     result: PublishResult,
 ) -> None:
     source_date = result.source_date or str(raw_object.identity_key.get("source_date", "unknown"))
@@ -364,7 +364,7 @@ def _record_success(
 def _mark_successful_results_published(
     *,
     publication_scope: str,
-    successful_results: list[CacheResult],
+    successful_results: list[AcquiredRawObject],
     pubtrack: PublicationTracker,
     publisher_run_id: str | None = None,
 ) -> None:
@@ -385,9 +385,9 @@ def _mark_successful_results_published(
 
 def _group_by_publication_scope(
     spec: DatasetPublisherSpec,
-    results: Iterable[CacheResult],
-) -> dict[str, list[CacheResult]]:
-    grouped: dict[str, list[CacheResult]] = defaultdict(list)
+    results: Iterable[AcquiredRawObject],
+) -> dict[str, list[AcquiredRawObject]]:
+    grouped: dict[str, list[AcquiredRawObject]] = defaultdict(list)
     for result in results:
         grouped[spec.scope_for(result.identity_key)].append(result)
     return {scope: grouped[scope] for scope in sorted(grouped)}
@@ -395,7 +395,7 @@ def _group_by_publication_scope(
 
 def _source_date_for_scope(
     publication_scope: str,
-    results: list[CacheResult],
+    results: list[AcquiredRawObject],
 ) -> str | None:
     if ":source_date=" in publication_scope:
         return publication_scope.rsplit("=", 1)[-1]

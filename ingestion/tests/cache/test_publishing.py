@@ -7,7 +7,7 @@ from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger import repository as ledger_runtime
 from eve_ingest.raw_objects.ledger.models import PublicationContext, RawObjectEntry, RawObjectRef, RawObjectVersion
-from eve_ingest.raw_objects.models import CacheResult, CacheResultStatus
+from eve_ingest.raw_objects.models import AcquiredRawObject, AcquisitionStatus
 from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.publishing import PublicationTracker
 from tests.cache.fakes import InMemoryRawObjectLedger
@@ -35,15 +35,15 @@ def _result(
     sha256: str = "abc123",
     version_id: str = "v-1",
     update_mode: UpdateMode = UpdateMode.SNAPSHOT,
-) -> CacheResult:
+) -> AcquiredRawObject:
     ref = _ref(
         source_name=source_name,
         dataset_name=dataset_name,
         identity_hash=identity_hash,
         update_mode=update_mode,
     )
-    return CacheResult(
-        status=CacheResultStatus.STORED,
+    return AcquiredRawObject(
+        status=AcquisitionStatus.STORED,
         raw_object=RawObjectEntry(
             id="obj-1",
             ref=ref,

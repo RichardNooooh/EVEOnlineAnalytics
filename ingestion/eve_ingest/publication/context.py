@@ -14,7 +14,7 @@ from eve_ingest.publication.prepared_source import (
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.service import PublicationService
 from eve_ingest.publication.source_prep import SourcePreparationContext
-from eve_ingest.raw_objects.models import CacheResult
+from eve_ingest.raw_objects.models import AcquiredRawObject
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ class PublishContext:
 
     def replace_reference_tables(
         self,
-        raw_object: CacheResult,
+        raw_object: AcquiredRawObject,
         *,
         source_system: str,
         endpoint: str,

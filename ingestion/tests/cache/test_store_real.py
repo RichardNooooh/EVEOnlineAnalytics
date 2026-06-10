@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from dataclasses import replace
 from pathlib import Path
 
-from eve_ingest.raw_objects import RawObjectStore, CacheObject, GetMode, UpdateMode
+from eve_ingest.raw_objects import RawObjectStore, RawObjectRequest, AcquisitionMode, UpdateMode
 from eve_ingest.raw_objects.http_models import ModifiedRead, ReadStatus, RevalidationMetadata
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger import repository as ledger_runtime
@@ -44,7 +44,7 @@ def _make_ledger(monkeypatch) -> RawObjectLedger:
     return ledger
 
 
-def test_cache_get_and_filter_unpublished_with_real_sqlite_ledger(monkeypatch, tmp_path: Path) -> None:
+def test_get_and_filter_unpublished_with_real_sqlite_ledger(monkeypatch, tmp_path: Path) -> None:
     ledger = _make_ledger(monkeypatch)
     client = FakeClient(
         ModifiedRead(
@@ -55,7 +55,7 @@ def test_cache_get_and_filter_unpublished_with_real_sqlite_ledger(monkeypatch, t
             revalidation=RevalidationMetadata(etag='"etag-1"', content_length=7),
         )
     )
-    cache_object = CacheObject(
+    cache_object = RawObjectRequest(
         source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
         identity_key={"source_date": "2026-01-01"},
     )
@@ -66,18 +66,18 @@ def test_cache_get_and_filter_unpublished_with_real_sqlite_ledger(monkeypatch, t
         raw_root=str(tmp_path / "raw"),
         client=client,
         ledger=ledger,
-    ) as cache:
-        stored = cache.get(cache_object)
+    ) as store:
+        stored = store.get(cache_object)
         assert stored.changed is True
 
-        all_results = cache.get_many([cache_object], mode=GetMode.ALL)
+        all_results = store.get_many([cache_object], mode=AcquisitionMode.ALL)
         assert len(all_results) == 1
         assert all_results[0].path == stored.path
 
-        unpublished = cache.get_many([cache_object], mode=GetMode.UNPUBLISHED)
+        unpublished = store.pubtrack.filter_unpublished(store.acquire_many([cache_object]))
         assert len(unpublished) == 1
 
-        cache.pubtrack.mark_published_many(unpublished)
-        assert cache.get_many([cache_object], mode=GetMode.UNPUBLISHED) == []
+        store.pubtrack.mark_published_many(unpublished)
+        assert store.pubtrack.filter_unpublished(store.acquire_many([cache_object])) == []
 
     assert len(client.calls) == 1
