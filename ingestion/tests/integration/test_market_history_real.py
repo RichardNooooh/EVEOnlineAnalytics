@@ -15,6 +15,8 @@ from eve_ingest.ducklake.raw_publish import RawTablePublisher
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.service import PublicationService
+from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.specs import DatasetPublisherSpec, InsertMissingKeysAuthoritativePartition, SourceDateScope
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.market_history import publish_one
@@ -107,11 +109,17 @@ def test_process_result_writes_and_merges_history_rows(shared_con, tmp_path: Pat
     with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
         raw_tables = RawTablePublisher(session, lock_token=lock_token)
         provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
-        ctx = PublishContext(
-            spec=spec,
-            session=session,
+        prep_ctx = SourcePreparationContext(session=session)
+        service = PublicationService(
             raw_tables=raw_tables,
             provenance=provenance,
+            session=session,
+            spec=spec,
+        )
+        ctx = PublishContext(
+            spec=spec,
+            prep_ctx=prep_ctx,
+            service=service,
             publication_scope="raw:market_history:source_date=2026-01-01",
         )
         first_outcome = publish_one(result, ctx)
@@ -124,11 +132,17 @@ def test_process_result_writes_and_merges_history_rows(shared_con, tmp_path: Pat
     with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
         raw_tables = RawTablePublisher(session, lock_token=lock_token)
         provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
-        ctx = PublishContext(
-            spec=spec,
-            session=session,
+        prep_ctx = SourcePreparationContext(session=session)
+        service = PublicationService(
             raw_tables=raw_tables,
             provenance=provenance,
+            session=session,
+            spec=spec,
+        )
+        ctx = PublishContext(
+            spec=spec,
+            prep_ctx=prep_ctx,
+            service=service,
             publication_scope="raw:market_history:source_date=2026-01-01",
         )
         second_outcome = publish_one(result, ctx)

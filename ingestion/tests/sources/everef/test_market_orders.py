@@ -12,6 +12,7 @@ from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLa
 from eve_ingest.publication.specs import AppendSnapshotRows, DatasetPublisherSpec
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.publication.results import PublishResult
+from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
 from eve_ingest.sources.everef.market_orders import (
     _MARKET_ORDERS_SQL_SCHEMA,
     PUBLISHER_SPEC,
@@ -265,7 +266,7 @@ def test_publish_one_calls_append_snapshot_sql(monkeypatch: pytest.MonkeyPatch) 
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
     )
     ctx = MagicMock()
-    ctx.source_object_id.return_value = "fake_soid"
+    ctx.source_ref_id.return_value = "fake_soid"
     ctx.quote_sql_string.side_effect = lambda value: repr(value)
     ctx.append_snapshot_sql.return_value = PublishResult(
         success=True,
@@ -289,9 +290,11 @@ def test_publish_one_calls_append_snapshot_sql(monkeypatch: pytest.MonkeyPatch) 
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
     ctx.append_snapshot_sql.assert_called_once()
-    call_kwargs = ctx.append_snapshot_sql.call_args.kwargs
-    assert call_kwargs["table"] is RawDuckLakeTable.MARKET_ORDERS
-    assert _MARKET_ORDERS_SQL_SCHEMA.strip() in call_kwargs["sql_source"].sql
+    call_args = ctx.append_snapshot_sql.call_args
+    prepared: PreparedSnapshotSqlSource = call_args[0][0]
+    assert prepared.table is RawDuckLakeTable.MARKET_ORDERS
+    assert _MARKET_ORDERS_SQL_SCHEMA.strip() in prepared.sql_source.sql
+    assert call_args.kwargs["source_ref_id"] == "fake_soid"
 
 
 def test_decompressed_snapshot_csv_creates_local_csv(tmp_path: pathlib.Path) -> None:

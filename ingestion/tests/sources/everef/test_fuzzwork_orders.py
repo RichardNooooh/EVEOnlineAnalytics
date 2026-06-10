@@ -12,6 +12,7 @@ from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLa
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.specs import AppendSnapshotRows, DatasetPublisherSpec
 from eve_ingest.raw_objects import UpdateMode
+from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
 from eve_ingest.sources.everef.fuzzwork_orders import (
     PUBLISHER_SPEC,
     _FUZZWORK_COLUMN_NAMES,
@@ -174,7 +175,7 @@ def test_publish_one_calls_append_snapshot_sql(monkeypatch: pytest.MonkeyPatch) 
         source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
     )
     ctx = MagicMock()
-    ctx.source_object_id.return_value = "fake_soid"
+    ctx.source_ref_id.return_value = "fake_soid"
     ctx.quote_sql_string.side_effect = lambda value: repr(value)
     ctx.append_snapshot_sql.return_value = PublishResult(
         success=True,
@@ -187,9 +188,11 @@ def test_publish_one_calls_append_snapshot_sql(monkeypatch: pytest.MonkeyPatch) 
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
     ctx.append_snapshot_sql.assert_called_once()
-    call_kwargs = ctx.append_snapshot_sql.call_args.kwargs
-    assert call_kwargs["table"] is RawDuckLakeTable.FUZZWORK_ORDERS
-    assert _FUZZWORK_SQL_SCHEMA.strip() in call_kwargs["sql_source"].sql
+    call_args = ctx.append_snapshot_sql.call_args
+    prepared: PreparedSnapshotSqlSource = call_args[0][0]
+    assert prepared.table is RawDuckLakeTable.FUZZWORK_ORDERS
+    assert _FUZZWORK_SQL_SCHEMA.strip() in prepared.sql_source.sql
+    assert call_args.kwargs["source_ref_id"] == "fake_soid"
 
 
 def test_fuzzwork_column_names_match_expected_layout() -> None:

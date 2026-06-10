@@ -42,7 +42,7 @@ class PublicationTracker:
 
     def _assert_active(self) -> None:
         if not self._active:
-            raise RuntimeError("PublicationTracker must be used within its owning Cache context")
+            raise RuntimeError("PublicationTracker must be used within its owning context")
 
     def mark_published(
         self,
@@ -163,3 +163,20 @@ class PublicationTracker:
             for group_key, versions in versions_by_group.items():
                 published.update(tx.publications.filter_published(group_key=group_key, versions=versions))
         return published
+
+    def filter_unpublished(self, results: Iterable[CacheResult]) -> list[CacheResult]:
+        """Return results that have no publication marker.
+
+        Args:
+            results: Cached versions to check.
+
+        Returns:
+            Input results that lack existing publication markers.
+        """
+        self._assert_active()
+        published = self.filter_published(results)
+        return [
+            result
+            for result in results
+            if (result.raw_object.ref.identity_hash, result.version.sha256) not in published
+        ]

@@ -50,9 +50,25 @@ class TestBuildTempPath:
             update_mode=UpdateMode.SNAPSHOT,
         )
         path = build_temp_path(raw_root=Path("/data/raw"), ref=ref)
-        assert path.parent.parent == Path("/data/raw/everef")
-        assert path.parent.name == ".tmp"
         assert path.suffix == ".download"
+        assert path.parent.name == "abc123"
+        assert path.parent.parent.name == "market-orders"
+        assert path.parent.parent.parent.name == "everef"
+        assert path.parent.parent.parent.parent.name == ".tmp"
+        assert path.parent.parent.parent.parent.parent == Path("/data/raw")
+
+    def test_unique_per_call(self) -> None:
+        ref = RawObjectRef(
+            source_name="everef",
+            dataset_name="market-orders",
+            identity_hash="abc123",
+            identity_key={"source_path": "market-orders/history/2026/file.csv.bz2"},
+            update_mode=UpdateMode.SNAPSHOT,
+        )
+        path1 = build_temp_path(raw_root=Path("/data/raw"), ref=ref)
+        path2 = build_temp_path(raw_root=Path("/data/raw"), ref=ref)
+        assert path1.parent == path2.parent  # same identity_hash directory
+        assert path1 != path2  # different UUID segment
 
     def test_rejects_bad_source_name(self) -> None:
         ref = RawObjectRef(

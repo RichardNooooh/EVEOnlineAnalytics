@@ -13,7 +13,7 @@ from eve_ingest.ducklake.raw_tables import (
     provenance_target_for,
     raw_table_column_definitions,
     raw_table_partition_columns,
-    source_object_column_definitions,
+    source_ref_column_definitions,
 )
 from eve_ingest.ducklake.sql import quote_identifier, table_sql
 
@@ -50,7 +50,7 @@ def bootstrap_raw_ducklake(config: DuckLakeAttachConfig | None = None) -> None:
                     target=target,
                     partition_columns=partition_columns,
                 )
-        column_sql = ",\n                ".join(source_object_column_definitions())
+        column_sql = ",\n                ".join(source_ref_column_definitions())
         for table in RawDuckLakeProvenanceTable:
             target = provenance_target_for(table)
             quoted_target = table_sql(attach.alias, target)
@@ -65,7 +65,7 @@ def bootstrap_raw_ducklake(config: DuckLakeAttachConfig | None = None) -> None:
                 con,
                 alias=attach.alias,
                 target=target,
-                column_definitions=source_object_column_definitions(),
+                column_definitions=source_ref_column_definitions(),
             )
     finally:
         con.close()

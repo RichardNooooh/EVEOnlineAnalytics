@@ -16,6 +16,8 @@ from eve_ingest.ducklake.raw_tables import (
 )
 from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.source_prep import SourcePreparationContext
+from eve_ingest.publication.service import PublicationService
 from eve_ingest.publication.specs import DatasetPublisherSpec, ReplaceReferenceTables, StaticScope
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.reference_data import (
@@ -242,14 +244,20 @@ def test_process_references_prepares_arrow_sources_before_ducklake_transaction(t
         ),
         provenance_tables=(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
         publication_scope=StaticScope("raw:references:full_extract"),
-        write_policy=ReplaceReferenceTables(transactional=True),
+        write_policy=ReplaceReferenceTables(),
     )
 
-    ctx = PublishContext(
-        spec=spec,
-        session=session,
+    prep_ctx = SourcePreparationContext(session=session)
+    service = PublicationService(
         raw_tables=raw_tables,
         provenance=provenance,
+        session=session,
+        spec=spec,
+    )
+    ctx = PublishContext(
+        spec=spec,
+        prep_ctx=prep_ctx,
+        service=service,
         publication_scope="raw:references:full_extract",
     )
 

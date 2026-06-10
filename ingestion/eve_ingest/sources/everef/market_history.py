@@ -16,6 +16,7 @@ from eve_ingest.publication.specs import (
 from eve_ingest.sources.everef.discovery import build_deterministic_objects
 from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
 from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.prepared_source import PreparedAuthoritativeArrowSource
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.runner import run_dataset_pipeline
 
@@ -48,28 +49,28 @@ def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
     source_market_date = date.fromisoformat(str(raw_object.identity_key["source_date"]))
     table = parse_csv_to_arrow(raw_object)
     row_count = len(table)
-    source_object_id = ctx.source_object_id(
+    source_ref_id = ctx.source_ref_id(
         source_system="everef",
         endpoint="market_history",
         source_url=raw_object.version.source_url,
     )
     table = table.append_column(
-        "source_object_id",
-        pa.array([source_object_id] * row_count, type=pa.utf8()),
+        "source_ref_id",
+        pa.array([source_ref_id] * row_count, type=pa.utf8()),
     )
     table = table.append_column(
         "source_market_date",
         pa.array([source_market_date] * row_count, type=pa.date32()),
     )
-    return ctx.insert_missing_keys_arrow(
-        raw_object,
+    prepared = PreparedAuthoritativeArrowSource(
+        raw_object=raw_object,
         source_system="everef",
         endpoint="market_history",
         source_market_date=source_market_date,
         table=RawDuckLakeTable.MARKET_HISTORY,
         arrow_table=table,
-        source_object_id=source_object_id,
     )
+    return ctx.insert_missing_keys_arrow(prepared, source_ref_id=source_ref_id)
 
 
 def run_pipeline(config: EverefCliConfig) -> int:

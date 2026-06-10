@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+
+from eve_ingest.raw_objects.http_client import build_retry_session
 
 logger = logging.getLogger("eve_ingest.sources.everef")
 
@@ -40,20 +40,11 @@ class EverefSnapshotClient:
         self._session.close()
 
     def _build_session(self) -> requests.Session:
-        session = requests.Session()
-        retry = Retry(
-            total=self.max_retries,
-            read=self.max_retries,
-            connect=self.max_retries,
+        return build_retry_session(
+            max_retries=self.max_retries,
             backoff_factor=self.backoff_factor,
             backoff_jitter=self.backoff_jitter,
-            status_forcelist=(429, 500, 502, 503, 504),
-            allowed_methods=frozenset({"GET"}),
-            raise_on_status=False,
         )
-        adapter = HTTPAdapter(max_retries=retry)
-        session.mount("https://", adapter)
-        return session
 
     def fetch_text(self, url: str) -> str:
         """GET *url* with retry, raise on 4xx/5xx, return response text."""

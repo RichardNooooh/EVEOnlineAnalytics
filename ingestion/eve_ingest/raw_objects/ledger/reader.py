@@ -84,6 +84,11 @@ class RawObjectReader:
         rows = _fetchall(self._con, select(subq).where(subq.c.rn == 1))
         return {version.raw_object_id: version for version in (row_to_raw_object_version(row) for row in rows)}
 
+    def list_all_version_paths(self) -> list[str]:
+        """Return all ``local_path`` values recorded in the ledger."""
+        rows = _fetchall(self._con, select(raw_object_versions.c.local_path))
+        return [row["local_path"] for row in rows]
+
     def load_current_states(
         self,
         *,

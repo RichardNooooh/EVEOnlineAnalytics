@@ -221,7 +221,6 @@ class RawTablePublisher:
         dataset_name: str | None = None,
     ) -> None:
         self._session = session
-        self._con: duckdb.DuckDBPyConnection | None = None
         self._lock_token = lock_token
         self._declared_policy = declared_policy
         self._dataset_name = dataset_name
@@ -272,7 +271,7 @@ class RawTablePublisher:
         if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS:
             if key_columns:
                 raise ValueError("APPEND_SNAPSHOT_ROWS does not accept key_columns")
-            required_columns = ["source_object_id", "source_market_date"]
+            required_columns = ["source_ref_id", "source_market_date"]
             if table in {RawDuckLakeTable.MARKET_ORDERS, RawDuckLakeTable.FUZZWORK_ORDERS}:
                 required_columns.append("snapshot_ts")
             missing_columns = [column for column in required_columns if column not in arrow_table.column_names]

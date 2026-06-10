@@ -8,7 +8,7 @@ from eve_ingest.ducklake.raw_tables import (
     provenance_table_for_data_table,
     raw_table_column_definitions,
     raw_table_partition_columns,
-    source_object_column_definitions,
+    source_ref_column_definitions,
 )
 
 
@@ -43,8 +43,8 @@ def test_provenance_table_selection_rejects_reference_tables(table: RawDuckLakeT
 
 
 def test_source_object_schema_definition_is_shared() -> None:
-    assert source_object_column_definitions() == (
-        "source_object_id VARCHAR NOT NULL",
+    assert source_ref_column_definitions() == (
+        "source_ref_id VARCHAR NOT NULL",
         "source_system VARCHAR NOT NULL",
         "endpoint VARCHAR NOT NULL",
         "source_url VARCHAR NOT NULL",

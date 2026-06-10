@@ -5,7 +5,6 @@ from datetime import UTC, date, datetime
 from email.utils import parsedate_to_datetime
 
 from eve_ingest.raw_objects import CacheResult
-from eve_ingest.ducklake.raw_tables import compute_source_object_id
 
 logger = logging.getLogger("eve_ingest.sources.everef")
 
@@ -32,11 +31,13 @@ def build_source_object_metadata(
     result: CacheResult,
     source_system: str,
     endpoint: str,
+    *,
+    source_ref_id: str,
     source_market_date: date | None = None,
     snapshot_ts: datetime | None = None,
 ) -> dict:
     return {
-        "source_object_id": compute_source_object_id(source_system, endpoint, result.version.source_url),
+        "source_ref_id": source_ref_id,
         "source_system": source_system,
         "endpoint": endpoint,
         "source_url": result.version.source_url,

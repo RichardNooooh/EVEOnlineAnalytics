@@ -52,19 +52,16 @@ class WritePolicy:
 class AppendSnapshotRows(WritePolicy):
     batch_scope: Literal["source_date"]
     immutable_source_object: bool = True
-    retry_ducklake_conflicts: bool = True
 
 
 @dataclass(frozen=True)
 class InsertMissingKeysAuthoritativePartition(WritePolicy):
     key_columns: tuple[str, ...]
-    coverage_column: str = "source_market_date"
-    validate_matched_rows_identical: bool = True
 
 
 @dataclass(frozen=True)
 class ReplaceReferenceTables(WritePolicy):
-    transactional: bool = True
+    pass
 
 
 ##############################
@@ -92,6 +89,16 @@ class DatasetPublisherSpec:
         return ",".join(table.value for table in self.data_tables)
 
     def lock_domains(self) -> tuple[str, ...]:
+        """DuckLake advisory lock domains for this dataset's publication scope.
+
+        These lock domains protect only DuckLake raw table and provenance table
+        mutations. They do NOT protect:
+
+          - Raw-object ledger publication markers (PostgreSQL).
+          - Raw filesystem file writes (downloaded archives).
+
+        See locks.py module docstring for the full lock model scope discussion.
+        """
         return ducklake_lock_domains_for_tables(
             data_tables=self.data_tables,
             provenance_tables=self.provenance_tables,

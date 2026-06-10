@@ -177,20 +177,11 @@ class HttpRawObjectClient:
         self._session.close()
 
     def _build_session(self) -> requests.Session:
-        session = requests.Session()
-        retry = Retry(
-            total=self.max_retries,
-            read=self.max_retries,
-            connect=self.max_retries,
+        return build_retry_session(
+            max_retries=self.max_retries,
             backoff_factor=self.backoff_factor,
             backoff_jitter=self.backoff_jitter,
-            status_forcelist=(429, 500, 502, 503, 504),
-            allowed_methods=frozenset({"GET"}),
-            raise_on_status=False,
         )
-        adapter = HTTPAdapter(max_retries=retry)
-        session.mount("https://", adapter)
-        return session
 
     def _write_response_body(
         self,
@@ -208,6 +199,29 @@ class HttpRawObjectClient:
                 stream.write(chunk)
                 content_length += len(chunk)
         return content_length, digest.hexdigest()
+
+
+def build_retry_session(
+    *,
+    max_retries: int,
+    backoff_factor: float,
+    backoff_jitter: float,
+    allowed_methods: frozenset[str] = frozenset({"GET"}),
+) -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=max_retries,
+        read=max_retries,
+        connect=max_retries,
+        backoff_factor=backoff_factor,
+        backoff_jitter=backoff_jitter,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=allowed_methods,
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    return session
 
 
 def _parse_content_length(value: str | None) -> int | None:

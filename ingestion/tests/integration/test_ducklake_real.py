@@ -77,7 +77,7 @@ def test_append_snapshot_rows_appends_duplicate_snapshot_rows(shared_con):
         {
             "order_id": [1],
             "price": [10.0],
-            "source_object_id": ["soid-1"],
+            "source_ref_id": ["soid-1"],
             "source_market_date": [date(2026, 1, 1)],
             "snapshot_ts": ["2026-01-01"],
         }
@@ -298,7 +298,7 @@ def test_append_snapshot_rows_allows_partial_source_date_coverage(shared_con):
         {
             "order_id": [1],
             "price": [10.0],
-            "source_object_id": ["soid-1"],
+            "source_ref_id": ["soid-1"],
             "source_market_date": ["2026-01-01"],
             "snapshot_ts": ["2026-01-01"],
         }
@@ -315,7 +315,7 @@ def test_append_snapshot_rows_allows_partial_source_date_coverage(shared_con):
         {
             "order_id": [2],
             "price": [20.0],
-            "source_object_id": ["soid-2"],
+            "source_ref_id": ["soid-2"],
             "source_market_date": ["2026-01-01"],
             "snapshot_ts": ["2026-01-01"],
         }

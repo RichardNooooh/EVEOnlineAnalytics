@@ -94,22 +94,22 @@ class TestLifecycle:
 
     def test_mark_published_raises_outside_context(self):
         tracker = PublicationTracker(InMemoryRawObjectLedger())
-        with pytest.raises(RuntimeError, match="must be used within its owning Cache context"):
+        with pytest.raises(RuntimeError, match="must be used within its owning context"):
             tracker.mark_published(_result())
 
     def test_mark_published_many_raises_outside_context(self):
         tracker = PublicationTracker(InMemoryRawObjectLedger())
-        with pytest.raises(RuntimeError, match="must be used within its owning Cache context"):
+        with pytest.raises(RuntimeError, match="must be used within its owning context"):
             tracker.mark_published_many([])
 
     def test_is_published_raises_outside_context(self):
         tracker = PublicationTracker(InMemoryRawObjectLedger())
-        with pytest.raises(RuntimeError, match="must be used within its owning Cache context"):
+        with pytest.raises(RuntimeError, match="must be used within its owning context"):
             tracker.is_published(_result())
 
     def test_filter_published_raises_outside_context(self):
         tracker = PublicationTracker(InMemoryRawObjectLedger())
-        with pytest.raises(RuntimeError, match="must be used within its owning Cache context"):
+        with pytest.raises(RuntimeError, match="must be used within its owning context"):
             tracker.filter_published([])
 
 
