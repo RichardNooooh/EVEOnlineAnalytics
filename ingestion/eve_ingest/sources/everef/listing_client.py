@@ -6,7 +6,7 @@ import requests
 
 from eve_ingest.raw_objects.http_client import build_retry_session
 
-logger = logging.getLogger("eve_ingest.sources.everef")
+logger = logging.getLogger(__name__)
 
 
 class EverefSnapshotClient:

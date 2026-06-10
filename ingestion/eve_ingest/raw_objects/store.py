@@ -41,7 +41,7 @@ from eve_ingest.raw_objects.repository import RawObjectRepository
 from eve_ingest.raw_objects.paths import validate_path_segment
 from eve_ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
 
-logger = logging.getLogger("eve_ingest.raw_objects")
+logger = logging.getLogger(__name__)
 
 
 class RawObjectStore:
@@ -146,8 +146,8 @@ class RawObjectStore:
 
     # ── public API ──────────────────────────────────────────────────────────
 
-    def get(self, cache_object: RawObjectRequest) -> AcquiredRawObject:
-        plan = self._file_store.build_plan(cache_object)
+    def get(self, request: RawObjectRequest) -> AcquiredRawObject:
+        plan = self._file_store.build_plan(request)
         state = self._repository.load_current_state(plan.ref)
         return self._repository.get_from_plan(plan, state)
 

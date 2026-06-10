@@ -27,7 +27,7 @@ from eve_ingest.raw_objects.http_models import (
     RevalidationMetadata,
 )
 
-logger = logging.getLogger("eve_ingest.raw_objects")
+logger = logging.getLogger(__name__)
 
 
 class HttpRawObjectClient:

@@ -17,7 +17,7 @@ from eve_ingest.ducklake.sql import (
     quote_sql_string,
 )
 
-logger = logging.getLogger("eve_ingest.ducklake")
+logger = logging.getLogger(__name__)
 
 
 class DuckLakeSession:

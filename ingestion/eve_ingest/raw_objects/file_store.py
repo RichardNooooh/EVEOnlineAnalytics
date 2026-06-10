@@ -33,14 +33,14 @@ class RawObjectFileStore:
         self._dataset_name = dataset_name
         self._update_mode = update_mode
 
-    def build_plan(self, cache_object: RawObjectRequest) -> FetchPlan:
+    def build_plan(self, request: RawObjectRequest) -> FetchPlan:
         source_relative_path = (
-            normalize_source_path(cache_object.source_path)
-            if cache_object.source_path is not None
-            else normalize_source_relative_path(cache_object.source_url)
+            normalize_source_path(request.source_path)
+            if request.source_path is not None
+            else normalize_source_relative_path(request.source_url)
         )
         resolved_identity_key = resolve_identity_key(
-            identity_key=cache_object.identity_key,
+            identity_key=request.identity_key,
             source_relative_path=source_relative_path,
         )
         identity_hash = hash_identity_key(resolved_identity_key)
@@ -54,7 +54,7 @@ class RawObjectFileStore:
         )
         return FetchPlan(
             ref=ref,
-            source_url=cache_object.source_url,
+            source_url=request.source_url,
             source_relative_path=source_relative_path,
             temp_path=str(build_temp_path(raw_root=self._raw_root, ref=ref)),
         )

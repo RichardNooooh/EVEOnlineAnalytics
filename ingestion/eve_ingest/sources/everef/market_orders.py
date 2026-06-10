@@ -25,7 +25,7 @@ from eve_ingest.publication.specs import (
 )
 from eve_ingest.sources.everef.discovery import build_listed_objects
 
-logger = logging.getLogger("eve_ingest.sources.everef")
+logger = logging.getLogger(__name__)
 
 _SNAPSHOT_RE = re.compile(r'href="[^"]*(market-orders-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.v3\.csv\.bz2)"')
 
@@ -55,7 +55,7 @@ PUBLISHER_SPEC = DatasetPublisherSpec(
     update_mode=UpdateMode.SNAPSHOT,
     data_tables=(RawDuckLakeTable.MARKET_ORDERS,),
     provenance_tables=(RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,),
-    write_policy=AppendSnapshotRows(batch_scope="source_date"),
+    write_policy=AppendSnapshotRows(),
     publication_scope=SourceDateScope("market_orders"),
 )
 

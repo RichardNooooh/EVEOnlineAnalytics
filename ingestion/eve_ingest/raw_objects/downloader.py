@@ -28,7 +28,7 @@ from eve_ingest.raw_objects.store_helpers import (
     revalidation_for_hit,
 )
 
-logger = logging.getLogger("eve_ingest.raw_objects")
+logger = logging.getLogger(__name__)
 
 
 class RawObjectDownloader:

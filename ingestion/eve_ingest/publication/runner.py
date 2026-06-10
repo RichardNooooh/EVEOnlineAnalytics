@@ -224,6 +224,8 @@ def _process_publication_scope(
         # missing PostgreSQL publication markers without reprocessing —
         # see the M1 reconciler design.
         #
+        # TODO: Implement reconciler to back-fill PostgreSQL publication markers from DuckLake provenance
+        #
         # If a retry path needs to be fully source-idempotent without
         # touching the raw-object ledger, consider filtering by DuckLake
         # provenance in addition to the PostgreSQL publication marker check.

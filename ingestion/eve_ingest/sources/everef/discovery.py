@@ -9,7 +9,7 @@ from eve_ingest.raw_objects import RawObjectRequest
 from eve_ingest.sources.everef.listing_client import EverefSnapshotClient
 from eve_ingest.util import iter_dates
 
-logger = logging.getLogger("eve_ingest.sources.everef")
+logger = logging.getLogger(__name__)
 
 EVEREF_BASE = "https://data.everef.net"
 

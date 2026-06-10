@@ -20,7 +20,7 @@ _RUNTIME_CONTEXT_ENV_VARS: Final[dict[str, str]] = {
 _CONFIG_PATH = Path(__file__).with_name("logging_configs") / "config.yaml"
 
 _configured = False
-logger = logging.getLogger("eve_ingest")
+logger = logging.getLogger(__name__)
 
 
 def configure_logging(*, force: bool = False) -> None:

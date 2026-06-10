@@ -657,18 +657,18 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
     )
     first_store = _store(tmp_path=tmp_path, client=client)
     second_store = _store(tmp_path=tmp_path, client=client, ledger=InMemoryRawObjectLedger())
-    cache_object = RawObjectRequest(
+    request_obj = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
         identity_key={"source": "test"},
     )
 
     with first_store as store:
-        first_result = store.get(cache_object)
+        first_result = store.get(request_obj)
 
     assert Path(first_result.path).exists()
 
     with second_store as store:
-        second_result = store.get(cache_object)
+        second_result = store.get(request_obj)
 
     assert len(client.calls) == 2
     assert second_result.changed is True
@@ -677,13 +677,13 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
 
 def test_build_plan_produces_unique_temp_paths(tmp_path: Path) -> None:
     store = _store(tmp_path=tmp_path, client=FakeClient([]))
-    cache_object = RawObjectRequest(
+    request_obj = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
         identity_key={"source": "test"},
     )
     with store:
-        plan1 = store._file_store.build_plan(cache_object)
-        plan2 = store._file_store.build_plan(cache_object)
+        plan1 = store._file_store.build_plan(request_obj)
+        plan2 = store._file_store.build_plan(request_obj)
 
     assert plan1.ref.identity_hash == plan2.ref.identity_hash
     assert plan1.temp_path != plan2.temp_path

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Protocol
 
 from eve_ingest.ducklake.locks import ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.raw_tables import (
@@ -50,7 +50,6 @@ class WritePolicy:
 
 @dataclass(frozen=True)
 class AppendSnapshotRows(WritePolicy):
-    batch_scope: Literal["source_date"]
     immutable_source_object: bool = True
 
 

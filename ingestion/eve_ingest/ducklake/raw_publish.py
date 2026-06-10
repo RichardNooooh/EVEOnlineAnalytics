@@ -22,7 +22,7 @@ from eve_ingest.ducklake.sql import (
     count_source_rows_without_matches,
 )
 
-logger = logging.getLogger("eve_ingest.ducklake")
+logger = logging.getLogger(__name__)
 
 
 def validate_key_columns(arrow_table: pa.Table, key_columns: Sequence[str]) -> None:
