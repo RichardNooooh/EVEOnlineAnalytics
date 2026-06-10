@@ -3,7 +3,7 @@ minimum_release_age = "7d"
 
 [tools]
 # Python ecosystem
-python = "3.13"
+python = "3.13.13"
 uv = "latest"
 
 # Static site and BI tooling
