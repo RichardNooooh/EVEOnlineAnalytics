@@ -45,7 +45,7 @@ def test_publisher_spec_declares_reference_mutations() -> None:
     assert PUBLISHER_SPEC.scope_for({"source_date": "latest"}) == "raw:references:full_extract"
 
 
-class TestBuildCacheObjects:
+class TestBuildRawObjectRequests:
     def test_single_object(self) -> None:
         objects = discover_objects(MagicMock())
         assert len(objects) == 1

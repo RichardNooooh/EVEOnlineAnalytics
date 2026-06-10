@@ -1,4 +1,4 @@
-"""High-level cache for downloading and tracking batch archive/file-object sources.
+"""High-level store for downloading and tracking batch archive/file-object sources.
 
 Designed for everef.net bulk archives and similar file-object sources.
 Not intended for streaming or REST API pagination sources (use dlt for those).
@@ -13,7 +13,7 @@ Not intended for streaming or REST API pagination sources (use dlt for those).
          ├─ snapshot + file OK   → _record_hit()          → HIT
          └─ mutable / no hit     → _revalidate_or_store() → HIT or STORED
 
-Output: CacheResult with status HIT (local) or STORED (downloaded).
+Output: AcquiredRawObject with status HIT (local) or STORED (downloaded).
 """
 
 from __future__ import annotations
@@ -30,10 +30,10 @@ from eve_ingest.raw_objects.file_store import RawObjectFileStore
 from eve_ingest.raw_objects.http_client import HttpRawObjectClient
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.models import (
-    CacheObject,
-    CacheResult,
-    CacheResultStatus,
-    GetMode,
+    RawObjectRequest,
+    AcquiredRawObject,
+    AcquisitionStatus,
+    AcquisitionMode,
 )
 from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.publishing import PublicationTracker
@@ -51,7 +51,7 @@ class RawObjectStore:
 
     Example:
         ```python
-        from eve_ingest.raw_objects import RawObjectStore, CacheObject, UpdateMode
+        from eve_ingest.raw_objects import RawObjectStore, RawObjectRequest, UpdateMode
 
         with RawObjectStore(
             dataset_name="market-history",
@@ -60,7 +60,7 @@ class RawObjectStore:
             ledger_url=ledger_url,
         ) as store:
             result = store.get(
-                CacheObject(
+                RawObjectRequest(
                     source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
                     identity_key={"source_date": "2026-01-01"},
                 )
@@ -146,17 +146,17 @@ class RawObjectStore:
 
     # ── public API ──────────────────────────────────────────────────────────
 
-    def get(self, cache_object: CacheObject) -> CacheResult:
+    def get(self, cache_object: RawObjectRequest) -> AcquiredRawObject:
         plan = self._file_store.build_plan(cache_object)
         state = self._repository.load_current_state(plan.ref)
         return self._repository.get_from_plan(plan, state)
 
     def get_many(
         self,
-        objects: Iterable[CacheObject],
+        objects: Iterable[RawObjectRequest],
         *,
-        mode: GetMode = GetMode.CHANGED,
-    ) -> list[CacheResult]:
+        mode: AcquisitionMode = AcquisitionMode.CHANGED,
+    ) -> list[AcquiredRawObject]:
         object_list = list(objects)
         plans = [self._file_store.build_plan(obj) for obj in object_list]
         states_by_hash = self._repository.load_current_states([plan.ref for plan in plans])
@@ -166,34 +166,14 @@ class RawObjectStore:
             states_by_hash,
             get_from_plan=self._repository.get_from_plan,
         )
-        results: list[CacheResult] = []
+        results: list[AcquiredRawObject] = []
         for result in fetched_results:
-            if mode is GetMode.CHANGED and not result.changed:
+            if mode is AcquisitionMode.CHANGED and not result.changed:
                 continue
             results.append(result)
 
-        hit_count = sum(1 for r in results if r.status is CacheResultStatus.HIT)
-        stored_count = sum(1 for r in results if r.status is CacheResultStatus.STORED)
-
-        if mode is GetMode.UNPUBLISHED:
-            published_versions = self.pubtrack.filter_published(results)
-            filtered = [
-                result
-                for result in results
-                if (result.raw_object.ref.identity_hash, result.version.sha256) not in published_versions
-            ]
-            logger.info(
-                "RawObjectStore acquire_many source=%s dataset=%s mode=%s requested=%d result_count=%d hit_count=%d stored_count=%d unpublished_count=%d",
-                self._source_name,
-                self._dataset_name,
-                mode,
-                len(object_list),
-                len(results),
-                hit_count,
-                stored_count,
-                len(filtered),
-            )
-            return filtered
+        hit_count = sum(1 for r in results if r.status is AcquisitionStatus.HIT)
+        stored_count = sum(1 for r in results if r.status is AcquisitionStatus.STORED)
 
         logger.info(
             "RawObjectStore acquire_many source=%s dataset=%s mode=%s requested=%d result_count=%d hit_count=%d stored_count=%d",
@@ -207,14 +187,14 @@ class RawObjectStore:
         )
         return results
 
-    def acquire_many(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
-        return self.get_many(objects, mode=GetMode.ALL)
+    def acquire_many(self, objects: Iterable[RawObjectRequest]) -> list[AcquiredRawObject]:
+        return self.get_many(objects, mode=AcquisitionMode.ALL)
 
-    def filter_current_versions(self, results: list[CacheResult]) -> tuple[list[CacheResult], int, int]:
+    def filter_current_versions(self, results: list[AcquiredRawObject]) -> tuple[list[AcquiredRawObject], int, int]:
         return self._repository.filter_current_versions(results)
 
     def load_current_states_for_results(
         self,
-        results: Iterable[CacheResult],
+        results: Iterable[AcquiredRawObject],
     ) -> dict[str, ...]:
         return self._repository.load_current_states_for_results(results)

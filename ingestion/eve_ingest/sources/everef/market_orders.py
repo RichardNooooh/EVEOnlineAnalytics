@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
+from eve_ingest.raw_objects import RawObjectRequest, AcquiredRawObject, UpdateMode
 from eve_ingest.cli.config import EverefCliConfig
 from eve_ingest.ducklake.session import SqlSource
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
@@ -60,7 +60,7 @@ PUBLISHER_SPEC = DatasetPublisherSpec(
 )
 
 
-def discover_objects(config: EverefCliConfig) -> list[CacheObject]:
+def discover_objects(config: EverefCliConfig) -> list[RawObjectRequest]:
     return build_listed_objects(
         config.start_date,
         config.end_date,
@@ -85,7 +85,7 @@ def _decompressed_snapshot_csv(path: str) -> Iterator[str]:
         Path(temp_path).unlink(missing_ok=True)
 
 
-def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
+def publish_one(raw_object: AcquiredRawObject, ctx: PublishContext) -> PublishResult:
     source_market_date = date.fromisoformat(str(raw_object.identity_key["source_date"]))
     snapshot_ts = datetime.strptime(str(raw_object.identity_key["snapshot_time"]), "%Y-%m-%d_%H-%M-%S").replace(
         tzinfo=UTC

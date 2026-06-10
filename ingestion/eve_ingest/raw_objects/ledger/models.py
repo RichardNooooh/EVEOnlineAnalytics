@@ -12,7 +12,7 @@ class RawObjectRef:
     """Stable composite key for one logical raw object.
 
     Combines the source, dataset, and hashed identity into a unique reference
-    used for ledger lookups. Also carries the logical identity key and cache
+    used for ledger lookups. Also carries the logical identity key and store
     policy so no companion ``RawObjectDefinition`` is needed.
     """
 
@@ -32,7 +32,7 @@ class RawObjectRef:
 class RawObjectEntry:
     """Ledger record for logical raw object identity.
 
-    One entry tracks stable object identity, cache policy, and last-observed remote
+    One entry tracks stable object identity, store policy, and last-observed remote
     metadata across version fetches. ``identity_key`` and ``update_mode`` live on
     ``ref``.
     """

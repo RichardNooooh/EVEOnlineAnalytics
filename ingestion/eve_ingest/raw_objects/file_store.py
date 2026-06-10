@@ -10,7 +10,7 @@ from eve_ingest.raw_objects.identity import (
     resolve_identity_key,
 )
 from eve_ingest.raw_objects.ledger.models import RawObjectRef
-from eve_ingest.raw_objects.models import CacheObject
+from eve_ingest.raw_objects.models import RawObjectRequest
 from eve_ingest.raw_objects.paths import (
     build_temp_path,
 )
@@ -33,7 +33,7 @@ class RawObjectFileStore:
         self._dataset_name = dataset_name
         self._update_mode = update_mode
 
-    def build_plan(self, cache_object: CacheObject) -> FetchPlan:
+    def build_plan(self, cache_object: RawObjectRequest) -> FetchPlan:
         source_relative_path = (
             normalize_source_path(cache_object.source_path)
             if cache_object.source_path is not None

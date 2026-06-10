@@ -8,7 +8,7 @@ from typing import Any
 import pyarrow as pa
 
 from eve_ingest.archives.tarball import ExtractedTarball
-from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
+from eve_ingest.raw_objects import RawObjectRequest, AcquiredRawObject, UpdateMode
 from eve_ingest.cli.config import EverefReferencesCliConfig
 from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeProvenanceTable,
@@ -126,9 +126,9 @@ _REFERENCE_PROJECTORS: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] 
 }
 
 
-def discover_objects(config: EverefReferencesCliConfig) -> list[CacheObject]:
+def discover_objects(config: EverefReferencesCliConfig) -> list[RawObjectRequest]:
     return [
-        CacheObject(
+        RawObjectRequest(
             source_url=f"{EVEREF_BASE}/reference-data/reference-data-latest.tar.xz",
             identity_key={"source_date": "latest"},
         )
@@ -191,7 +191,7 @@ def _parse_json_to_table(member_path: str, archive_name: str) -> pa.Table:
 
 def _prepare_reference_archive(
     *,
-    raw_object: CacheResult,
+    raw_object: AcquiredRawObject,
 ) -> list[PreparedReferenceTableSource]:
     # Ownership: this helper does NOT own the ExitStack or DuckDB temp views.
     # It parses the archive and returns prepared source descriptors.
@@ -256,7 +256,7 @@ def _prepare_reference_archive(
     return prepared_members
 
 
-def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
+def publish_one(raw_object: AcquiredRawObject, ctx: PublishContext) -> PublishResult:
     prepared_members = _prepare_reference_archive(
         raw_object=raw_object,
     )

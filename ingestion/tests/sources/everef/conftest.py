@@ -7,11 +7,11 @@ from unittest.mock import MagicMock
 
 import pyarrow as pa
 
-from eve_ingest.raw_objects import CacheResult, CacheResultStatus
+from eve_ingest.raw_objects import AcquiredRawObject, AcquisitionStatus
 from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, RawObjectEntry, RawObjectRef, RawObjectVersion
 from eve_ingest.raw_objects.primitives import UpdateMode
-from eve_ingest.raw_objects.models import GetMode
+from eve_ingest.raw_objects.models import AcquisitionMode
 from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
 from eve_ingest.ducklake.locks import DuckLakeLockToken
 
@@ -80,7 +80,7 @@ def make_cache_result(
     identity_hash: str = "abc",
     raw_object_id: str = "obj-1",
     version_id: str = "ver-1",
-) -> CacheResult:
+) -> AcquiredRawObject:
     identity_key = identity_key or {"source_date": "2026-01-01"}
     source_url = source_url or f"https://example.com/{dataset_name}/test.csv.bz2"
 
@@ -107,8 +107,8 @@ def make_cache_result(
         storage_encoding="bz2",
         version_number=1,
     )
-    return CacheResult(
-        status=CacheResultStatus.STORED,
+    return AcquiredRawObject(
+        status=AcquisitionStatus.STORED,
         raw_object=raw_object,
         version=version,
     )
@@ -136,9 +136,9 @@ def make_everef_pipeline_config(config_cls: type[Any], tmp_path: Any, **kwargs: 
 
 def install_pipeline_fakes(
     monkeypatch: Any,
-    results: list[CacheResult],
+    results: list[AcquiredRawObject],
     *,
-    assert_mode: GetMode = GetMode.UNPUBLISHED,
+    assert_mode: AcquisitionMode = AcquisitionMode.CHANGED,
 ) -> tuple[FakeConnection, MagicMock]:
     mock_pubtrack = MagicMock()
     mock_pubtrack.filter_published.return_value = set()
@@ -173,15 +173,15 @@ def install_pipeline_fakes(
         def pubtrack(self) -> MagicMock:
             return mock_pubtrack
 
-        def get_many(self, objects: object, *, mode: object = None) -> list[CacheResult]:
+        def get_many(self, objects: object, *, mode: object = None) -> list[AcquiredRawObject]:
             assert mode is assert_mode
             return results
 
-        def acquire_many(self, objects: object) -> list[CacheResult]:
+        def acquire_many(self, objects: object) -> list[AcquiredRawObject]:
             return results
 
         def load_current_states_for_results(
-            self, selected: list[CacheResult]
+            self, selected: list[AcquiredRawObject]
         ) -> dict[str, CurrentRawObjectState | None]:
             return {
                 result.raw_object.ref.identity_hash: CurrentRawObjectState(
@@ -191,7 +191,7 @@ def install_pipeline_fakes(
                 for result in selected
             }
 
-        def filter_current_versions(self, results: list[CacheResult]) -> tuple[list[CacheResult], int, int]:
+        def filter_current_versions(self, results: list[AcquiredRawObject]) -> tuple[list[AcquiredRawObject], int, int]:
             return results, 0, 0
 
     con = FakeConnection()
