@@ -8,7 +8,6 @@ uv = "latest"
 
 # Static site and BI tooling
 node = "22.22.3"
-npm = "10.9.8"
 
 # Tools
 jq = "latest"
@@ -21,6 +20,3 @@ duckdb = "latest"
 # Python linting/formatting
 ruff = "latest"
 pre-commit = "latest"
-
-# Pre-Commit Linting
-"pipx:pre-commit" = "latest"
