@@ -154,15 +154,19 @@ def install_pipeline_fakes(
     ):
         yield DuckLakeLockToken.unsafe_for_tests(publisher_spec.lock_domains())
 
-    class FakeCache:
+    class FakeRawObjectStore:
         def __init__(self, *args: object, **kwargs: object) -> None:
             pass
 
-        def __enter__(self) -> FakeCache:
+        def __enter__(self) -> FakeRawObjectStore:
             return self
 
         def __exit__(self, *args: object) -> None:
             pass
+
+        @property
+        def ledger(self) -> MagicMock:
+            return MagicMock()
 
         @property
         def pubtrack(self) -> MagicMock:
@@ -170,6 +174,9 @@ def install_pipeline_fakes(
 
         def get_many(self, objects: object, *, mode: object = None) -> list[CacheResult]:
             assert mode is assert_mode
+            return results
+
+        def acquire_many(self, objects: object) -> list[CacheResult]:
             return results
 
         def load_current_states_for_results(
@@ -183,12 +190,48 @@ def install_pipeline_fakes(
                 for result in selected
             }
 
+    class FakePublicationRegistry:
+        def __init__(self, pubtrack: object) -> None:
+            pass
+
+        def filter_unpublished(self, results: list[CacheResult]) -> list[CacheResult]:
+            return results
+
+        def mark_published_many(
+            self,
+            results: list[CacheResult],
+            *,
+            publication_scope: str,
+            publisher_run_id: str | None = None,
+        ) -> None:
+            mock_pubtrack.mark_published_many(results)
+
     con = FakeConnection()
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.raw_publish.target_exists", lambda *args, **kwargs: True)
+
+    @contextmanager
+    def fake_hold_ducklake_lock_domains(
+        *,
+        catalog_url: str = "",
+        lock_domains: tuple[str, ...] = (),
+        timeout_seconds: float = 60.0,
+        context: object = None,
+    ):
+        yield DuckLakeLockToken.unsafe_for_tests(lock_domains)
+
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeRawObjectStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeRawObjectStore)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        fake_hold_publication_domain_locks,
+        "eve_ingest.raw_objects.publication_registry.PublicationRegistry",
+        FakePublicationRegistry,
+    )
+    monkeypatch.setattr(
+        "eve_ingest.publication.runner.PublicationRegistry",
+        FakePublicationRegistry,
+    )
+    monkeypatch.setattr(
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        fake_hold_ducklake_lock_domains,
     )
     return con, mock_pubtrack

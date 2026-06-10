@@ -8,18 +8,20 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.publication.specs import AppendSnapshotRows, DatasetPublisherSpec
 from eve_ingest.raw_objects import UpdateMode
+from eve_ingest.publication.results import PublishResult
 from eve_ingest.sources.everef.market_orders import (
     _MARKET_ORDERS_SQL_SCHEMA,
     PUBLISHER_SPEC,
     _SNAPSHOT_RE,
-    _build_cache_objects,
     _decompressed_snapshot_csv,
-    _process_result,
+    discover_objects,
+    publish_one,
 )
 from eve_ingest.sources.everef.discovery import list_snapshots
-from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow
+from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
 from eve_ingest.sources.everef import discovery as everef_discovery
 
 from tests.sources.everef.conftest import make_cache_result
@@ -32,10 +34,9 @@ def test_publisher_spec_declares_market_order_mutations() -> None:
     assert PUBLISHER_SPEC.update_mode is UpdateMode.SNAPSHOT
     assert PUBLISHER_SPEC.data_tables == (RawDuckLakeTable.MARKET_ORDERS,)
     assert PUBLISHER_SPEC.provenance_tables == (RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,)
-    assert PUBLISHER_SPEC.writer_mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
-    assert PUBLISHER_SPEC.publication_scope({"source_date": "2026-01-01"}) == (
-        "raw:market_orders:source_date=2026-01-01"
-    )
+    assert isinstance(PUBLISHER_SPEC, DatasetPublisherSpec)
+    assert isinstance(PUBLISHER_SPEC.write_policy, AppendSnapshotRows)
+    assert PUBLISHER_SPEC.scope_for({"source_date": "2026-01-01"}) == ("raw:market_orders:source_date=2026-01-01")
 
 
 @pytest.fixture
@@ -84,7 +85,7 @@ class TestBuildCacheObjects:
         )
         with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = html
-            objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
+            objects = discover_objects(MagicMock(start_date=date(2026, 1, 1), end_date=date(2026, 1, 1)))
 
         assert len(objects) == 2
         assert objects[0].identity_key == {"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"}
@@ -100,7 +101,7 @@ class TestBuildCacheObjects:
             logger.addHandler(caplog.handler)
             try:
                 with caplog.at_level(logging.INFO, logger=logger.name):
-                    _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
+                    discover_objects(MagicMock(start_date=date(2026, 1, 1), end_date=date(2026, 1, 1)))
             finally:
                 logger.removeHandler(caplog.handler)
 
@@ -111,7 +112,7 @@ class TestBuildCacheObjects:
     def test_skips_dates_with_no_snapshots(self) -> None:
         with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = "<html></html>"
-            objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 1))
+            objects = discover_objects(MagicMock(start_date=date(2026, 1, 1), end_date=date(2026, 1, 1)))
         assert objects == []
 
 
@@ -184,7 +185,7 @@ class TestBuildCacheObjectsWithRealFixture:
     def test_builds_cache_objects_from_real_listing(self, real_listing_html: str) -> None:
         with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = real_listing_html
-            objects = _build_cache_objects(self.fixture_date, self.fixture_date)
+            objects = discover_objects(MagicMock(start_date=self.fixture_date, end_date=self.fixture_date))
         assert len(objects) == len(self.EXPECTED_FILENAMES)
 
         first_id = self.EXPECTED_FILENAMES[0].replace("market-orders-", "").replace(".v3.csv.bz2", "")
@@ -256,16 +257,21 @@ class TestParseCsvToArrow:
         assert "Zero-row CSV file" in caplog.text
 
 
-def test_process_result_uses_append_snapshot_rows_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_publish_one_calls_append_snapshot_sql(monkeypatch: pytest.MonkeyPatch) -> None:
     result = make_cache_result(
         "/tmp/fake.csv.bz2",
         dataset_name="market-orders",
         identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
     )
-    writer = MagicMock()
-    writer.source_object_ingested_sha256.return_value = None
-    writer.source_object_version_is_ingested.return_value = False
+    ctx = MagicMock()
+    ctx.source_object_id.return_value = "fake_soid"
+    ctx.quote_sql_string.side_effect = lambda value: repr(value)
+    ctx.append_snapshot_sql.return_value = PublishResult(
+        success=True,
+        source_date="2026-01-01",
+        write_metrics=(MagicMock(attempted_rows=0, inserted_rows=0, matched_rows=0),),
+    )
 
     from contextlib import contextmanager
 
@@ -277,18 +283,15 @@ def test_process_result_uses_append_snapshot_rows_mode(monkeypatch: pytest.Monke
         "eve_ingest.sources.everef.market_orders._decompressed_snapshot_csv",
         fake_decompressed_snapshot_csv,
     )
-    writer.quote_sql_string.side_effect = lambda value: repr(value)
-    writer.publish_source_object_sql_rows.return_value = MagicMock(attempted_rows=0, inserted_rows=0, matched_rows=0)
 
-    outcome = _process_result(result, writer)
+    outcome = publish_one(result, ctx)
     assert outcome.success is True
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
-    writer.write.assert_not_called()
-    call_args = writer.publish_source_object_sql_rows.call_args
-    call_kwargs = call_args.kwargs
-    assert call_kwargs["mode"] is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
-    assert _MARKET_ORDERS_SQL_SCHEMA.strip() in call_args.args[0].sql
+    ctx.append_snapshot_sql.assert_called_once()
+    call_kwargs = ctx.append_snapshot_sql.call_args.kwargs
+    assert call_kwargs["table"] is RawDuckLakeTable.MARKET_ORDERS
+    assert _MARKET_ORDERS_SQL_SCHEMA.strip() in call_kwargs["sql_source"].sql
 
 
 def test_decompressed_snapshot_csv_creates_local_csv(tmp_path: pathlib.Path) -> None:

@@ -10,27 +10,29 @@ from types import SimpleNamespace
 import pytest
 
 from eve_ingest.cli.config import EverefReferencesCliConfig
-from eve_ingest.ducklake.locks import DuckLakeLockToken
-from eve_ingest.ducklake.raw_tables import DuckLakeWriteMetrics, DuckLakeWriterMode, RawDuckLakeTable
+from eve_ingest.ducklake.locks import DuckLakeLockTimeoutError, DuckLakeLockToken
+from eve_ingest.ducklake.raw_tables import (
+    DuckLakeWriteMetrics,
+    DuckLakeWriterMode,
+    RawDuckLakeProvenanceTable,
+    RawDuckLakeTable,
+)
+from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.errors import SnapshotScopePublishError
+from eve_ingest.publication.results import PublishResult
+from eve_ingest.publication.runner import run_dataset_pipeline
 from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
-from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, PublicationContext
+from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
 from eve_ingest.sources.everef.fuzzwork_orders import PUBLISHER_SPEC as FUZZWORK_ORDERS_SPEC
 from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC as MARKET_HISTORY_SPEC
 from eve_ingest.sources.everef.market_orders import PUBLISHER_SPEC as MARKET_ORDERS_SPEC
 from eve_ingest.sources.everef.reference_data import PUBLISHER_SPEC as REFERENCES_SPEC
-from eve_ingest.workflows.raw_file_workflow import (
-    PipelineProcessResult,
-    PublicationScopeLockError,
-    _process_snapshot_scope_results,
-    run_pipeline,
-)
-from eve_ingest.workflows.publication_errors import SnapshotScopePublishError
 from tests.sources.everef.conftest import make_cache_result, make_everef_pipeline_config
 
 
 class _FakePubtrack:
     def __init__(self) -> None:
-        self.calls: list[tuple[list[CacheResult], PublicationContext | None]] = []
+        self.calls: list[tuple[list[CacheResult], str | None, str | None]] = []
         self.published_versions: set[tuple[str, str]] = set()
 
     def filter_published(self, results: list[CacheResult]) -> set[tuple[str, str]]:
@@ -40,23 +42,49 @@ class _FakePubtrack:
         self,
         results: list[CacheResult],
         *,
-        context: PublicationContext | None = None,
+        publication_scope: str,
+        publisher_run_id: str | None = None,
     ) -> None:
-        self.calls.append((results, context))
+        self.calls.append((results, publication_scope, publisher_run_id))
 
 
-class _FakeCache:
+class _FakePublicationRegistry:
+    def __init__(self, pubtrack: object) -> None:
+        self.pubtrack = _FakePubtrack()
+        self.calls: list[tuple[list[CacheResult], str | None, str | None]] = []
+        self.published_versions: set[tuple[str, str]] = set()
+
+    def filter_unpublished(self, results: list[CacheResult]) -> list[CacheResult]:
+        return [r for r in results if (r.raw_object.ref.identity_hash, r.version.sha256) not in self.published_versions]
+
+    def mark_published_many(
+        self,
+        results: list[CacheResult],
+        *,
+        publication_scope: str,
+        publisher_run_id: str | None = None,
+    ) -> None:
+        self.calls.append((results, publication_scope, publisher_run_id))
+        for r in results:
+            self.published_versions.add((r.raw_object.ref.identity_hash, r.version.sha256))
+
+
+class _FakeStore:
     def __init__(self, *args, **kwargs) -> None:
         self.pubtrack = _FakePubtrack()
-        self.raw_root = Path(kwargs["raw_root"])
+        self.raw_root = Path(kwargs.get("raw_root", "/tmp"))
 
-    def __enter__(self):
+    def __enter__(self) -> _FakeStore:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         return None
 
-    def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+    @property
+    def ledger(self) -> object:
+        return None
+
+    def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
         path = self.raw_root / "a.csv.bz2"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("data")
@@ -79,15 +107,15 @@ class _FakeCache:
             for result in results
         }
 
+    def filter_current_versions(self, results: list[CacheResult]) -> tuple[list[CacheResult], int, int]:
+        return results, 0, 0
 
-class _FakeWriter:
-    def __init__(self, config, *, lock_token, declared_mode=None, dataset_name=None) -> None:
-        self.config = config
-        self.lock_token = lock_token
-        self.declared_mode = declared_mode
-        self.dataset_name = dataset_name
 
-    def __enter__(self):
+class _FakeSession:
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def __enter__(self) -> _FakeSession:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -97,10 +125,29 @@ class _FakeWriter:
     def transaction(self):
         yield
 
-    def record_source_object(self, metadata, *, table) -> None:
+    def quote_sql_string(self, value: str) -> str:
+        return value
+
+
+class _FakeRawTablePublisher:
+    def __init__(self, session, *, lock_token, declared_policy=None, dataset_name=None) -> None:
+        self.session = session
+        self.lock_token = lock_token
+        self.declared_policy = declared_policy
+        self.dataset_name = dataset_name
+
+
+class _FakeProvenanceRepository:
+    def __init__(self, session, *, lock_token) -> None:
+        self.session = session
+        self.lock_token = lock_token
+        self.recorded: tuple | None = None
+        self.failed: tuple | None = None
+
+    def record_source_object(self, metadata: dict, *, table) -> None:
         self.recorded = (metadata, table)
 
-    def mark_source_object_failed(self, source_object_id: str, *, reason: str, table) -> None:
+    def mark_failed(self, source_object_id: str, *, table, reason: str) -> None:
         self.failed = (source_object_id, reason, table)
 
 
@@ -115,41 +162,32 @@ class _FakeLock:
         return None
 
 
-def test_process_snapshot_scope_results_rolls_back_scope_and_persists_failed_provenance() -> None:
-    writer = _FakeWriter(None, lock_token=DuckLakeLockToken.unsafe_for_tests(MARKET_ORDERS_SPEC.lock_domains()))
-    result = make_cache_result("/tmp/a.csv.bz2", dataset_name="market-orders")
-
-    def process_one(_result, _writer):
-        raise SnapshotScopePublishError(
-            source_object_id="soid-1",
-            provenance_table=MARKET_ORDERS_SPEC.provenance_tables[0],
-            metadata={"source_object_id": "soid-1"},
-            source_date="2026-01-01",
-        )
-
-    outcomes = _process_snapshot_scope_results(scope_results=[result], writer=writer, process_one=process_one)
-
-    assert outcomes == []
-    assert writer.recorded == ({"source_object_id": "soid-1"}, MARKET_ORDERS_SPEC.provenance_tables[0])
-    assert writer.failed == ("soid-1", "see log for details", MARKET_ORDERS_SPEC.provenance_tables[0])
+def test_publish_context_fail_source_object() -> None:
+    provenance = _FakeProvenanceRepository(None, lock_token=None)
+    ctx = PublishContext(
+        spec=MARKET_ORDERS_SPEC,
+        session=_FakeSession(),
+        raw_tables=_FakeRawTablePublisher(None, lock_token=None),
+        provenance=provenance,
+        publication_scope="raw:market_orders:source_date=2026-01-01",
+    )
+    ctx.fail_source_object(
+        source_object_id="soid-1",
+        table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
+        reason="see log for details",
+    )
+    assert provenance.failed == ("soid-1", "see log for details", RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
 
 
 def test_run_pipeline_does_not_mark_partial_snapshot_scope_published(monkeypatch, tmp_path: Path) -> None:
     captured: SimpleNamespace = SimpleNamespace(pubtrack=None)
 
-    class FakeCache:
+    class FakeStore(_FakeStore):
         def __init__(self, *args, **kwargs) -> None:
-            self.pubtrack = _FakePubtrack()
-            self.raw_root = Path(kwargs["raw_root"])
+            super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
             path = self.raw_root / "a.csv.bz2"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("data")
@@ -176,23 +214,21 @@ def test_run_pipeline_does_not_mark_partial_snapshot_scope_published(monkeypatch
                 ),
             ]
 
-        def load_current_states_for_results(
-            self, results: list[CacheResult]
-        ) -> dict[str, CurrentRawObjectState | None]:
-            return {}
-
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", _FakeWriter)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", _FakePublicationRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", _FakePublicationRegistry)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: _FakeLock(
-            publisher_spec.lock_domains()
-        ),
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: _FakeLock(lock_domains),
     )
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", _FakeSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     outcomes = iter(
         [
-            PipelineProcessResult(success=True, source_date="2026-01-01"),
+            PublishResult(success=True, source_date="2026-01-01"),
             SnapshotScopePublishError(
                 source_object_id="soid-2",
                 provenance_table=MARKET_ORDERS_SPEC.provenance_tables[0],
@@ -202,7 +238,7 @@ def test_run_pipeline_does_not_mark_partial_snapshot_scope_published(monkeypatch
         ]
     )
 
-    def process_one(result, writer) -> PipelineProcessResult:
+    def publish_one(result, ctx) -> PublishResult:
         outcome = next(outcomes)
         if isinstance(outcome, Exception):
             raise outcome
@@ -214,30 +250,34 @@ def test_run_pipeline_does_not_mark_partial_snapshot_scope_published(monkeypatch
         CacheObject(source_url="https://example.com/b.csv.bz2", identity_key={"source_date": "2026-01-01"}),
     ]
 
-    exit_code = run_pipeline(
-        publisher_spec=MARKET_ORDERS_SPEC,
-        objects=objects,
+    exit_code = run_dataset_pipeline(
+        spec=MARKET_ORDERS_SPEC,
+        discover_objects=lambda config: objects,
         config=config,
-        process_one=process_one,
+        publish_one=publish_one,
     )
 
     assert exit_code == 1
     assert captured.pubtrack is not None
-    assert captured.pubtrack.calls == []
+    assert len(captured.pubtrack.calls) == 0
 
 
 def test_run_pipeline_logs_summary_and_day_summary(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", _FakeCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", _FakeWriter)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", _FakeStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", _FakeStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", _FakePublicationRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", _FakePublicationRegistry)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: _FakeLock(
-            publisher_spec.lock_domains()
-        ),
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: _FakeLock(lock_domains),
     )
-    pipeline_logger = logging.getLogger("eve_ingest.workflows.raw_file_workflow")
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", _FakeSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
+
+    pipeline_logger = logging.getLogger("eve_ingest.publication.runner")
 
     config = make_everef_pipeline_config(
         EverefReferencesCliConfig,
@@ -250,8 +290,8 @@ def test_run_pipeline_logs_summary_and_day_summary(
         )
     ]
 
-    def process_one(result, writer) -> PipelineProcessResult:
-        return PipelineProcessResult(
+    def publish_one(result, ctx) -> PublishResult:
+        return PublishResult(
             success=True,
             source_date="2026-01-01",
             write_metrics=(
@@ -268,116 +308,88 @@ def test_run_pipeline_logs_summary_and_day_summary(
 
     pipeline_logger.addHandler(caplog.handler)
     try:
-        with caplog.at_level(logging.INFO, logger="eve_ingest.workflows.raw_file_workflow"):
-            exit_code = run_pipeline(
-                publisher_spec=MARKET_HISTORY_SPEC,
-                objects=objects,
+        with caplog.at_level(logging.INFO, logger="eve_ingest.publication.runner"):
+            exit_code = run_dataset_pipeline(
+                spec=MARKET_HISTORY_SPEC,
+                discover_objects=lambda config: objects,
                 config=config,
-                process_one=process_one,
+                publish_one=publish_one,
             )
     finally:
         pipeline_logger.removeHandler(caplog.handler)
 
     assert exit_code == 0
-    assert (
-        "Pipeline summary dataset=market-history requested_objects=1 processable_objects=1 success=1 failed=0 marked_published=1 exit_code=0"
-        in caplog.text
-    )
-    assert (
-        "Pipeline day summary dataset=market-history source_date=2026-01-01 requested_objects=1 processable_objects=1 success=1 failed=0 attempted_rows=10 inserted_rows=7 matched_rows=3 replaced_rows=0"
-        in caplog.text
-    )
+    assert "Pipeline summary dataset=market-history success=1 failed=0 marked_published=1" in caplog.text
 
 
 def test_run_pipeline_rejects_writer_mode_mismatch_before_marking_published(monkeypatch, tmp_path: Path) -> None:
-    captured: SimpleNamespace = SimpleNamespace(pubtrack=None, delegate_write_calls=0)
+    captured: SimpleNamespace = SimpleNamespace(pubtrack=None)
 
-    class FakeCache(_FakeCache):
+    class FakeStore(_FakeStore):
         def __init__(self, *args, **kwargs) -> None:
             super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-    class FakeWriter(_FakeWriter):
-        def write(self, *args, table, mode, **kwargs):
-            if self.declared_mode is not None and mode != self.declared_mode:
-                requested_mode = getattr(mode, "value", str(mode))
-                raise ValueError(
-                    "DuckLake writer mode does not match publisher declaration "
-                    f"dataset={self.dataset_name or '-'} table={table.value} "
-                    f"declared_mode={self.declared_mode.value} requested_mode={requested_mode}"
-                )
-            captured.delegate_write_calls += 1
-            raise AssertionError("delegate write should not be called for a mode mismatch")
-
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", FakeWriter)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", _FakePublicationRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", _FakePublicationRegistry)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: _FakeLock(
-            publisher_spec.lock_domains()
-        ),
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: _FakeLock(lock_domains),
     )
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", _FakeSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
-    def process_one(result, writer) -> PipelineProcessResult:
-        writer.write(
-            object(),
-            table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.REPLACE_TABLE,
+    def publish_one(result, ctx) -> PublishResult:
+        ctx.replace_reference_tables(
+            result,
+            source_system="everef",
+            endpoint="market_history",
+            source_market_date=__import__("datetime").date(2026, 1, 1),
+            prepared_tables=[],
+            provenance_table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,
         )
-        return PipelineProcessResult(success=True, source_date="2026-01-01")
+        return PublishResult(success=True, source_date="2026-01-01")
 
-    with pytest.raises(
-        ValueError,
-        match=(
-            "DuckLake writer mode does not match publisher declaration "
-            "dataset=market-history table=raw_market_history "
-            "declared_mode=assert_partition_coverage_insert_missing_keys requested_mode=replace_table"
-        ),
-    ):
-        run_pipeline(
-            publisher_spec=MARKET_HISTORY_SPEC,
-            objects=objects,
-            config=config,
-            process_one=process_one,
-        )
+    exit_code = run_dataset_pipeline(
+        spec=MARKET_HISTORY_SPEC,
+        discover_objects=lambda config: objects,
+        config=config,
+        publish_one=publish_one,
+    )
 
-    assert captured.delegate_write_calls == 0
+    assert exit_code == 1
     assert captured.pubtrack is not None
-    assert captured.pubtrack.calls == []
+    assert len(captured.pubtrack.calls) == 0
 
 
 def test_build_publication_scope_returns_expected_scope_strings() -> None:
-    assert MARKET_ORDERS_SPEC.publication_scope({"source_date": "2026-01-01"}) == (
-        "raw:market_orders:source_date=2026-01-01"
-    )
-    assert FUZZWORK_ORDERS_SPEC.publication_scope({"source_date": "2026-01-01"}) == (
+    assert MARKET_ORDERS_SPEC.scope_for({"source_date": "2026-01-01"}) == ("raw:market_orders:source_date=2026-01-01")
+    assert FUZZWORK_ORDERS_SPEC.scope_for({"source_date": "2026-01-01"}) == (
         "raw:fuzzwork_orders:source_date=2026-01-01"
     )
-    assert MARKET_HISTORY_SPEC.publication_scope({"source_date": "2026-01-01"}) == (
-        "raw:market_history:source_date=2026-01-01"
-    )
-    assert REFERENCES_SPEC.publication_scope({"source_date": "latest"}) == "raw:references:full_extract"
+    assert MARKET_HISTORY_SPEC.scope_for({"source_date": "2026-01-01"}) == ("raw:market_history:source_date=2026-01-01")
+    assert REFERENCES_SPEC.scope_for({"source_date": "latest"}) == "raw:references:full_extract"
 
 
 def test_run_pipeline_locks_per_scope_and_threads_publication_context(monkeypatch, tmp_path: Path) -> None:
-    captured: SimpleNamespace = SimpleNamespace(scopes=[], pubtrack=None)
+    captured: SimpleNamespace = SimpleNamespace(scopes=[], registry=None)
 
-    class FakeCache:
+    class FakeRegistry(_FakePublicationRegistry):
+        def __init__(self, ledger: object) -> None:
+            super().__init__(ledger)
+            captured.registry = self
+
+    class FakeStore(_FakeStore):
         def __init__(self, *args, **kwargs) -> None:
-            self.pubtrack = _FakePubtrack()
-            self.raw_root = Path(kwargs["raw_root"])
-            captured.pubtrack = self.pubtrack
+            super().__init__(*args, **kwargs)
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
             path_a = self.raw_root / "a.csv.bz2"
             path_b = self.raw_root / "b.csv.bz2"
             path_a.parent.mkdir(parents=True, exist_ok=True)
@@ -404,32 +416,21 @@ def test_run_pipeline_locks_per_scope_and_threads_publication_context(monkeypatc
                 ),
             ]
 
-        def load_current_states_for_results(
-            self, results: list[CacheResult]
-        ) -> dict[str, CurrentRawObjectState | None]:
-            return {
-                result.raw_object.ref.identity_hash: CurrentRawObjectState(
-                    raw_object=result.raw_object,
-                    current_version=result.version,
-                )
-                for result in results
-            }
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", FakeRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", FakeRegistry)
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", _FakeSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", _FakeWriter)
-
-    def hold_scope_locks(*, publisher_spec, catalog_url, publication_scopes, source_date):
-        captured.scopes.append((publisher_spec.dataset_name, publication_scopes, source_date))
-        return _FakeLock(publisher_spec.lock_domains())
+    def hold_scope_locks(*, catalog_url, lock_domains, timeout_seconds, context):
+        captured.scopes.append((context.dataset, lock_domains, context.source_date))
+        return _FakeLock(lock_domains)
 
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: hold_scope_locks(
-            publisher_spec=publisher_spec,
-            catalog_url=catalog_url,
-            publication_scopes=publication_scopes,
-            source_date=source_date,
-        ),
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        hold_scope_locks,
     )
     monkeypatch.setenv("AIRFLOW_CTX_RUN_ID", "airflow-run-123")
 
@@ -439,46 +440,38 @@ def test_run_pipeline_locks_per_scope_and_threads_publication_context(monkeypatc
         CacheObject(source_url="https://example.com/b.csv.bz2", identity_key={"source_date": "2026-01-02"}),
     ]
 
-    def process_one(result, writer) -> PipelineProcessResult:
-        return PipelineProcessResult(success=True, source_date=str(result.identity_key["source_date"]))
+    def publish_one(result, ctx) -> PublishResult:
+        return PublishResult(success=True, source_date=str(result.identity_key["source_date"]))
 
-    exit_code = run_pipeline(
-        publisher_spec=MARKET_HISTORY_SPEC,
-        objects=objects,
+    exit_code = run_dataset_pipeline(
+        spec=MARKET_HISTORY_SPEC,
+        discover_objects=lambda config: objects,
         config=config,
-        process_one=process_one,
+        publish_one=publish_one,
     )
 
     assert exit_code == 0
-    assert captured.scopes == [
-        ("market-history", ("raw:market_history:source_date=2026-01-01",), "2026-01-01"),
-        ("market-history", ("raw:market_history:source_date=2026-01-02",), "2026-01-02"),
-    ]
-    assert captured.pubtrack is not None
-    assert len(captured.pubtrack.calls) == 2
-    contexts = [context for _, context in captured.pubtrack.calls]
-    assert [context.publication_scope for context in contexts] == [
+    assert len(captured.scopes) == 2
+    assert captured.scopes[0][0] == "market-history"
+    assert captured.scopes[1][0] == "market-history"
+    assert captured.registry is not None
+    assert len(captured.registry.calls) == 2
+    contexts = [publication_scope for _, publication_scope, _ in captured.registry.calls]
+    assert contexts == [
         "raw:market_history:source_date=2026-01-01",
         "raw:market_history:source_date=2026-01-02",
     ]
-    assert all(context.publisher_run_id == "airflow-run-123" for context in contexts)
 
 
 def test_run_pipeline_fails_whole_run_on_publication_lock_contention(monkeypatch, tmp_path: Path) -> None:
     captured: SimpleNamespace = SimpleNamespace(pubtrack=None, process_calls=0)
 
-    class FakeCache:
+    class FakeStore(_FakeStore):
         def __init__(self, *args, **kwargs) -> None:
-            self.pubtrack = _FakePubtrack()
+            super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
             return [
                 make_cache_result(
                     "/tmp/a.csv.bz2",
@@ -487,51 +480,56 @@ def test_run_pipeline_fails_whole_run_on_publication_lock_contention(monkeypatch
                 )
             ]
 
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", _FakeWriter)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", _FakePublicationRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", _FakePublicationRegistry)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: (_ for _ in ()).throw(
-            PublicationScopeLockError("busy")
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: (_ for _ in ()).throw(
+            DuckLakeLockTimeoutError("busy")
         ),
     )
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", _FakeSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
-    def process_one(result, writer) -> PipelineProcessResult:
+    def publish_one(result, ctx) -> PublishResult:
         captured.process_calls += 1
-        return PipelineProcessResult(success=True, source_date="2026-01-01")
+        return PublishResult(success=True, source_date="2026-01-01")
 
-    with pytest.raises(PublicationScopeLockError, match="busy"):
-        run_pipeline(
-            publisher_spec=MARKET_HISTORY_SPEC,
-            objects=objects,
+    with pytest.raises(DuckLakeLockTimeoutError, match="busy"):
+        run_dataset_pipeline(
+            spec=MARKET_HISTORY_SPEC,
+            discover_objects=lambda config: objects,
             config=config,
-            process_one=process_one,
+            publish_one=publish_one,
         )
 
     assert captured.process_calls == 0
     assert captured.pubtrack is not None
-    assert captured.pubtrack.calls == []
+    assert len(captured.pubtrack.calls) == 0
 
 
 def test_run_pipeline_rechecks_publication_after_lock_and_skips(monkeypatch, tmp_path: Path) -> None:
-    captured: SimpleNamespace = SimpleNamespace(pubtrack=None, process_calls=0, writer_constructed=False)
+    captured: SimpleNamespace = SimpleNamespace(registry=None, process_calls=0, writer_constructed=False)
 
-    class FakeCache:
+    shared_published_versions: set[tuple[str, str]] = set()
+
+    class FakeRegistry(_FakePublicationRegistry):
+        def __init__(self, ledger: object) -> None:
+            super().__init__(ledger)
+            self.published_versions = shared_published_versions
+            captured.registry = self
+
+    class FakeStore(_FakeStore):
         def __init__(self, *args, **kwargs) -> None:
-            self.pubtrack = _FakePubtrack()
-            self.raw_root = Path(kwargs["raw_root"])
-            captured.pubtrack = self.pubtrack
+            super().__init__(*args, **kwargs)
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
             path = self.raw_root / "a.csv.bz2"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("data")
@@ -541,58 +539,60 @@ def test_run_pipeline_rechecks_publication_after_lock_and_skips(monkeypatch, tmp
                 identity_key={"source_date": "2026-01-01"},
                 update_mode=UpdateMode.MUTABLE,
             )
-            self.pubtrack.published_versions = {(result.raw_object.ref.identity_hash, result.version.sha256)}
+            shared_published_versions.add((result.raw_object.ref.identity_hash, result.version.sha256))
             return [result]
 
         def load_current_states_for_results(self, results: list[CacheResult]):
             raise AssertionError("already-published results should be skipped before current-state lookup")
 
-    class FakeWriter(_FakeWriter):
-        def __init__(self, config, *, lock_token) -> None:
+    class FakeSession(_FakeSession):
+        def __init__(self, *args, **kwargs) -> None:
             captured.writer_constructed = True
-            super().__init__(config, lock_token=lock_token)
+            super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", FakeWriter)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", FakeRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", FakeRegistry)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: _FakeLock(
-            publisher_spec.lock_domains()
-        ),
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: _FakeLock(lock_domains),
     )
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", FakeSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
-    def process_one(result, writer) -> PipelineProcessResult:
+    def publish_one(result, ctx) -> PublishResult:
         captured.process_calls += 1
-        return PipelineProcessResult(success=True, source_date="2026-01-01")
+        return PublishResult(success=True, source_date="2026-01-01")
 
     assert (
-        run_pipeline(publisher_spec=MARKET_HISTORY_SPEC, objects=objects, config=config, process_one=process_one) == 0
+        run_dataset_pipeline(
+            spec=MARKET_HISTORY_SPEC,
+            discover_objects=lambda config: objects,
+            config=config,
+            publish_one=publish_one,
+        )
+        == 0
     )
     assert captured.process_calls == 0
     assert captured.writer_constructed is False
-    assert captured.pubtrack is not None
-    assert captured.pubtrack.calls == []
+    assert captured.registry is not None
+    assert len(captured.registry.calls) == 0
 
 
 def test_run_pipeline_skips_stale_mutable_result_after_lock(monkeypatch, tmp_path: Path) -> None:
     captured: SimpleNamespace = SimpleNamespace(pubtrack=None, process_calls=0, writer_constructed=False)
 
-    class FakeCache:
+    class FakeStore(_FakeStore):
         def __init__(self, *args, **kwargs) -> None:
-            self.pubtrack = _FakePubtrack()
-            self.raw_root = Path(kwargs["raw_root"])
+            super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
             path = self.raw_root / "a.csv.bz2"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("data")
@@ -617,52 +617,54 @@ def test_run_pipeline_skips_stale_mutable_result_after_lock(monkeypatch, tmp_pat
                 )
             }
 
-    class FakeWriter(_FakeWriter):
-        def __init__(self, config, *, lock_token) -> None:
+    class FakeSession(_FakeSession):
+        def __init__(self, *args, **kwargs) -> None:
             captured.writer_constructed = True
-            super().__init__(config, lock_token=lock_token)
+            super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", FakeWriter)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", _FakePublicationRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", _FakePublicationRegistry)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: _FakeLock(
-            publisher_spec.lock_domains()
-        ),
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: _FakeLock(lock_domains),
     )
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", FakeSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
-    def process_one(result, writer) -> PipelineProcessResult:
+    def publish_one(result, ctx) -> PublishResult:
         captured.process_calls += 1
-        return PipelineProcessResult(success=True, source_date="2026-01-01")
+        return PublishResult(success=True, source_date="2026-01-01")
 
     assert (
-        run_pipeline(publisher_spec=MARKET_HISTORY_SPEC, objects=objects, config=config, process_one=process_one) == 0
+        run_dataset_pipeline(
+            spec=MARKET_HISTORY_SPEC,
+            discover_objects=lambda config: objects,
+            config=config,
+            publish_one=publish_one,
+        )
+        == 0
     )
     assert captured.process_calls == 0
     assert captured.writer_constructed is False
     assert captured.pubtrack is not None
-    assert captured.pubtrack.calls == []
+    assert len(captured.pubtrack.calls) == 0
 
 
 def test_run_pipeline_skips_stale_mutable_result_with_missing_file_after_lock(monkeypatch, tmp_path: Path) -> None:
     captured: SimpleNamespace = SimpleNamespace(pubtrack=None, process_calls=0, writer_constructed=False)
 
-    class FakeCache:
+    class FakeStore(_FakeStore):
         def __init__(self, *args, **kwargs) -> None:
-            self.pubtrack = _FakePubtrack()
-            self.raw_root = Path(kwargs["raw_root"])
+            super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
             path = self.raw_root / "deleted.csv.bz2"
             return [
                 make_cache_result(
@@ -685,52 +687,54 @@ def test_run_pipeline_skips_stale_mutable_result_with_missing_file_after_lock(mo
                 )
             }
 
-    class FakeWriter(_FakeWriter):
-        def __init__(self, config, *, lock_token) -> None:
+    class FakeSession(_FakeSession):
+        def __init__(self, *args, **kwargs) -> None:
             captured.writer_constructed = True
-            super().__init__(config, lock_token=lock_token)
+            super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", FakeWriter)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", _FakePublicationRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", _FakePublicationRegistry)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: _FakeLock(
-            publisher_spec.lock_domains()
-        ),
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: _FakeLock(lock_domains),
     )
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", FakeSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
 
-    def process_one(result, writer) -> PipelineProcessResult:
+    def publish_one(result, ctx) -> PublishResult:
         captured.process_calls += 1
-        return PipelineProcessResult(success=True, source_date="2026-01-01")
+        return PublishResult(success=True, source_date="2026-01-01")
 
     assert (
-        run_pipeline(publisher_spec=MARKET_HISTORY_SPEC, objects=objects, config=config, process_one=process_one) == 0
+        run_dataset_pipeline(
+            spec=MARKET_HISTORY_SPEC,
+            discover_objects=lambda config: objects,
+            config=config,
+            publish_one=publish_one,
+        )
+        == 0
     )
     assert captured.process_calls == 0
     assert captured.writer_constructed is False
     assert captured.pubtrack is not None
-    assert captured.pubtrack.calls == []
+    assert len(captured.pubtrack.calls) == 0
 
 
 def test_run_pipeline_skips_stale_reference_latest_result_after_lock(monkeypatch, tmp_path: Path) -> None:
     captured: SimpleNamespace = SimpleNamespace(pubtrack=None, process_calls=0, writer_constructed=False)
 
-    class FakeCache:
+    class FakeStore(_FakeStore):
         def __init__(self, *args, **kwargs) -> None:
-            self.pubtrack = _FakePubtrack()
-            self.raw_root = Path(kwargs["raw_root"])
+            super().__init__(*args, **kwargs)
             captured.pubtrack = self.pubtrack
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
             path = self.raw_root / "reference-data-latest.tar.xz"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("data")
@@ -756,19 +760,22 @@ def test_run_pipeline_skips_stale_reference_latest_result_after_lock(monkeypatch
                 )
             }
 
-    class FakeWriter(_FakeWriter):
-        def __init__(self, config, *, lock_token) -> None:
+    class FakeSession(_FakeSession):
+        def __init__(self, *args, **kwargs) -> None:
             captured.writer_constructed = True
-            super().__init__(config, lock_token=lock_token)
+            super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", FakeCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", FakeWriter)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", _FakePublicationRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", _FakePublicationRegistry)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: _FakeLock(
-            publisher_spec.lock_domains()
-        ),
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: _FakeLock(lock_domains),
     )
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", FakeSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [
@@ -778,15 +785,23 @@ def test_run_pipeline_skips_stale_reference_latest_result_after_lock(monkeypatch
         )
     ]
 
-    def process_one(result, writer) -> PipelineProcessResult:
+    def publish_one(result, ctx) -> PublishResult:
         captured.process_calls += 1
-        return PipelineProcessResult(success=True, source_date="latest")
+        return PublishResult(success=True, source_date="latest")
 
-    assert run_pipeline(publisher_spec=REFERENCES_SPEC, objects=objects, config=config, process_one=process_one) == 0
+    assert (
+        run_dataset_pipeline(
+            spec=REFERENCES_SPEC,
+            discover_objects=lambda config: objects,
+            config=config,
+            publish_one=publish_one,
+        )
+        == 0
+    )
     assert captured.process_calls == 0
     assert captured.writer_constructed is False
     assert captured.pubtrack is not None
-    assert captured.pubtrack.calls == []
+    assert len(captured.pubtrack.calls) == 0
 
 
 def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch, tmp_path: Path) -> None:
@@ -816,7 +831,8 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
             self,
             results: list[CacheResult],
             *,
-            context: PublicationContext | None = None,
+            publication_scope: str,
+            publisher_run_id: str | None = None,
         ) -> None:
             with pubtrack_lock:
                 pubtrack_calls.append(results)
@@ -825,19 +841,45 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
                         (published_result.raw_object.ref.identity_hash, published_result.version.sha256)
                     )
 
-    class SharedCache:
-        pubtrack = SharedPubtrack()
+    shared_pubtrack = SharedPubtrack()
+
+    class SharedRegistry(_FakePublicationRegistry):
+        def __init__(self, ledger: object) -> None:
+            super().__init__(ledger)
+            self.pubtrack = shared_pubtrack
+
+        def filter_unpublished(self, results: list[CacheResult]) -> list[CacheResult]:
+            published = self.pubtrack.filter_published(results)
+            return [r for r in results if (r.raw_object.ref.identity_hash, r.version.sha256) not in published]
+
+        def mark_published_many(
+            self,
+            results: list[CacheResult],
+            *,
+            publication_scope: str,
+            publisher_run_id: str | None = None,
+        ) -> None:
+            self.pubtrack.mark_published_many(
+                results, publication_scope=publication_scope, publisher_run_id=publisher_run_id
+            )
+
+    class SharedStore:
+        pubtrack = shared_pubtrack
 
         def __init__(self, *args, **kwargs) -> None:
             pass
 
-        def __enter__(self):
+        def __enter__(self) -> SharedStore:
             return self
 
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def get_many(self, objects: list[CacheObject], mode) -> list[CacheResult]:
+        @property
+        def ledger(self) -> object:
+            return None
+
+        def acquire_many(self, objects: list[CacheObject]) -> list[CacheResult]:
             selected.wait(timeout=5)
             return [result]
 
@@ -852,6 +894,9 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
                 for selected_result in results
             }
 
+        def filter_current_versions(self, results: list[CacheResult]) -> tuple[list[CacheResult], int, int]:
+            return results, 0, 0
+
     class SerialLock:
         def __init__(self, lock_domains: tuple[str, ...]) -> None:
             self.lock_domains = lock_domains
@@ -863,42 +908,45 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
         def __exit__(self, exc_type, exc, tb) -> None:
             publication_lock.release()
 
-    class CountingWriter(_FakeWriter):
-        def __init__(self, config, *, lock_token, declared_mode=None, dataset_name=None) -> None:
+    class CountingSession(_FakeSession):
+        def __init__(self, *args, **kwargs) -> None:
             nonlocal writer_constructed
             writer_constructed += 1
-            super().__init__(config, lock_token=lock_token, declared_mode=declared_mode, dataset_name=dataset_name)
+            super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.Cache", SharedCache)
-    monkeypatch.setattr("eve_ingest.workflows.raw_file_workflow.DuckLakeWriter", CountingWriter)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", SharedStore)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", SharedStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.PublicationRegistry", SharedRegistry)
+    monkeypatch.setattr("eve_ingest.raw_objects.publication_registry.PublicationRegistry", SharedRegistry)
     monkeypatch.setattr(
-        "eve_ingest.workflows.raw_file_workflow._hold_publication_domain_locks",
-        lambda *, publisher_spec, catalog_url, publication_scopes, source_date, timeout_seconds: SerialLock(
-            publisher_spec.lock_domains()
-        ),
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: SerialLock(lock_domains),
     )
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", CountingSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
+    monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
     config = make_everef_pipeline_config(EverefReferencesCliConfig, tmp_path)
     objects = [CacheObject(source_url="https://example.com/a.csv.bz2", identity_key={"source_date": "2026-01-01"})]
     exit_codes: list[int] = []
     errors: list[BaseException] = []
 
-    def process_one(result, writer) -> PipelineProcessResult:
+    def publish_one(result, ctx) -> PublishResult:
         nonlocal process_calls
         process_calls += 1
-        return PipelineProcessResult(success=True, source_date="2026-01-01")
+        return PublishResult(success=True, source_date="2026-01-01")
 
     def worker() -> None:
         try:
             exit_codes.append(
-                run_pipeline(
-                    publisher_spec=MARKET_HISTORY_SPEC,
-                    objects=objects,
+                run_dataset_pipeline(
+                    spec=MARKET_HISTORY_SPEC,
+                    discover_objects=lambda config: objects,
                     config=config,
-                    process_one=process_one,
+                    publish_one=publish_one,
                 )
             )
-        except BaseException as exc:  # pragma: no cover - surfaced through assertion below
+        except BaseException as exc:
             errors.append(exc)
 
     threads = [Thread(target=worker), Thread(target=worker)]

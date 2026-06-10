@@ -6,7 +6,8 @@ This module is NOT intended for streaming or REST API pagination-style sources
 
 Public API types are re-exported here for convenience:
 
-    from eve_ingest.raw_objects import Cache, CacheObject, CacheResult, GetMode
+    from eve_ingest.raw_objects import CacheObject, CacheResult, GetMode
+    from eve_ingest.raw_objects import PublicationRegistry, RawObjectStore
 """
 
 from eve_ingest.raw_objects.models import CacheObject as CacheObject
@@ -17,4 +18,5 @@ from eve_ingest.raw_objects.primitives import IdentityKey as IdentityKey
 from eve_ingest.raw_objects.primitives import IdentityScalar as IdentityScalar
 from eve_ingest.raw_objects.primitives import UpdateMode as UpdateMode
 from eve_ingest.raw_objects.publishing import PublicationTracker as PublicationTracker
-from eve_ingest.raw_objects.cache import Cache as Cache
+from eve_ingest.raw_objects.store import RawObjectStore as RawObjectStore
+from eve_ingest.raw_objects.publication_registry import PublicationRegistry as PublicationRegistry

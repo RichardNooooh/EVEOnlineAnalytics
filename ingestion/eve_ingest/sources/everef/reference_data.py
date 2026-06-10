@@ -11,17 +11,19 @@ import pyarrow as pa
 from eve_ingest.archives.tarball import ExtractedTarball
 from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
 from eve_ingest.cli.config import EverefReferencesCliConfig
-from eve_ingest.ducklake.writer import DuckLakeWriter
 from eve_ingest.ducklake.raw_tables import (
-    DuckLakeWriteMetrics,
-    DuckLakeWriterMode,
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
 )
-from eve_ingest.sources.everef.csv_reader import FileBackedPublicationContext, publish_file_backed_source_object
+from eve_ingest.publication.specs import (
+    DatasetPublisherSpec,
+    ReplaceReferenceTables,
+    StaticScope,
+)
+from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.results import PublishResult
+from eve_ingest.publication.runner import run_dataset_pipeline
 from eve_ingest.sources.everef.discovery import EVEREF_BASE
-from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult, run_pipeline as _run_pipeline
-from eve_ingest.workflows.publisher_specs import PublisherSpec
 
 logger = logging.getLogger("eve_ingest.sources.everef")
 
@@ -44,13 +46,13 @@ _REFERENCE_ID_FIELDS: dict[str, str] = {
     "market_groups": "market_group_id",
 }
 
-PUBLISHER_SPEC = PublisherSpec(
+PUBLISHER_SPEC = DatasetPublisherSpec(
     dataset_name="reference-data",
     update_mode=UpdateMode.MUTABLE,
     data_tables=tuple(_REFERENCE_TABLES.values()),
     provenance_tables=(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
-    writer_mode=DuckLakeWriterMode.REPLACE_TABLE,
-    publication_scope_builder=lambda _: "raw:references:full_extract",
+    write_policy=ReplaceReferenceTables(transactional=True),
+    publication_scope=StaticScope("raw:references:full_extract"),
 )
 
 
@@ -126,7 +128,7 @@ _REFERENCE_PROJECTORS: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] 
 }
 
 
-def _build_cache_objects() -> list[CacheObject]:
+def discover_objects(config: EverefReferencesCliConfig) -> list[CacheObject]:
     return [
         CacheObject(
             source_url=f"{EVEREF_BASE}/reference-data/reference-data-latest.tar.xz",
@@ -189,64 +191,28 @@ def _parse_json_to_table(member_path: str, archive_name: str) -> pa.Table:
     return pa.Table.from_pylist(rows)
 
 
-def _process_member(
-    member_path: str,
-    archive_name: str,
-    result: CacheResult,
-    writer: DuckLakeWriter,
-) -> tuple[bool, DuckLakeWriteMetrics | None]:
-    filename = archive_name
-    if filename.endswith(".json"):
-        filename = filename[:-5]
-
-    table_info = _REFERENCE_TABLES.get(filename)
-    if table_info is None:
-        logger.warning("Skipping unknown reference file archive_member=%s", archive_name)
-        return True, None
-
-    table_key = table_info
-
-    try:
-        table = _parse_json_to_table(member_path, archive_name)
-        if table.num_rows == 0:
-            logger.warning("Zero-row table for archive_member=%s", archive_name)
-            return True, None
-
-        metrics = writer.write(table, table=table_key, mode=DuckLakeWriterMode.REPLACE_TABLE)
-        logger.debug(
-            "Published reference table=%s rows=%d archive_member=%s replaced_rows=%d",
-            table_key.value,
-            table.num_rows,
-            archive_name,
-            metrics.replaced_rows,
-        )
-        return True, metrics
-    except Exception:
-        logger.exception("Failed to process archive_member=%s", archive_name)
-        return False, None
-
-
 def _prepare_reference_archive(
-    result: CacheResult,
-    writer: DuckLakeWriter,
+    *,
+    raw_object: CacheResult,
+    ctx: PublishContext,
     prepared_sources: ExitStack,
-) -> tuple[list[PreparedReferenceMember], int]:
+) -> list[PreparedReferenceMember]:
     prepared_members: list[PreparedReferenceMember] = []
     total_rows = 0
 
-    with ExtractedTarball(result.path) as archive:
+    with ExtractedTarball(raw_object.path) as archive:
         json_members = list(archive.iter_json_files())
         if not json_members:
             logger.warning(
                 "No JSON files found in archive identity_key=%s path=%s",
-                result.identity_key,
-                result.path,
+                raw_object.identity_key,
+                raw_object.path,
             )
             raise ValueError("no JSON files in archive")
 
         logger.info(
             "Reference archive summary source_date=%s member_count=%d first=%s last=%s",
-            result.identity_key.get("source_date"),
+            raw_object.identity_key.get("source_date"),
             len(json_members),
             json_members[0].archive_name,
             json_members[-1].archive_name,
@@ -256,9 +222,7 @@ def _prepare_reference_archive(
         member_failed = 0
         for member in json_members:
             try:
-                prepared_member = _prepare_member_source(
-                    str(member.path), member.archive_name, writer, prepared_sources
-                )
+                prepared_member = _prepare_member_source(str(member.path), member.archive_name, ctx, prepared_sources)
                 member_success += 1
                 if prepared_member is not None:
                     prepared_members.append(prepared_member)
@@ -270,7 +234,7 @@ def _prepare_reference_archive(
 
         logger.info(
             "Reference archive result source_date=%s member_success=%d member_failed=%d prepared_tables=%d total_rows=%d",
-            result.identity_key.get("source_date"),
+            raw_object.identity_key.get("source_date"),
             member_success,
             member_failed,
             len(prepared_members),
@@ -288,73 +252,30 @@ def _prepare_reference_archive(
             logger.error("No reference files were successfully processed")
             raise ValueError("no members processed")
 
-    return prepared_members, total_rows
+    return prepared_members
 
 
-def _process_references_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
-    def publish_rows(context: FileBackedPublicationContext) -> tuple[DuckLakeWriteMetrics, ...]:
-        with ExitStack() as prepared_sources:
-            prepared_members, total_rows = _prepare_reference_archive(result, writer, prepared_sources)
-            metrics: list[DuckLakeWriteMetrics] = []
-
-            with writer.transaction():
-                writer.mark_source_object_parsed(context.source_object_id, table=context.provenance_table)
-
-                for archive_name, table_key, table, source_name in prepared_members:
-                    write_metrics = writer.write_prepared_source(
-                        table,
-                        source_name=source_name,
-                        table=table_key,
-                        mode=DuckLakeWriterMode.REPLACE_TABLE,
-                    )
-                    logger.debug(
-                        "Published reference table=%s rows=%d archive_member=%s replaced_rows=%d",
-                        table_key.value,
-                        table.num_rows,
-                        archive_name,
-                        write_metrics.replaced_rows,
-                    )
-                    metrics.append(write_metrics)
-
-                writer.mark_source_object_ingested(
-                    context.source_object_id,
-                    table=context.provenance_table,
-                )
-            return tuple(metrics)
-
-    def log_success(
-        context: FileBackedPublicationContext,
-        write_metrics: tuple[DuckLakeWriteMetrics, ...],
-        elapsed_seconds: float,
-    ) -> None:
-        logger.info(
-            "Reference publication complete source_date=%s tables=%d rows=%d elapsed_seconds=%.3f",
-            context.source_date_str,
-            len(write_metrics),
-            sum(metric.attempted_rows for metric in write_metrics),
-            elapsed_seconds,
+def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
+    with ExitStack() as prepared_sources:
+        prepared_members = _prepare_reference_archive(
+            raw_object=raw_object,
+            ctx=ctx,
+            prepared_sources=prepared_sources,
         )
-
-    return publish_file_backed_source_object(
-        result,
-        writer,
-        source_system="everef",
-        endpoint="reference_data",
-        source_market_date=result.version.fetched_at.date(),
-        snapshot_ts=None,
-        table_key=None,
-        provenance_table=RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,
-        skip_if_ingested=False,
-        publish_rows=publish_rows,
-        raise_snapshot_scope_error=False,
-        log_success=log_success,
-    )
+        return ctx.replace_reference_tables(
+            raw_object,
+            source_system="everef",
+            endpoint="reference_data",
+            source_market_date=raw_object.version.fetched_at.date(),
+            prepared_tables=prepared_members,
+            provenance_table=RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,
+        )
 
 
 def _prepare_member_source(
     member_path: str,
     archive_name: str,
-    writer: DuckLakeWriter,
+    ctx: PublishContext,
     prepared_sources: ExitStack,
 ) -> PreparedReferenceMember | None:
     filename = archive_name
@@ -372,15 +293,11 @@ def _prepare_member_source(
         logger.warning("Zero-row table for archive_member=%s", archive_name)
         return None
 
-    writer.validate_write_request(table, table=table_key, mode=DuckLakeWriterMode.REPLACE_TABLE)
-    source_name = prepared_sources.enter_context(writer.prepare_arrow_source(table))
+    source_name = prepared_sources.enter_context(ctx.session.prepare_arrow_source(table))
     return archive_name, table_key, table, source_name
 
 
 def run_pipeline(config: EverefReferencesCliConfig) -> int:
-    return _run_pipeline(
-        publisher_spec=PUBLISHER_SPEC,
-        objects=_build_cache_objects(),
-        config=config,
-        process_one=_process_references_result,
+    return run_dataset_pipeline(
+        config=config, spec=PUBLISHER_SPEC, discover_objects=discover_objects, publish_one=publish_one
     )

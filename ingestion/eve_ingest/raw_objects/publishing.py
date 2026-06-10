@@ -15,7 +15,7 @@ class PublicationTracker:
     """Tracks published versions of cached raw objects.
 
     Must be used as a context manager. Typically accessed through
-    ``Cache.pubtrack``.
+    ``RawObjectStore.pubtrack``.
     """
 
     def __init__(self, ledger: RawObjectLedger) -> None:

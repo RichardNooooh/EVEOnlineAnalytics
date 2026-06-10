@@ -9,10 +9,12 @@ from unittest.mock import MagicMock
 import pyarrow as pa
 import pytest
 
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.publication.results import PublishResult
+from eve_ingest.publication.specs import DatasetPublisherSpec, InsertMissingKeysAuthoritativePartition
 from eve_ingest.raw_objects import UpdateMode
-from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC, _build_cache_objects, _process_result
-from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow
+from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC, discover_objects, publish_one
+from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
 from tests.sources.everef.conftest import make_cache_result
 
 _ORIGINAL_COLS = [
@@ -33,15 +35,15 @@ def test_publisher_spec_declares_market_history_mutations() -> None:
     assert PUBLISHER_SPEC.update_mode is UpdateMode.MUTABLE
     assert PUBLISHER_SPEC.data_tables == (RawDuckLakeTable.MARKET_HISTORY,)
     assert PUBLISHER_SPEC.provenance_tables == (RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,)
-    assert PUBLISHER_SPEC.writer_mode is DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS
-    assert PUBLISHER_SPEC.publication_scope({"source_date": "2026-01-01"}) == (
-        "raw:market_history:source_date=2026-01-01"
-    )
+    assert isinstance(PUBLISHER_SPEC, DatasetPublisherSpec)
+    assert isinstance(PUBLISHER_SPEC.write_policy, InsertMissingKeysAuthoritativePartition)
+    assert PUBLISHER_SPEC.write_policy.key_columns == ("date", "region_id", "type_id")
+    assert PUBLISHER_SPEC.scope_for({"source_date": "2026-01-01"}) == ("raw:market_history:source_date=2026-01-01")
 
 
 class TestBuildCacheObjects:
     def test_dates_and_urls(self) -> None:
-        objects = _build_cache_objects(date(2026, 1, 1), date(2026, 1, 3))
+        objects = discover_objects(MagicMock(start_date=date(2026, 1, 1), end_date=date(2026, 1, 3)))
 
         assert len(objects) == 3
 
@@ -61,7 +63,7 @@ class TestBuildCacheObjects:
         assert objects[2].identity_key == {"source_date": "2026-01-03"}
 
     def test_single_date(self) -> None:
-        objects = _build_cache_objects(date(2026, 6, 15), date(2026, 6, 15))
+        objects = discover_objects(MagicMock(start_date=date(2026, 6, 15), end_date=date(2026, 6, 15)))
 
         assert len(objects) == 1
         assert objects[0].source_url == (
@@ -74,7 +76,7 @@ class TestBuildCacheObjects:
         logger.addHandler(caplog.handler)
         try:
             with caplog.at_level(logging.INFO, logger=logger.name):
-                _build_cache_objects(date(2026, 1, 1), date(2026, 1, 2))
+                discover_objects(MagicMock(start_date=date(2026, 1, 1), end_date=date(2026, 1, 2)))
         finally:
             logger.removeHandler(caplog.handler)
 
@@ -134,26 +136,31 @@ class TestParseCsvToArrow:
         assert "average" in table.column_names
 
 
-def test_process_result_uses_authoritative_writer_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_publish_one_calls_insert_missing_keys_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
     result = make_cache_result(
         "/tmp/market-history-2026-01-01.csv.bz2",
         dataset_name="market-history",
         identity_key={"source_date": "2026-01-01"},
         source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
     )
-    writer = MagicMock()
+    ctx = MagicMock()
+    ctx.source_object_id.return_value = "fake_soid"
+    ctx.insert_missing_keys_arrow.return_value = PublishResult(
+        success=True,
+        source_date="2026-01-01",
+        write_metrics=(MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0),),
+    )
     monkeypatch.setattr(
         "eve_ingest.sources.everef.market_history.parse_csv_to_arrow",
         lambda result: pa.table({"date": [date(2026, 1, 1)], "region_id": [10000001], "type_id": [34]}),
     )
 
-    writer.publish_source_object_rows.return_value = MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0)
-
-    outcome = _process_result(result, writer)
+    outcome = publish_one(result, ctx)
     assert outcome.success is True
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
-    writer.write.assert_not_called()
-    call_kwargs = writer.publish_source_object_rows.call_args.kwargs
-    assert call_kwargs["mode"] is DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS
-    assert call_kwargs["key_columns"] == ["date", "region_id", "type_id"]
+    ctx.insert_missing_keys_arrow.assert_called_once()
+    call_kwargs = ctx.insert_missing_keys_arrow.call_args.kwargs
+    assert call_kwargs["table"] is RawDuckLakeTable.MARKET_HISTORY
+    assert "source_object_id" in call_kwargs["arrow_table"].column_names
+    assert "source_market_date" in call_kwargs["arrow_table"].column_names

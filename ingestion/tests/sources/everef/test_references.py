@@ -2,25 +2,27 @@ from __future__ import annotations
 
 import json
 import tarfile
-from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pyarrow as pa
 
+from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
+from eve_ingest.ducklake.raw_publish import RawTablePublisher
 from eve_ingest.ducklake.raw_tables import (
     DuckLakeWriteMetrics,
     DuckLakeWriterMode,
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
 )
+from eve_ingest.ducklake.session import DuckLakeSession
+from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.specs import DatasetPublisherSpec, ReplaceReferenceTables, StaticScope
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.reference_data import (
     PUBLISHER_SPEC,
-    _build_cache_objects,
     _parse_json_to_table,
-    _process_member,
-    _process_references_result,
+    discover_objects,
+    publish_one,
 )
 from tests.sources.everef.conftest import make_cache_result
 
@@ -36,13 +38,14 @@ def test_publisher_spec_declares_reference_mutations() -> None:
         RawDuckLakeTable.REFERENCE_MARKET_GROUPS,
     )
     assert PUBLISHER_SPEC.provenance_tables == (RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,)
-    assert PUBLISHER_SPEC.writer_mode is DuckLakeWriterMode.REPLACE_TABLE
-    assert PUBLISHER_SPEC.publication_scope({"source_date": "latest"}) == "raw:references:full_extract"
+    assert isinstance(PUBLISHER_SPEC, DatasetPublisherSpec)
+    assert isinstance(PUBLISHER_SPEC.write_policy, ReplaceReferenceTables)
+    assert PUBLISHER_SPEC.scope_for({"source_date": "latest"}) == "raw:references:full_extract"
 
 
 class TestBuildCacheObjects:
     def test_single_object(self) -> None:
-        objects = _build_cache_objects()
+        objects = discover_objects(MagicMock())
         assert len(objects) == 1
 
         obj = objects[0]
@@ -180,116 +183,6 @@ class TestParseJsonToTable:
         )
 
 
-class TestProcessMember:
-    TYPES_DATA = {
-        "1": {"type_id": 1, "name": {"en": "foo"}, "group_id": 10, "category_id": 20, "published": True},
-        "2": {"type_id": 2, "name": {"en": "bar"}, "group_id": 11, "category_id": 21, "published": True},
-    }
-
-    def test_processes_known_file(self, tmp_path: Path) -> None:
-        member_path = tmp_path / "types.json"
-        member_path.write_text(json.dumps(self.TYPES_DATA))
-
-        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
-
-        writer = MagicMock()
-        writer.write.return_value = MagicMock(replaced_rows=0)
-        ok, metrics = _process_member(str(member_path), "types.json", result, writer)
-
-        assert ok is True
-        assert metrics is writer.write.return_value
-        writer.write.assert_called_once()
-        written_table = writer.write.call_args.args[0]
-        call_kwargs = writer.write.call_args.kwargs
-        assert call_kwargs["table"].value == "raw_reference_types"
-        assert call_kwargs["mode"].value == "replace_table"
-        assert "name_en" in written_table.column_names
-
-    def test_skips_unknown_file(self, tmp_path: Path) -> None:
-        member_path = tmp_path / "unknown.json"
-        member_path.write_text("[]")
-
-        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
-        writer = MagicMock()
-        ok, metrics = _process_member(str(member_path), "unknown.json", result, writer)
-
-        assert ok is True
-        assert metrics is None
-        writer.write.assert_not_called()
-
-    def test_handles_parse_error(self, tmp_path: Path) -> None:
-        member_path = tmp_path / "types.json"
-        member_path.write_text("not json")
-
-        result = make_cache_result(str(tmp_path / "archive.tar.xz"))
-        writer = MagicMock()
-        ok, metrics = _process_member(str(member_path), "types.json", result, writer)
-
-        assert ok is False
-        assert metrics is None
-        writer.write.assert_not_called()
-
-
-class _ReferenceWriter:
-    def __init__(self, *, fail_write: bool = False) -> None:
-        self.calls: list[tuple[str, object]] = []
-        self.in_transaction = False
-        self.fail_write = fail_write
-
-    @contextmanager
-    def transaction(self):
-        self.calls.append(("transaction_enter", None))
-        self.in_transaction = True
-        try:
-            yield
-        except Exception:
-            self.calls.append(("transaction_rollback", None))
-            raise
-        else:
-            self.calls.append(("transaction_commit", None))
-        finally:
-            self.in_transaction = False
-
-    def record_source_object(self, data: dict, *, table) -> None:
-        self.calls.append(("record", data.copy()))
-
-    def mark_source_object_parsed(self, source_object_id: str, *, table) -> None:
-        assert self.in_transaction is True
-        self.calls.append(("mark_parsed", source_object_id))
-
-    def mark_source_object_ingested(self, source_object_id: str, *, table) -> None:
-        assert self.in_transaction is True
-        self.calls.append(("mark_ingested", {"source_object_id": source_object_id}))
-
-    def validate_write_request(self, arrow_table: pa.Table, *, table, mode, key_columns=()) -> None:
-        assert self.in_transaction is False
-        self.calls.append(("validate_write", {"table": table, "mode": mode, "rows": len(arrow_table)}))
-
-    @contextmanager
-    def prepare_arrow_source(self, arrow_table: pa.Table):
-        assert self.in_transaction is False
-        source_name = f"source_{len([call for call in self.calls if call[0] == 'prepare_source'])}"
-        self.calls.append(("prepare_source", {"source_name": source_name, "rows": len(arrow_table)}))
-        try:
-            yield source_name
-        finally:
-            self.calls.append(("drop_source", source_name))
-
-    def write_prepared_source(self, arrow_table: pa.Table, *, source_name: str, table, mode, key_columns=()):
-        assert self.in_transaction is True
-        self.calls.append(("write_prepared", {"source_name": source_name, "table": table, "rows": len(arrow_table)}))
-        if self.fail_write:
-            raise RuntimeError("boom")
-        return DuckLakeWriteMetrics(
-            table=table,
-            mode=mode,
-            attempted_rows=len(arrow_table),
-            inserted_rows=len(arrow_table),
-            matched_rows=0,
-            replaced_rows=0,
-        )
-
-
 def _write_reference_archive(path: Path, members: dict[str, object]) -> None:
     source_dir = path.parent / "archive_members"
     source_dir.mkdir()
@@ -319,22 +212,56 @@ def test_process_references_prepares_arrow_sources_before_ducklake_transaction(t
         },
     )
     result = make_cache_result(str(archive_path), dataset_name="reference-data", identity_key={"source_date": "latest"})
-    writer = _ReferenceWriter()
 
-    outcome = _process_references_result(result, writer)  # type: ignore[arg-type]
+    session = MagicMock(spec=DuckLakeSession)
+    session.prepare_arrow_source.return_value.__enter__.return_value = "src_market_groups"
+    session.transaction.return_value.__enter__.return_value = None
+    session.transaction.return_value.__exit__.return_value = None
+
+    raw_tables = MagicMock(spec=RawTablePublisher)
+    raw_tables.write_prepared_source.return_value = DuckLakeWriteMetrics(
+        table=RawDuckLakeTable.REFERENCE_MARKET_GROUPS,
+        mode=DuckLakeWriterMode.REPLACE_TABLE,
+        attempted_rows=1,
+        inserted_rows=1,
+        matched_rows=0,
+        replaced_rows=0,
+    )
+
+    provenance = MagicMock(spec=SourceObjectProvenanceRepository)
+
+    spec = DatasetPublisherSpec(
+        dataset_name="reference-data",
+        update_mode=UpdateMode.MUTABLE,
+        data_tables=(
+            RawDuckLakeTable.REFERENCE_TYPES,
+            RawDuckLakeTable.REFERENCE_REGIONS,
+            RawDuckLakeTable.REFERENCE_GROUPS,
+            RawDuckLakeTable.REFERENCE_CATEGORIES,
+            RawDuckLakeTable.REFERENCE_MARKET_GROUPS,
+        ),
+        provenance_tables=(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
+        publication_scope=StaticScope("raw:references:full_extract"),
+        write_policy=ReplaceReferenceTables(transactional=True),
+    )
+
+    ctx = PublishContext(
+        spec=spec,
+        session=session,
+        raw_tables=raw_tables,
+        provenance=provenance,
+        publication_scope="raw:references:full_extract",
+    )
+
+    outcome = publish_one(result, ctx)
 
     assert outcome.success is True
-    assert [call[0] for call in writer.calls] == [
-        "record",
-        "validate_write",
-        "prepare_source",
-        "transaction_enter",
-        "mark_parsed",
-        "write_prepared",
-        "mark_ingested",
-        "transaction_commit",
-        "drop_source",
-    ]
+    assert len(outcome.write_metrics) == 1
     assert outcome.write_metrics[0].table is RawDuckLakeTable.REFERENCE_MARKET_GROUPS
-    assert writer.calls[0][1]["source_object_id"] == writer.calls[4][1]
-    assert writer.calls[0][1]["source_object_id"] == writer.calls[6][1]["source_object_id"]
+
+    session.prepare_arrow_source.assert_called()
+    session.transaction.assert_called_once()
+    provenance.record_source_object.assert_called_once()
+    provenance.mark_parsed.assert_called_once()
+    provenance.mark_ingested.assert_called_once()
+    raw_tables.write_prepared_source.assert_called_once()

@@ -9,9 +9,15 @@ import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
 from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
-from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
+from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
+from eve_ingest.ducklake.session import DuckLakeSession
+from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
+from eve_ingest.ducklake.raw_publish import RawTablePublisher
+from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.specs import AppendSnapshotRows, DatasetPublisherSpec, SourceDateScope
+from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable, compute_source_object_id
-from eve_ingest.sources.everef.market_orders import _process_result
+from eve_ingest.sources.everef.market_orders import publish_one
 from tests.sources.everef.conftest import make_cache_result
 
 
@@ -29,8 +35,10 @@ class _KeepConnection:
 @pytest.fixture
 def shared_con(monkeypatch):
     con = _KeepConnection()
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.writer._attach", lambda c, config: None)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.bootstrap.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.DuckLakeSession._attach", lambda self: None)
+    monkeypatch.setattr("eve_ingest.ducklake.bootstrap._attach_bootstrap", lambda c, config: None)
     yield con._con
     con._con.close()
 
@@ -82,8 +90,27 @@ def test_process_result_is_idempotent_for_same_market_orders_source_object(share
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders.csv.bz2",
     )
 
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        first_outcome = _process_result(result, writer)
+    lock_token = _test_lock_token()
+    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+        raw_tables = RawTablePublisher(session, lock_token=lock_token)
+        provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
+        spec = DatasetPublisherSpec(
+            dataset_name="market-orders",
+            update_mode=UpdateMode.SNAPSHOT,
+            data_tables=(RawDuckLakeTable.MARKET_ORDERS,),
+            provenance_tables=(RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,),
+            publication_scope=SourceDateScope("market_orders"),
+            write_policy=AppendSnapshotRows(batch_scope="source_date"),
+        )
+        ctx = PublishContext(
+            spec=spec,
+            session=session,
+            raw_tables=raw_tables,
+            provenance=provenance,
+            publication_scope="raw:market_orders:source_date=2026-01-01",
+        )
+
+        first_outcome = publish_one(result, ctx)
 
     assert first_outcome.success is True
     assert first_outcome.source_date == "2026-01-01"
@@ -91,8 +118,18 @@ def test_process_result_is_idempotent_for_same_market_orders_source_object(share
     assert first_outcome.write_metrics[0].inserted_rows == 1
     assert first_outcome.write_metrics[0].matched_rows == 0
 
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        second_outcome = _process_result(result, writer)
+    lock_token = _test_lock_token()
+    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+        raw_tables = RawTablePublisher(session, lock_token=lock_token)
+        provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
+        ctx = PublishContext(
+            spec=spec,
+            session=session,
+            raw_tables=raw_tables,
+            provenance=provenance,
+            publication_scope="raw:market_orders:source_date=2026-01-01",
+        )
+        second_outcome = publish_one(result, ctx)
 
     assert second_outcome.success is True
     assert second_outcome.source_date == "2026-01-01"
@@ -119,8 +156,27 @@ def test_process_result_writes_native_metadata_and_provenance(shared_con, tmp_pa
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders.csv.bz2",
     )
 
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        outcome = _process_result(result, writer)
+    lock_token = _test_lock_token()
+    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+        raw_tables = RawTablePublisher(session, lock_token=lock_token)
+        provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
+        spec = DatasetPublisherSpec(
+            dataset_name="market-orders",
+            update_mode=UpdateMode.SNAPSHOT,
+            data_tables=(RawDuckLakeTable.MARKET_ORDERS,),
+            provenance_tables=(RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,),
+            publication_scope=SourceDateScope("market_orders"),
+            write_policy=AppendSnapshotRows(batch_scope="source_date"),
+        )
+        ctx = PublishContext(
+            spec=spec,
+            session=session,
+            raw_tables=raw_tables,
+            provenance=provenance,
+            publication_scope="raw:market_orders:source_date=2026-01-01",
+        )
+
+        outcome = publish_one(result, ctx)
 
     assert outcome.success is True
     expected_source_object_id = compute_source_object_id("everef", "market_orders", result.version.source_url)

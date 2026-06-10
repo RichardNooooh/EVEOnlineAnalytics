@@ -3,7 +3,7 @@
 Designed for everef.net bulk archives and similar file-object sources.
 Not intended for streaming or REST API pagination sources (use dlt for those).
 
-``Cache.get()`` resolution path::
+``RawObjectStore.get()`` resolution path::
 
   get()
     ├─ _build_plan()           → FetchPlan (no ledger call)
@@ -61,20 +61,20 @@ from eve_ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
 logger = logging.getLogger("eve_ingest.raw_objects")
 
 
-class Cache:
+class RawObjectStore:
     """Download and track raw source files before publication.
 
     Example:
         ```python
-        from eve_ingest.raw_objects import Cache, CacheObject, UpdateMode
+        from eve_ingest.raw_objects import RawObjectStore, CacheObject, UpdateMode
 
-        with Cache(
+        with RawObjectStore(
             dataset_name="market-history",
             update_mode=UpdateMode.MUTABLE,
             raw_root="/data/raw",
             ledger_url=ledger_url,
-        ) as cache:
-            result = cache.get(
+        ) as store:
+            result = store.get(
                 CacheObject(
                     source_url="https://data.everef.net/market-history/2026-01-01.csv.bz2",
                     identity_key={"source_date": "2026-01-01"},
@@ -96,7 +96,7 @@ class Cache:
         client: HttpRawObjectClient | None = None,
         ledger: RawObjectLedger | None = None,
     ) -> None:
-        """Create a new cache instance.
+        """Create a new RawObjectStore instance.
 
         Args:
             dataset_name: Logical dataset name used for path and ledger grouping.
@@ -133,7 +133,7 @@ class Cache:
         self._ledger = ledger or RawObjectLedger(ledger_url=ledger_url)
         self._pubtrack: PublicationTracker | None = None
 
-    def __enter__(self) -> Cache:
+    def __enter__(self) -> RawObjectStore:
         self._pubtrack = PublicationTracker(ledger=self._ledger)
         self._pubtrack.__enter__()
         return self
@@ -151,9 +151,13 @@ class Cache:
         self._client.close()
 
     @property
+    def ledger(self) -> RawObjectLedger:
+        return self._ledger
+
+    @property
     def pubtrack(self) -> PublicationTracker:
         if self._pubtrack is None:
-            raise RuntimeError("Cache must be entered before accessing pubtrack")
+            raise RuntimeError("RawObjectStore must be entered before accessing pubtrack")
         return self._pubtrack
 
     # ── public API ──────────────────────────────────────────────────────────
@@ -173,7 +177,7 @@ class Cache:
 
         Example:
             ```python
-            result = cache.get(
+            result = store.get(
                 CacheObject(
                     source_url="https://data.everef.net/market-orders/history/2026/file.csv.bz2",
                     identity_key={"source_date": "2026-01-01"},
@@ -206,9 +210,9 @@ class Cache:
 
         Example:
             ```python
-            results = cache.get_many(objects, mode=GetMode.ALL)
-            changed = cache.get_many(objects)
-            unpublished = cache.get_many(objects, mode=GetMode.UNPUBLISHED)
+            results = store.get_many(objects, mode=GetMode.ALL)
+            changed = store.get_many(objects)
+            unpublished = store.get_many(objects, mode=GetMode.UNPUBLISHED)
             ```
         """
         object_list = list(objects)
@@ -233,7 +237,7 @@ class Cache:
                 if (result.raw_object.ref.identity_hash, result.version.sha256) not in published_versions
             ]
             logger.info(
-                "Cache get_many source=%s dataset=%s mode=%s requested=%d result_count=%d hit_count=%d stored_count=%d unpublished_count=%d",
+                "RawObjectStore acquire_many source=%s dataset=%s mode=%s requested=%d result_count=%d hit_count=%d stored_count=%d unpublished_count=%d",
                 self._source_name,
                 self._dataset_name,
                 mode,
@@ -246,7 +250,7 @@ class Cache:
             return filtered
 
         logger.info(
-            "Cache get_many source=%s dataset=%s mode=%s requested=%d result_count=%d hit_count=%d stored_count=%d",
+            "RawObjectStore acquire_many source=%s dataset=%s mode=%s requested=%d result_count=%d hit_count=%d stored_count=%d",
             self._source_name,
             self._dataset_name,
             mode,
@@ -256,6 +260,50 @@ class Cache:
             stored_count,
         )
         return results
+
+    def acquire_many(self, objects: Iterable[CacheObject]) -> list[CacheResult]:
+        """Acquire raw objects from cache or remote, returning all results.
+
+        Unlike get_many(), this returns every result (HIT + STORED) without
+        filtering by mode. Use PublicationRegistry for publication filtering.
+        """
+        return self.get_many(objects, mode=GetMode.ALL)
+
+    def filter_current_versions(self, results: list[CacheResult]) -> tuple[list[CacheResult], int, int]:
+        """Filter mutable results to current versions, returning (current, stale_count, missing_stale_count)."""
+        mutable_results = [result for result in results if result.update_mode is UpdateMode.MUTABLE]
+        if not mutable_results:
+            return results, 0, 0
+
+        current_states = self.load_current_states_for_results(mutable_results)
+        current_results: list[CacheResult] = []
+        stale_count = 0
+        missing_stale_count = 0
+
+        for result in results:
+            if result.update_mode is not UpdateMode.MUTABLE:
+                current_results.append(result)
+                continue
+
+            state = current_states.get(result.raw_object.ref.identity_hash)
+            is_current = (
+                state is not None
+                and state.current_version.id == result.version.id
+                and state.current_version.sha256 == result.version.sha256
+                and state.current_version.local_path == result.version.local_path
+            )
+            path_exists = Path(result.path).exists()
+            if not is_current:
+                if not path_exists:
+                    missing_stale_count += 1
+                else:
+                    stale_count += 1
+                continue
+            if not path_exists:
+                raise FileNotFoundError(f"Current cached raw object file is missing: {result.path}")
+            current_results.append(result)
+
+        return current_results, stale_count, missing_stale_count
 
     def load_current_states_for_results(
         self,
@@ -392,7 +440,7 @@ class Cache:
     ) -> CacheResult:
         checked_at = read_result.fetched_at if read_result is not None else datetime.now(UTC)
         logger.debug(
-            "Cache hit dataset=%s identity_hash=%s version=%d path=%s",
+            "RawObjectStore hit dataset=%s identity_hash=%s version=%d path=%s",
             plan.ref.dataset_name,
             plan.ref.identity_hash,
             state.current_version.version_number,

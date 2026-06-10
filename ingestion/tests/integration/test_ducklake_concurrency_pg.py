@@ -16,7 +16,9 @@ from eve_ingest.ducklake.locks import (
     raw_bootstrap_lock_domains,
 )
 from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
-from eve_ingest.ducklake.writer import _attach, _ident, bootstrap_raw_ducklake
+from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
+from eve_ingest.ducklake.session import DuckLakeSession
+from eve_ingest.ducklake.sql import quote_identifier
 
 
 @pytest.fixture
@@ -31,13 +33,13 @@ def attach_config(pg_url: str, tmp_path: Path) -> DuckLakeAttachConfig:
 
 
 def _connect(attach_config: DuckLakeAttachConfig) -> duckdb.DuckDBPyConnection:
-    con = duckdb.connect()
-    _attach(con, config=attach_config)
-    return con
+    session = DuckLakeSession(attach_config)
+    session.__enter__()
+    return session.connection
 
 
 def _target(attach_config: DuckLakeAttachConfig, table: RawDuckLakeTable) -> str:
-    return f"{_ident(attach_config.alias)}.raw.{_ident(table.value)}"
+    return f"{quote_identifier(attach_config.alias)}.raw.{quote_identifier(table.value)}"
 
 
 def _insert_market_order(

@@ -3,57 +3,76 @@ from __future__ import annotations
 import logging
 from datetime import date
 
+import pyarrow as pa
+
 from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
 from eve_ingest.cli.config import EverefCliConfig
-from eve_ingest.ducklake.writer import DuckLakeWriter
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.publication.specs import (
+    DatasetPublisherSpec,
+    InsertMissingKeysAuthoritativePartition,
+    SourceDateScope,
+)
 from eve_ingest.sources.everef.discovery import build_deterministic_objects
-from eve_ingest.sources.everef.csv_reader import parse_csv_to_arrow, publish_file_backed_rows
-from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult, run_pipeline as _run_pipeline
-from eve_ingest.workflows.publisher_specs import PublisherSpec, source_date_publication_scope
+from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
+from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.results import PublishResult
+from eve_ingest.publication.runner import run_dataset_pipeline
 
 logger = logging.getLogger("eve_ingest.sources.everef")
 
 _KEY_COLUMNS = ["date", "region_id", "type_id"]
 
-PUBLISHER_SPEC = PublisherSpec(
+PUBLISHER_SPEC = DatasetPublisherSpec(
     dataset_name="market-history",
     update_mode=UpdateMode.MUTABLE,
     data_tables=(RawDuckLakeTable.MARKET_HISTORY,),
     provenance_tables=(RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,),
-    writer_mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-    publication_scope_builder=source_date_publication_scope("market_history"),
+    write_policy=InsertMissingKeysAuthoritativePartition(
+        key_columns=("date", "region_id", "type_id"),
+    ),
+    publication_scope=SourceDateScope("market_history"),
 )
 
 
-def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
+def discover_objects(config: EverefCliConfig) -> list[CacheObject]:
     return build_deterministic_objects(
-        start_date,
-        end_date,
+        config.start_date,
+        config.end_date,
         url_prefix="market-history",
         filename_prefix="market-history-",
     )
 
 
-def _process_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
-    source_market_date = date.fromisoformat(str(result.identity_key["source_date"]))
-    return publish_file_backed_rows(
-        result,
-        writer,
+def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
+    source_market_date = date.fromisoformat(str(raw_object.identity_key["source_date"]))
+    table = parse_csv_to_arrow(raw_object)
+    row_count = len(table)
+    source_object_id = ctx.source_object_id(
+        source_system="everef",
+        endpoint="market_history",
+        source_url=raw_object.version.source_url,
+    )
+    table = table.append_column(
+        "source_object_id",
+        pa.array([source_object_id] * row_count, type=pa.utf8()),
+    )
+    table = table.append_column(
+        "source_market_date",
+        pa.array([source_market_date] * row_count, type=pa.date32()),
+    )
+    return ctx.insert_missing_keys_arrow(
+        raw_object,
         source_system="everef",
         endpoint="market_history",
         source_market_date=source_market_date,
-        table_key=RawDuckLakeTable.MARKET_HISTORY,
-        mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-        key_columns=_KEY_COLUMNS,
-        parse_table=parse_csv_to_arrow,
+        table=RawDuckLakeTable.MARKET_HISTORY,
+        arrow_table=table,
+        source_object_id=source_object_id,
     )
 
 
 def run_pipeline(config: EverefCliConfig) -> int:
-    return _run_pipeline(
-        publisher_spec=PUBLISHER_SPEC,
-        objects=_build_cache_objects(config.start_date, config.end_date),
-        config=config,
-        process_one=_process_result,
+    return run_dataset_pipeline(
+        config=config, spec=PUBLISHER_SPEC, discover_objects=discover_objects, publish_one=publish_one
     )

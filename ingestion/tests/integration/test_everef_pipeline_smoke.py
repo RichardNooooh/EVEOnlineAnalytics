@@ -72,8 +72,8 @@ def test_market_history_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path
     con, mock_pubtrack = install_pipeline_fakes(monkeypatch, [fake_result])
     monkeypatch.setattr(
         market_history,
-        "_build_cache_objects",
-        lambda start, end: [
+        "discover_objects",
+        lambda _config: [
             CacheObject(
                 source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
                 identity_key={"source_date": "2026-01-01"},
@@ -106,8 +106,8 @@ def test_market_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path:
     con, mock_pubtrack = install_pipeline_fakes(monkeypatch, [fake_result])
     monkeypatch.setattr(
         market_orders,
-        "_build_cache_objects",
-        lambda start, end: [
+        "discover_objects",
+        lambda _config: [
             CacheObject(
                 source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
                 identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
@@ -140,8 +140,8 @@ def test_fuzzwork_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_pat
     con, mock_pubtrack = install_pipeline_fakes(monkeypatch, [fake_result])
     monkeypatch.setattr(
         fuzzwork_orders,
-        "_build_cache_objects",
-        lambda start, end: [
+        "discover_objects",
+        lambda _config: [
             CacheObject(
                 source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
                 identity_key={
@@ -179,8 +179,8 @@ def test_references_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     con, mock_pubtrack = install_pipeline_fakes(monkeypatch, [fake_result])
     monkeypatch.setattr(
         reference_data,
-        "_build_cache_objects",
-        lambda: [
+        "discover_objects",
+        lambda _config: [
             CacheObject(
                 source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
                 identity_key={"source_date": "latest"},
