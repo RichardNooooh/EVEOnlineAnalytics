@@ -10,15 +10,13 @@ class DateRangeCliConfig:
     end_date: str
 
 
-@dataclass(frozen=True)
 class RawFilesCliConfig:
-    raw_root: str
-    raw_ledger_url: str
-    raw_download_workers: int
-
-    def __post_init__(self) -> None:
-        if self.raw_download_workers < 1:
+    def __init__(self, *, raw_root: str, raw_ledger_url: str, raw_download_workers: int) -> None:
+        if raw_download_workers < 1:
             raise ValueError("raw_download_workers must be at least 1")
+        self.raw_root = raw_root
+        self.raw_ledger_url = raw_ledger_url
+        self.raw_download_workers = raw_download_workers
 
 
 @dataclass(frozen=True)

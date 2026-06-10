@@ -9,9 +9,12 @@ import pyarrow as pa
 import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig, build_ducklake_attach_config_from_url
+from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
 from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
-from eve_ingest.ducklake.writer import DuckLakeWriter, _attach, _ident, bootstrap_raw_ducklake
+from eve_ingest.ducklake.session import DuckLakeSession
+from eve_ingest.ducklake.sql import quote_identifier
+from eve_ingest.ducklake.raw_publish import RawTablePublisher
 
 
 @pytest.fixture
@@ -28,14 +31,14 @@ def attach_config(pg_url: str, tmp_path: Path) -> DuckLakeAttachConfig:
 
 @pytest.fixture
 def raw_con(attach_config: DuckLakeAttachConfig) -> duckdb.DuckDBPyConnection:
-    con = duckdb.connect()
-    _attach(con, config=attach_config)
-    return con
+    session = DuckLakeSession(attach_config)
+    session.__enter__()
+    return session.connection
 
 
 def _drop_table(con: duckdb.DuckDBPyConnection, attach_config: DuckLakeAttachConfig, table: RawDuckLakeTable) -> None:
-    alias = _ident(attach_config.alias)
-    con.execute(f"DROP TABLE IF EXISTS {alias}.raw.{_ident(table.value)}")
+    alias = quote_identifier(attach_config.alias)
+    con.execute(f"DROP TABLE IF EXISTS {alias}.raw.{quote_identifier(table.value)}")
 
 
 def _test_lock_token() -> DuckLakeLockToken:
@@ -49,7 +52,7 @@ def _test_lock_token() -> DuckLakeLockToken:
 
 @pytest.mark.integration
 def test_ducklake_writer_attaches_to_postgres(attach_config: DuckLakeAttachConfig) -> None:
-    with DuckLakeWriter(attach_config):
+    with DuckLakeSession(attach_config):
         pass
 
 
@@ -58,11 +61,12 @@ def test_replace_table_writes_rows(attach_config: DuckLakeAttachConfig, raw_con:
     bootstrap_raw_ducklake(attach_config)
 
     table = pa.table({"type_id": [34, 35], "date": ["2026-01-01", "2026-01-02"]})
-    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
-        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
+    with DuckLakeSession(attach_config, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
     rows = raw_con.execute(
-        f'SELECT type_id, "date" FROM {_ident(attach_config.alias)}.raw.raw_market_history ORDER BY type_id'
+        f'SELECT type_id, "date" FROM {quote_identifier(attach_config.alias)}.raw.raw_market_history ORDER BY type_id'
     ).fetchall()
     assert len(rows) == 2
     assert rows[0] == (34, date(2026, 1, 1))
@@ -76,8 +80,9 @@ def test_write_with_key_columns_does_insert_if_not_exists(
     bootstrap_raw_ducklake(attach_config)
 
     table = pa.table({"type_id": [1, 2], "average": [100.0, 200.0], "source_market_date": ["2026-01-01"] * 2})
-    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(attach_config, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             table,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -86,8 +91,9 @@ def test_write_with_key_columns_does_insert_if_not_exists(
 
     # Insert same order_ids again with identical prices — should be no-ops
     duplicate = pa.table({"type_id": [1, 2], "average": [100.0, 200.0], "source_market_date": ["2026-01-01"] * 2})
-    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(attach_config, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             duplicate,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -95,7 +101,7 @@ def test_write_with_key_columns_does_insert_if_not_exists(
         )
 
     rows = raw_con.execute(
-        f"SELECT type_id, average FROM {_ident(attach_config.alias)}.raw.raw_market_history ORDER BY type_id"
+        f"SELECT type_id, average FROM {quote_identifier(attach_config.alias)}.raw.raw_market_history ORDER BY type_id"
     ).fetchall()
     assert len(rows) == 2
     assert rows[0] == (1, 100.0)
@@ -109,8 +115,9 @@ def test_authoritative_mode_writes_new_market_history_row(
     bootstrap_raw_ducklake(attach_config)
 
     table = pa.table({"type_id": [42], "date": ["2026-06-01"]})
-    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(attach_config, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             table,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -118,7 +125,7 @@ def test_authoritative_mode_writes_new_market_history_row(
         )
 
     rows = raw_con.execute(
-        f"SELECT * FROM {_ident(attach_config.alias)}.raw.raw_market_history WHERE type_id = 42"
+        f"SELECT * FROM {quote_identifier(attach_config.alias)}.raw.raw_market_history WHERE type_id = 42"
     ).fetchall()
     assert len(rows) == 1
 
@@ -130,10 +137,13 @@ def test_replace_table_rows_are_queryable_through_attached_duckdb(
     bootstrap_raw_ducklake(attach_config)
 
     table = pa.table({"type_id": [1, 2, 3], "date": ["2026-01-01"] * 3})
-    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
-        writer.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
+    with DuckLakeSession(attach_config, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
 
-    count = raw_con.execute(f"SELECT count(*) FROM {_ident(attach_config.alias)}.raw.raw_market_history").fetchone()[0]
+    count = raw_con.execute(
+        f"SELECT count(*) FROM {quote_identifier(attach_config.alias)}.raw.raw_market_history"
+    ).fetchone()[0]
     assert count == 3
 
 
@@ -153,9 +163,10 @@ def test_insert_style_write_fails_when_bootstrapped_table_is_missing(
             "snapshot_ts": ["2026-01-01"],
         }
     )
-    with DuckLakeWriter(attach_config, lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(attach_config, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(RuntimeError, match="eve-ingest ducklake bootstrap raw"):
-            writer.write(
+            raw.write(
                 table,
                 table=RawDuckLakeTable.MARKET_ORDERS,
                 mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
@@ -167,8 +178,9 @@ def test_bootstrap_creates_raw_schema_data_tables_and_provenance_tables(
     attach_config: DuckLakeAttachConfig,
 ) -> None:
     bootstrap_raw_ducklake(attach_config)
-    con = duckdb.connect()
-    _attach(con, config=attach_config)
+    session = DuckLakeSession(attach_config)
+    session.__enter__()
+    con = session.connection
     tables = {
         row[0]
         for row in con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'raw'").fetchall()

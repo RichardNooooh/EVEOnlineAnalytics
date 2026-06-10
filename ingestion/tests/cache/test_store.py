@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from eve_ingest.raw_objects import Cache, CacheObject, GetMode, UpdateMode
+from eve_ingest.raw_objects import RawObjectStore, CacheObject, GetMode, UpdateMode
 from eve_ingest.raw_objects.http_models import (
     ModifiedRead,
     NotModifiedRead,
@@ -138,7 +138,7 @@ def _store(
     source_name: str = "everef",
     ledger: InMemoryRawObjectLedger | None = None,
     raw_download_workers: int | None = None,
-) -> Cache:
+) -> RawObjectStore:
     kwargs = {
         "dataset_name": dataset_name,
         "update_mode": update_mode,
@@ -149,7 +149,7 @@ def _store(
     }
     if raw_download_workers is not None:
         kwargs["raw_download_workers"] = raw_download_workers
-    return Cache(
+    return RawObjectStore(
         **kwargs,
     )
 
@@ -283,7 +283,8 @@ def test_get_uses_explicit_source_path_for_non_everef_url(tmp_path: Path) -> Non
 
 def test_get_many_parallel_workers_preserve_result_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = ThreadSafeParallelClient()
-    monkeypatch.setattr("eve_ingest.raw_objects.cache.HttpRawObjectClient", lambda: client)
+    monkeypatch.setattr("eve_ingest.raw_objects.http_client.HttpRawObjectClient", lambda: client)
+    monkeypatch.setattr("eve_ingest.raw_objects.store.HttpRawObjectClient", lambda: client)
     first_object = CacheObject(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/first.csv.bz2",
         identity_key={"source": "first"},

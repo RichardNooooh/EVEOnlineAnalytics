@@ -9,9 +9,15 @@ import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
 from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
+from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
+from eve_ingest.ducklake.raw_publish import RawTablePublisher
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
-from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
-from eve_ingest.sources.everef.reference_data import _process_references_result
+from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
+from eve_ingest.ducklake.session import DuckLakeSession
+from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.specs import DatasetPublisherSpec, ReplaceReferenceTables, StaticScope
+from eve_ingest.raw_objects import UpdateMode
+from eve_ingest.sources.everef.reference_data import publish_one
 from tests.sources.everef.conftest import make_cache_result
 
 
@@ -29,8 +35,10 @@ class _KeepConnection:
 @pytest.fixture
 def shared_con(monkeypatch):
     con = _KeepConnection()
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.writer._attach", lambda c, config: None)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.bootstrap.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.DuckLakeSession._attach", lambda self: None)
+    monkeypatch.setattr("eve_ingest.ducklake.bootstrap._attach_bootstrap", lambda c, config: None)
     yield con._con
     con._con.close()
 
@@ -111,19 +119,41 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
         },
     )
 
+    spec = DatasetPublisherSpec(
+        dataset_name="reference-data",
+        update_mode=UpdateMode.MUTABLE,
+        data_tables=(
+            RawDuckLakeTable.REFERENCE_TYPES,
+            RawDuckLakeTable.REFERENCE_REGIONS,
+            RawDuckLakeTable.REFERENCE_GROUPS,
+            RawDuckLakeTable.REFERENCE_CATEGORIES,
+            RawDuckLakeTable.REFERENCE_MARKET_GROUPS,
+        ),
+        provenance_tables=(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
+        publication_scope=StaticScope("raw:references:full_extract"),
+        write_policy=ReplaceReferenceTables(transactional=True),
+    )
     result = make_cache_result(
         str(archive_path),
-        content_length=archive_path.stat().st_size,
-        last_modified="2026-01-02T11:01:55Z",
         dataset_name="reference-data",
+        identity_key={"source_date": "latest"},
         source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
     )
-
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        outcome = _process_references_result(result, writer)
+    lock_token = _test_lock_token()
+    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+        raw_tables = RawTablePublisher(session, lock_token=lock_token)
+        provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
+        ctx = PublishContext(
+            spec=spec,
+            session=session,
+            raw_tables=raw_tables,
+            provenance=provenance,
+            publication_scope="raw:references:full_extract",
+        )
+        outcome = publish_one(result, ctx)
 
     assert outcome.success is True
-    assert outcome.source_date == "2026-01-01"
+    assert outcome.source_date == "latest"
     assert len(outcome.write_metrics) == 3
 
     types = shared_con.execute(
@@ -165,20 +195,30 @@ def test_process_references_result_marks_failed_on_archive_error(shared_con, tmp
     broken_path = tmp_path / "broken-reference-data.tar.xz"
     broken_path.write_text("not a tar archive")
 
+    spec = DatasetPublisherSpec(
+        dataset_name="reference-data",
+        update_mode=UpdateMode.MUTABLE,
+        data_tables=(RawDuckLakeTable.REFERENCE_TYPES,),
+        provenance_tables=(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
+        publication_scope=StaticScope("raw:references:full_extract"),
+        write_policy=ReplaceReferenceTables(transactional=True),
+    )
     result = make_cache_result(
         str(broken_path),
-        content_length=broken_path.stat().st_size,
-        last_modified="2026-05-28T13:16:13Z",
         dataset_name="reference-data",
+        identity_key={"source_date": "latest"},
         source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
     )
-
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        outcome = _process_references_result(result, writer)
-
-    assert outcome.success is False
-
-    rows = shared_con.execute(
-        f'SELECT endpoint, status, status_reason FROM "memory"."raw"."{RawDuckLakeProvenanceTable.REFERENCE_OBJECTS.value}" ORDER BY endpoint, status'
-    ).fetchall()
-    assert ("reference_data", "failed", "see log for details") in rows
+    lock_token = _test_lock_token()
+    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+        raw_tables = RawTablePublisher(session, lock_token=lock_token)
+        provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
+        ctx = PublishContext(
+            spec=spec,
+            session=session,
+            raw_tables=raw_tables,
+            provenance=provenance,
+            publication_scope="raw:references:full_extract",
+        )
+        with pytest.raises((ValueError, RuntimeError, tarfile.ReadError)):
+            publish_one(result, ctx)

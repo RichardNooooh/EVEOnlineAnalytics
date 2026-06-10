@@ -7,15 +7,17 @@ import pyarrow as pa
 import pytest
 
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
+from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
 from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
-from eve_ingest.ducklake.writer import DuckLakeWriter, bootstrap_raw_ducklake
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.raw_publish import RawTablePublisher
+from eve_ingest.ducklake.session import DuckLakeSession
 
 
 class _KeepConnection:
     """Wraps a real DuckDB connection, ignoring close().
 
-    Lets the connection survive multiple DuckLakeWriter with-blocks
+    Lets the connection survive multiple DuckLakeSession with-blocks
     so later blocks see the same in-memory data.
     """
 
@@ -33,9 +35,14 @@ class _KeepConnection:
 def shared_con(monkeypatch):
     """Real in-memory DuckDB connection that is NOT closed on writer exit."""
     con = _KeepConnection()
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.bootstrap.duckdb.connect", lambda: con)
     monkeypatch.setattr(
-        "eve_ingest.ducklake.writer._attach",
+        "eve_ingest.ducklake.session.DuckLakeSession._attach",
+        lambda self: None,
+    )
+    monkeypatch.setattr(
+        "eve_ingest.ducklake.bootstrap._attach_bootstrap",
         lambda c, config: None,
     )
     yield con._con
@@ -76,15 +83,17 @@ def test_append_snapshot_rows_appends_duplicate_snapshot_rows(shared_con):
         }
     )
 
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        first_metrics = writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        first_metrics = raw.write(
             rows,
             table=RawDuckLakeTable.MARKET_ORDERS,
             mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
         )
 
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        second_metrics = writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        second_metrics = raw.write(
             rows,
             table=RawDuckLakeTable.MARKET_ORDERS,
             mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
@@ -107,8 +116,9 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
     Uses a real in-memory DuckDB to validate SQL correctness.
     """
     table_a = pa.table({"type_id": [1, 2], "average": [10.0, 20.0], "source_market_date": ["2026-01-01"] * 2})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             table_a,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -116,8 +126,9 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
         )
 
     table_b = pa.table({"type_id": [1, 2, 3], "average": [10.0, 20.0, 30.0], "source_market_date": ["2026-01-01"] * 3})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             table_b,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -139,8 +150,9 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
 def test_merge_column_order_independent(shared_con):
     """Verify BY NAME matching means column order doesn't matter."""
     table_a = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             table_a,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -148,8 +160,9 @@ def test_merge_column_order_independent(shared_con):
         )
 
     table_b = pa.table({"average": [20.0], "type_id": [2], "source_market_date": ["2026-01-02"]})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             table_b,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -169,16 +182,18 @@ def test_merge_column_order_independent(shared_con):
 @pytest.mark.real_duckdb
 def test_replace_table_overwrites_existing_rows(shared_con):
     table_a = pa.table({"type_id": [1], "date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             table_a,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.REPLACE_TABLE,
         )
 
     table_b = pa.table({"type_id": [1], "date": ["2026-01-02"]})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             table_b,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -194,8 +209,9 @@ def test_replace_table_overwrites_existing_rows(shared_con):
 @pytest.mark.real_duckdb
 def test_merge_raises_for_matching_key_with_different_values(shared_con):
     first = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             first,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -203,9 +219,10 @@ def test_merge_raises_for_matching_key_with_different_values(shared_con):
         )
 
     second = pa.table({"type_id": [1], "average": [99.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(ValueError, match="differing values"):
-            writer.write(
+            raw.write(
                 second,
                 table=RawDuckLakeTable.MARKET_HISTORY,
                 mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -222,16 +239,18 @@ def test_merge_raises_for_matching_key_with_different_values(shared_con):
 def test_authoritative_mode_is_idempotent_for_identical_source_date(shared_con):
     rows = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
 
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             rows,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
             key_columns=["type_id"],
         )
 
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             rows,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -247,8 +266,9 @@ def test_authoritative_mode_is_idempotent_for_identical_source_date(shared_con):
 @pytest.mark.real_duckdb
 def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from_source(shared_con):
     first = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             first,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -256,9 +276,10 @@ def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from
         )
 
     second = pa.table({"type_id": [2], "average": [20.0], "source_market_date": ["2026-01-01"]})
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(ValueError, match="source_date"):
-            writer.write(
+            raw.write(
                 second,
                 table=RawDuckLakeTable.MARKET_HISTORY,
                 mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -282,8 +303,9 @@ def test_append_snapshot_rows_allows_partial_source_date_coverage(shared_con):
             "snapshot_ts": ["2026-01-01"],
         }
     )
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             first,
             table=RawDuckLakeTable.MARKET_ORDERS,
             mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
@@ -298,8 +320,9 @@ def test_append_snapshot_rows_allows_partial_source_date_coverage(shared_con):
             "snapshot_ts": ["2026-01-01"],
         }
     )
-    with DuckLakeWriter(_ATTACH, lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             second,
             table=RawDuckLakeTable.MARKET_ORDERS,
             mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
