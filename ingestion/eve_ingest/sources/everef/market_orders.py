@@ -12,13 +12,17 @@ from tempfile import NamedTemporaryFile
 
 from eve_ingest.raw_objects import CacheObject, CacheResult, UpdateMode
 from eve_ingest.cli.config import EverefCliConfig
-from eve_ingest.ducklake.raw_tables import compute_source_object_id
-from eve_ingest.ducklake.writer import DuckLakeSqlSnapshotSource, DuckLakeWriter
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.session import SqlSource
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.results import PublishResult
+from eve_ingest.publication.runner import run_dataset_pipeline
+from eve_ingest.publication.specs import (
+    AppendSnapshotRows,
+    DatasetPublisherSpec,
+    SourceDateScope,
+)
 from eve_ingest.sources.everef.discovery import build_listed_objects
-from eve_ingest.sources.everef.csv_reader import publish_file_backed_snapshot_rows
-from eve_ingest.workflows.raw_file_workflow import PipelineProcessResult, run_pipeline as _run_pipeline
-from eve_ingest.workflows.publisher_specs import PublisherSpec, source_date_publication_scope
 
 logger = logging.getLogger("eve_ingest.sources.everef")
 
@@ -45,20 +49,20 @@ _MARKET_ORDERS_SQL_SCHEMA = """
 }
 """
 
-PUBLISHER_SPEC = PublisherSpec(
+PUBLISHER_SPEC = DatasetPublisherSpec(
     dataset_name="market-orders",
     update_mode=UpdateMode.SNAPSHOT,
     data_tables=(RawDuckLakeTable.MARKET_ORDERS,),
     provenance_tables=(RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,),
-    writer_mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
-    publication_scope_builder=source_date_publication_scope("market_orders"),
+    write_policy=AppendSnapshotRows(batch_scope="source_date"),
+    publication_scope=SourceDateScope("market_orders"),
 )
 
 
-def _build_cache_objects(start_date: date, end_date: date) -> list[CacheObject]:
+def discover_objects(config: EverefCliConfig) -> list[CacheObject]:
     return build_listed_objects(
-        start_date,
-        end_date,
+        config.start_date,
+        config.end_date,
         url_prefix="market-orders/history",
         filename_pattern=_SNAPSHOT_RE,
         identity_key_fn=lambda filename, d: {
@@ -80,16 +84,20 @@ def _decompressed_snapshot_csv(path: str) -> Iterator[str]:
         Path(temp_path).unlink(missing_ok=True)
 
 
-def _process_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProcessResult:
-    source_market_date = date.fromisoformat(str(result.identity_key["source_date"]))
-    snapshot_ts = datetime.strptime(str(result.identity_key["snapshot_time"]), "%Y-%m-%d_%H-%M-%S").replace(tzinfo=UTC)
-    source_object_id = compute_source_object_id("everef", "market_orders", result.version.source_url)
-    source_object_id_sql = writer.quote_sql_string(source_object_id)
-    source_market_date_sql = writer.quote_sql_string(source_market_date.isoformat())
-    snapshot_ts_sql = writer.quote_sql_string(snapshot_ts.isoformat())
-    with _decompressed_snapshot_csv(result.path) as csv_path:
-        path_sql = writer.quote_sql_string(csv_path)
-        sql_source = DuckLakeSqlSnapshotSource(
+def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
+    source_market_date = date.fromisoformat(str(raw_object.identity_key["source_date"]))
+    snapshot_ts = datetime.strptime(str(raw_object.identity_key["snapshot_time"]), "%Y-%m-%d_%H-%M-%S").replace(
+        tzinfo=UTC
+    )
+    source_object_id = ctx.source_object_id(
+        source_system="everef", endpoint="market_orders", source_url=raw_object.version.source_url
+    )
+    source_object_id_sql = ctx.quote_sql_string(source_object_id)
+    source_market_date_sql = ctx.quote_sql_string(source_market_date.isoformat())
+    snapshot_ts_sql = ctx.quote_sql_string(snapshot_ts.isoformat())
+    with _decompressed_snapshot_csv(raw_object.path) as csv_path:
+        path_sql = ctx.quote_sql_string(csv_path)
+        sql_source = SqlSource(
             sql=f"""
             SELECT
                 order_id,
@@ -122,22 +130,22 @@ def _process_result(result: CacheResult, writer: DuckLakeWriter) -> PipelineProc
             )
             """
         )
-        return publish_file_backed_snapshot_rows(
-            result,
-            writer,
+        return ctx.append_snapshot_sql(
+            raw_object,
             source_system="everef",
             endpoint="market_orders",
             source_market_date=source_market_date,
             snapshot_ts=snapshot_ts,
-            table_key=RawDuckLakeTable.MARKET_ORDERS,
+            table=RawDuckLakeTable.MARKET_ORDERS,
             sql_source=sql_source,
+            source_object_id=source_object_id,
         )
 
 
 def run_pipeline(config: EverefCliConfig) -> int:
-    return _run_pipeline(
-        publisher_spec=PUBLISHER_SPEC,
-        objects=_build_cache_objects(config.start_date, config.end_date),
+    return run_dataset_pipeline(
         config=config,
-        process_one=_process_result,
+        spec=PUBLISHER_SPEC,
+        discover_objects=discover_objects,
+        publish_one=publish_one,
     )

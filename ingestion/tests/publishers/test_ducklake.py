@@ -3,24 +3,23 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
+from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
 from eve_ingest.ducklake.locks import (
     DuckLakeLockToken,
     DuckLakeLockViolationError,
     ducklake_lock_domains_for_tables,
     hold_ducklake_lock_domains,
 )
-from eve_ingest.ducklake.writer import (
-    DuckLakeSqlSnapshotSource,
-    DuckLakeWriter,
-    _ensure_expected_partitioning,
-    bootstrap_raw_ducklake,
-)
+from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
+from eve_ingest.ducklake.raw_publish import RawTablePublisher, ensure_expected_partitioning
 from eve_ingest.ducklake.raw_tables import (
     DuckLakeTableTarget,
     DuckLakeWriterMode,
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
 )
+from eve_ingest.ducklake.session import DuckLakeSession
+from eve_ingest.ducklake.sql import SqlSource
 
 
 class FakeRelation:
@@ -66,6 +65,21 @@ class FakeConnection:
         self.closed = True
 
 
+_DEFAULT_ATTACH = DuckLakeAttachConfig(
+    attach_uri="ducklake:postgres:dbname=airflow host=postgres user=airflow password=airflow-local-only port=5432",
+    data_path="/opt/eve-market/data/datasets/ducklake/raw",
+    metadata_schema="eve_market",
+    alias="ducklake",
+)
+
+_MINIMAL_ATTACH = DuckLakeAttachConfig(
+    attach_uri=":memory:",
+    data_path="",
+    metadata_schema="test",
+    alias="test",
+)
+
+
 def _queries(con: FakeConnection) -> list[str]:
     return [query for query, _ in con.calls]
 
@@ -87,13 +101,13 @@ def _test_lock_token(
     )
 
 
-def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
+def test_session_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        assert writer._con is con
+    with DuckLakeSession(_DEFAULT_ATTACH, lock_token=_test_lock_token()) as session:
+        assert session.connection is con
 
     attach_call = _attach_call(con)
     queries = _queries(con)
@@ -108,12 +122,12 @@ def test_writer_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     assert not any("CREATE SCHEMA IF NOT EXISTS" in query for query in queries)
 
 
-def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
+def test_session_uses_explicit_attach_config(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(
+    with DuckLakeSession(
         DuckLakeAttachConfig(
             attach_uri="ducklake:postgres:dbname=raw host=postgres",
             data_path="/data/custom/raw",
@@ -132,12 +146,12 @@ def test_writer_uses_explicit_attach_config(monkeypatch) -> None:
     assert "custom_metadata" in attach_call[0]
 
 
-def test_writer_configures_postgres_pool_before_ducklake_attach(monkeypatch) -> None:
+def test_session_configures_postgres_pool_before_ducklake_attach(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(
+    with DuckLakeSession(
         DuckLakeAttachConfig(
             attach_uri="ducklake:postgres:dbname=raw host=postgres",
             data_path="/data/custom/raw",
@@ -159,7 +173,7 @@ def test_writer_configures_postgres_pool_before_ducklake_attach(monkeypatch) -> 
 def test_bootstrap_repairs_missing_columns(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
     bootstrap_raw_ducklake()
 
@@ -183,7 +197,7 @@ def test_bootstrap_repairs_missing_columns(monkeypatch) -> None:
 def test_bootstrap_partitions_snapshot_order_tables(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
     bootstrap_raw_ducklake()
 
@@ -205,15 +219,16 @@ def test_bootstrap_partitions_snapshot_order_tables(monkeypatch) -> None:
     )
 
 
-def test_writer_replaces_table(monkeypatch) -> None:
+def test_raw_publisher_replaces_table(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (0,), (2,)]
     arrow_table = pa.table({"b": [2], "a": [1]})
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -233,15 +248,16 @@ def test_writer_replaces_table(monkeypatch) -> None:
     assert con.closed is True
 
 
-def test_writer_authoritative_mode_merges_with_keys(monkeypatch) -> None:
+def test_raw_publisher_authoritative_mode_merges_with_keys(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (0,), (2,)]
     arrow_table = pa.table({"id": [1, 2], "value": [10, 20]})
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        writer.write(
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -257,7 +273,7 @@ def test_writer_authoritative_mode_merges_with_keys(monkeypatch) -> None:
     assert "WHEN NOT MATCHED THEN INSERT BY NAME" in merge_queries[0]
 
 
-def test_writer_append_snapshot_rows_inserts_by_name_without_merge_or_counts(monkeypatch) -> None:
+def test_raw_publisher_append_snapshot_rows_inserts_by_name_without_merge_or_counts(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (2,)]
     arrow_table = pa.table(
@@ -270,10 +286,11 @@ def test_writer_append_snapshot_rows_inserts_by_name_without_merge_or_counts(mon
         }
     )
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        metrics = writer.write(
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        metrics = raw.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_ORDERS,
             mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
@@ -300,7 +317,7 @@ def test_writer_append_snapshot_rows_inserts_by_name_without_merge_or_counts(mon
         DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
     ],
 )
-def test_writer_insert_modes_require_bootstrapped_table(monkeypatch, mode: DuckLakeWriterMode) -> None:
+def test_raw_publisher_insert_modes_require_bootstrapped_table(monkeypatch, mode: DuckLakeWriterMode) -> None:
     con = FakeConnection()
     con.fetchone_results = [(0,)]
     arrow_table = pa.table(
@@ -313,11 +330,12 @@ def test_writer_insert_modes_require_bootstrapped_table(monkeypatch, mode: DuckL
         }
     )
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(RuntimeError, match="eve-ingest ducklake bootstrap raw"):
-            writer.write(
+            raw.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_ORDERS
                 if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
@@ -329,15 +347,16 @@ def test_writer_insert_modes_require_bootstrapped_table(monkeypatch, mode: DuckL
     assert not any("CREATE TABLE IF NOT EXISTS" in query for query in _queries(con))
 
 
-def test_writer_returns_write_metrics(monkeypatch) -> None:
+def test_raw_publisher_returns_write_metrics(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (1,), (1,)]
     arrow_table = pa.table({"id": [1, 2], "value": [10, 20]})
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        metrics = writer.write(
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        metrics = raw.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -355,10 +374,11 @@ def test_replace_table_returns_replaced_row_metrics(monkeypatch) -> None:
     con.fetchone_results = [(1,), (7,), (1,)]
     arrow_table = pa.table({"id": [1]})
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        metrics = writer.write(
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        metrics = raw.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -390,7 +410,7 @@ def test_replace_table_returns_replaced_row_metrics(monkeypatch) -> None:
         ),
     ],
 )
-def test_writer_rejects_invalid_key_columns(
+def test_raw_publisher_rejects_invalid_key_columns(
     monkeypatch,
     key_columns: list[str],
     arrow_table: pa.Table,
@@ -398,11 +418,12 @@ def test_writer_rejects_invalid_key_columns(
 ) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(ValueError, match=error_message):
-            writer.write(
+            raw.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_HISTORY,
                 mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
@@ -410,14 +431,15 @@ def test_writer_rejects_invalid_key_columns(
             )
 
 
-def test_writer_requires_lock_token_for_write(monkeypatch) -> None:
+def test_raw_publisher_requires_lock_token_for_write(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH) as session:
+        raw = RawTablePublisher(session)
         with pytest.raises(DuckLakeLockViolationError, match="requires DuckLakeLockToken"):
-            writer.write(
+            raw.write(
                 pa.table({"id": [1]}),
                 table=RawDuckLakeTable.MARKET_HISTORY,
                 mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -426,16 +448,18 @@ def test_writer_requires_lock_token_for_write(monkeypatch) -> None:
     assert con.arrow_tables == []
 
 
-def test_writer_rejects_declared_mode_mismatch_before_arrow_view_or_mutation(monkeypatch) -> None:
+def test_raw_publisher_rejects_declared_mode_mismatch_before_arrow_view_or_mutation(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(
-        lock_token=_test_lock_token(),
-        declared_mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-        dataset_name="market-orders",
-    ) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(
+            session,
+            lock_token=_test_lock_token(),
+            declared_policy=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            dataset_name="market-orders",
+        )
         with pytest.raises(
             ValueError,
             match=(
@@ -444,7 +468,7 @@ def test_writer_rejects_declared_mode_mismatch_before_arrow_view_or_mutation(mon
                 "declared_mode=assert_partition_coverage_insert_missing_keys requested_mode=replace_table"
             ),
         ):
-            writer.write(
+            raw.write(
                 pa.table({"id": [1]}),
                 table=RawDuckLakeTable.MARKET_ORDERS,
                 mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -454,18 +478,19 @@ def test_writer_rejects_declared_mode_mismatch_before_arrow_view_or_mutation(mon
     assert not any(query.lstrip().startswith(("DELETE FROM", "INSERT INTO", "MERGE INTO")) for query in _queries(con))
 
 
-def test_writer_rejects_wrong_lock_token_for_write(monkeypatch) -> None:
+def test_raw_publisher_rejects_wrong_lock_token_for_write(monkeypatch) -> None:
     con = FakeConnection()
     token = _test_lock_token(
         data_tables=(RawDuckLakeTable.MARKET_HISTORY,),
         provenance_tables=(),
     )
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=token) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=token) as session:
+        raw = RawTablePublisher(session, lock_token=token)
         with pytest.raises(DuckLakeLockViolationError, match="raw_market_orders"):
-            writer.write(
+            raw.write(
                 pa.table({"id": [1]}),
                 table=RawDuckLakeTable.MARKET_ORDERS,
                 mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -474,7 +499,7 @@ def test_writer_rejects_wrong_lock_token_for_write(monkeypatch) -> None:
     assert con.arrow_tables == []
 
 
-def test_writer_rejects_reused_inactive_lock_token_before_mutation(monkeypatch) -> None:
+def test_raw_publisher_rejects_reused_inactive_lock_token_before_mutation(monkeypatch) -> None:
     con = FakeConnection()
     with hold_ducklake_lock_domains(
         catalog_url="postgresql://user:pass@localhost:5432/db",
@@ -483,11 +508,12 @@ def test_writer_rejects_reused_inactive_lock_token_before_mutation(monkeypatch) 
     ) as token:
         assert token.is_active is True
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=token) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=token) as session:
+        raw = RawTablePublisher(session, lock_token=token)
         with pytest.raises(DuckLakeLockViolationError, match="inactive"):
-            writer.write(
+            raw.write(
                 pa.table({"id": [1]}),
                 table=RawDuckLakeTable.MARKET_HISTORY,
                 mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -497,14 +523,15 @@ def test_writer_rejects_reused_inactive_lock_token_before_mutation(monkeypatch) 
     assert not any(query.lstrip().startswith(("DELETE FROM", "INSERT INTO", "MERGE INTO")) for query in _queries(con))
 
 
-def test_writer_requires_lock_token_for_source_object(monkeypatch) -> None:
+def test_provenance_requires_lock_token_for_source_object(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter() as writer:
-        with pytest.raises(DuckLakeLockViolationError, match="require DuckLakeLockToken"):
-            writer.record_source_object(
+    with DuckLakeSession(_MINIMAL_ATTACH) as session:
+        provenance = SourceObjectProvenanceRepository(session)
+        with pytest.raises(DuckLakeLockViolationError, match="requires DuckLakeLockToken"):
+            provenance.record_source_object(
                 {"source_object_id": "soid-1", "status": "failed"},
                 table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
             )
@@ -512,18 +539,19 @@ def test_writer_requires_lock_token_for_source_object(monkeypatch) -> None:
     assert not any(query.lstrip().startswith("MERGE INTO") for query in _queries(con))
 
 
-def test_writer_rejects_wrong_lock_token_for_source_object(monkeypatch) -> None:
+def test_provenance_rejects_wrong_lock_token_for_source_object(monkeypatch) -> None:
     con = FakeConnection()
     token = _test_lock_token(
         data_tables=(),
         provenance_tables=(RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,),
     )
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=token) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=token) as session:
+        provenance = SourceObjectProvenanceRepository(session, lock_token=token)
         with pytest.raises(DuckLakeLockViolationError, match="raw_market_orders_objects"):
-            writer.record_source_object(
+            provenance.record_source_object(
                 {"source_object_id": "soid-1", "status": "failed"},
                 table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
             )
@@ -531,27 +559,29 @@ def test_writer_rejects_wrong_lock_token_for_source_object(monkeypatch) -> None:
     assert not any(query.lstrip().startswith("MERGE INTO") for query in _queries(con))
 
 
-def test_writer_requires_with_block() -> None:
-    writer = DuckLakeWriter()
+def test_raw_publisher_requires_session_to_be_open() -> None:
+    session = DuckLakeSession(_MINIMAL_ATTACH)
+    raw = RawTablePublisher(session, lock_token=_test_lock_token())
 
-    with pytest.raises(RuntimeError, match="must be used inside a with block"):
-        writer.write(
+    with pytest.raises(RuntimeError, match="DuckLakeSession is not open"):
+        raw.write(
             pa.table({"id": [1]}),
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.REPLACE_TABLE,
         )
 
 
-def test_writer_closes_connection_when_write_fails(monkeypatch) -> None:
+def test_raw_publisher_closes_connection_when_write_fails(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (0,)]
     con.raise_on_execute = "INSERT INTO"
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
     with pytest.raises(RuntimeError, match="boom"):
-        with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-            writer.write(
+        with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+            raw = RawTablePublisher(session, lock_token=_test_lock_token())
+            raw.write(
                 pa.table({"id": [1]}),
                 table=RawDuckLakeTable.MARKET_HISTORY,
                 mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -566,11 +596,12 @@ def test_replace_table_rejects_empty_arrow_table_without_writing(monkeypatch) ->
     con = FakeConnection()
     arrow_table = pa.table({"id": pa.array([], type=pa.int64())})
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(ValueError, match="REPLACE_TABLE requires a non-empty arrow_table"):
-            writer.write(
+            raw.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_HISTORY,
                 mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -584,11 +615,12 @@ def test_replace_table_rejects_key_columns(monkeypatch) -> None:
     con = FakeConnection()
     arrow_table = pa.table({"id": [1]})
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(ValueError, match="REPLACE_TABLE does not accept key_columns"):
-            writer.write(
+            raw.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_HISTORY,
                 mode=DuckLakeWriterMode.REPLACE_TABLE,
@@ -602,11 +634,12 @@ def test_append_snapshot_rows_rejects_key_columns(monkeypatch) -> None:
     con = FakeConnection()
     arrow_table = pa.table({"id": [1]})
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(ValueError, match="APPEND_SNAPSHOT_ROWS does not accept key_columns"):
-            writer.write(
+            raw.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_ORDERS,
                 mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
@@ -619,14 +652,15 @@ def test_append_snapshot_rows_rejects_key_columns(monkeypatch) -> None:
 def test_append_snapshot_rows_requires_provenance_and_snapshot_columns(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(
             ValueError,
             match="APPEND_SNAPSHOT_ROWS requires arrow_table columns: source_object_id, source_market_date, snapshot_ts",
         ):
-            writer.write(
+            raw.write(
                 pa.table({"order_id": [1]}),
                 table=RawDuckLakeTable.MARKET_ORDERS,
                 mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
@@ -635,15 +669,16 @@ def test_append_snapshot_rows_requires_provenance_and_snapshot_columns(monkeypat
     assert con.arrow_tables == []
 
 
-def test_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
+def test_session_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        with writer.transaction():
-            with writer.transaction():
-                writer.mark_source_object_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
+        with session.transaction():
+            with session.transaction():
+                provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
 
     queries = _queries(con)
     assert queries.count("BEGIN") == 1
@@ -651,16 +686,16 @@ def test_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
     assert "ROLLBACK" not in queries
 
 
-def test_nested_transaction_inner_failure_marks_outer_rollback_only(monkeypatch) -> None:
+def test_session_nested_transaction_inner_failure_marks_outer_rollback_only(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
         with pytest.raises(RuntimeError, match="rollback-only"):
-            with writer.transaction():
+            with session.transaction():
                 try:
-                    with writer.transaction():
+                    with session.transaction():
                         raise ValueError("inner")
                 except ValueError:
                     pass
@@ -671,17 +706,17 @@ def test_nested_transaction_inner_failure_marks_outer_rollback_only(monkeypatch)
     assert "COMMIT" not in queries
 
 
-def test_transaction_rolls_back_when_commit_fails(monkeypatch) -> None:
+def test_session_transaction_rolls_back_when_commit_fails(monkeypatch) -> None:
     con = FakeConnection()
     con.raise_on_execute = "COMMIT"
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
         with pytest.raises(RuntimeError, match="boom"):
-            with writer.transaction():
+            with session.transaction():
                 pass
-        assert writer._transaction_depth == 0
+        assert session._transaction_depth == 0
 
     queries = _queries(con)
     assert "BEGIN" in queries
@@ -693,19 +728,21 @@ def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transacti
     con.fetchone_results = [(1,), (0,), (1,)]
     arrow_table = pa.table({"type_id": [10], "price": [99.5], "source_market_date": ["2026-01-01"]})
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        writer.validate_write_request(
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
+        raw.validate_write_request(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
             key_columns=["type_id"],
         )
-        with writer.prepare_arrow_source(arrow_table) as source_name:
-            with writer.transaction():
-                writer.mark_source_object_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
-                writer.write_prepared_source(
+        with session.prepare_arrow_source(arrow_table) as source_name:
+            with session.transaction():
+                provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
+                raw.write_prepared_source(
                     arrow_table,
                     source_name=source_name,
                     table=RawDuckLakeTable.MARKET_HISTORY,
@@ -726,7 +763,7 @@ def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transacti
     assert not any(event[0] == "from_arrow" for event in con.events[begin_index:raw_merge_index])
 
 
-def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
+def test_raw_publisher_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(0,), (0,), (1,)]
     table_a = pa.table({"id": [1]})
@@ -739,17 +776,18 @@ def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
         }
     )
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.raw_publish.target_exists", lambda *args, **kwargs: True)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        metrics_a = writer.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
-        metrics_b = writer.write(
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        metrics_a = raw.write(table_a, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
+        metrics_b = raw.write(
             table_b,
             table=RawDuckLakeTable.MARKET_ORDERS,
             mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
         )
-        assert writer.write_history == (metrics_a, metrics_b)
+        assert raw.write_history == (metrics_a, metrics_b)
 
     assert con.arrow_tables == [table_a, table_b]
     queries = _queries(con)
@@ -762,23 +800,27 @@ def test_writer_records_multiple_table_writes_in_one_block(monkeypatch) -> None:
     assert con.closed is True
 
 
-def test_publish_source_object_sql_rows_uses_temp_sql_view_and_no_arrow(monkeypatch) -> None:
+def test_append_snapshot_sql_uses_temp_sql_view_and_no_arrow(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,)]
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.writer._target_exists", lambda *args, **kwargs: True)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.raw_publish.target_exists", lambda *args, **kwargs: True)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        metrics = writer.publish_source_object_sql_rows(
-            DuckLakeSqlSnapshotSource(
-                sql="SELECT 1 AS order_id, 'soid-1' AS source_object_id, DATE '2026-01-01' AS source_market_date, TIMESTAMPTZ '2026-01-01T00:00:00+00:00' AS snapshot_ts"
-            ),
-            data_table=RawDuckLakeTable.MARKET_ORDERS,
-            provenance_table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
-            source_object_id="soid-1",
-            mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
+        sql_source = SqlSource(
+            sql="SELECT 1 AS order_id, 'soid-1' AS source_object_id, DATE '2026-01-01' AS source_market_date, TIMESTAMPTZ '2026-01-01T00:00:00+00:00' AS snapshot_ts"
         )
+        with session.prepare_sql_source(sql_source) as source_name:
+            with session.transaction():
+                provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
+                metrics = raw.append_snapshot_prepared_source(
+                    source_name=source_name,
+                    table=RawDuckLakeTable.MARKET_ORDERS,
+                )
+                provenance.mark_ingested("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
 
     assert con.arrow_tables == []
     queries = _queries(con)
@@ -790,10 +832,11 @@ def test_publish_source_object_sql_rows_uses_temp_sql_view_and_no_arrow(monkeypa
 def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        writer.record_source_object(
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
+        provenance.record_source_object(
             {
                 "source_object_id": "soid-1",
                 "source_system": "everef",
@@ -804,7 +847,7 @@ def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) 
             },
             table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
         )
-        writer.mark_source_object_ingested("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
+        provenance.mark_ingested("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
 
     merge_queries = [call for call in con.calls if call[0].lstrip().startswith("MERGE INTO")]
     update_queries = [call for call in con.calls if call[0].lstrip().startswith("UPDATE")]
@@ -818,10 +861,10 @@ def test_ensure_expected_partitioning_skips_alter_when_metadata_matches(monkeypa
     con = FakeConnection()
 
     monkeypatch.setattr(
-        "eve_ingest.ducklake.writer._ducklake_partition_columns", lambda *args, **kwargs: ("source_market_date",)
+        "eve_ingest.ducklake.raw_publish.ducklake_partition_columns", lambda *args, **kwargs: ("source_market_date",)
     )
 
-    _ensure_expected_partitioning(
+    ensure_expected_partitioning(
         con,
         alias="raw_lake",
         target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
@@ -834,9 +877,9 @@ def test_ensure_expected_partitioning_skips_alter_when_metadata_matches(monkeypa
 def test_ensure_expected_partitioning_emits_exact_target_when_missing(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer._ducklake_partition_columns", lambda *args, **kwargs: ())
+    monkeypatch.setattr("eve_ingest.ducklake.raw_publish.ducklake_partition_columns", lambda *args, **kwargs: ())
 
-    _ensure_expected_partitioning(
+    ensure_expected_partitioning(
         con,
         alias="raw_lake",
         target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
@@ -853,11 +896,11 @@ def test_ensure_expected_partitioning_raises_when_metadata_differs(monkeypatch) 
     con = FakeConnection()
 
     monkeypatch.setattr(
-        "eve_ingest.ducklake.writer._ducklake_partition_columns", lambda *args, **kwargs: ("region_id",)
+        "eve_ingest.ducklake.raw_publish.ducklake_partition_columns", lambda *args, **kwargs: ("region_id",)
     )
 
     with pytest.raises(RuntimeError, match="partitioning differs"):
-        _ensure_expected_partitioning(
+        ensure_expected_partitioning(
             con,
             alias="raw_lake",
             target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
@@ -870,11 +913,12 @@ def test_source_object_version_is_ingested_queries_status_and_sha(monkeypatch, f
     con = FakeConnection()
     con.fetchone_results = [fetchone_result]
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
         assert (
-            writer.source_object_version_is_ingested(
+            provenance.version_is_ingested(
                 "soid-1", sha256="abc123", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS
             )
             is expected
@@ -891,13 +935,11 @@ def test_source_object_ingested_sha256_queries_status(monkeypatch, fetchone_resu
     con = FakeConnection()
     con.fetchone_results = [fetchone_result]
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeWriter(lock_token=_test_lock_token()) as writer:
-        assert (
-            writer.source_object_ingested_sha256("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
-            == expected
-        )
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
+        assert provenance.ingested_sha256("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS) == expected
 
     calls = con.calls
     assert calls[-1][1] == ["soid-1"]
@@ -908,7 +950,7 @@ def test_source_object_ingested_sha256_queries_status(monkeypatch, fetchone_resu
 def test_bootstrap_raw_ducklake_creates_all_raw_and_provenance_tables(monkeypatch) -> None:
     con = FakeConnection()
 
-    monkeypatch.setattr("eve_ingest.ducklake.writer.duckdb.connect", lambda: con)
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
     bootstrap_raw_ducklake()
 

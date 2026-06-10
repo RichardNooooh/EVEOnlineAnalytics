@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from dataclasses import replace
 from pathlib import Path
 
-from eve_ingest.raw_objects import Cache, CacheObject, GetMode, UpdateMode
+from eve_ingest.raw_objects import RawObjectStore, CacheObject, GetMode, UpdateMode
 from eve_ingest.raw_objects.http_models import ModifiedRead, ReadStatus, RevalidationMetadata
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger import repository as ledger_runtime
@@ -60,7 +60,7 @@ def test_cache_get_and_filter_unpublished_with_real_sqlite_ledger(monkeypatch, t
         identity_key={"source_date": "2026-01-01"},
     )
 
-    with Cache(
+    with RawObjectStore(
         dataset_name="market-history",
         update_mode=UpdateMode.SNAPSHOT,
         raw_root=str(tmp_path / "raw"),
