@@ -13,7 +13,7 @@ import pyarrow as pa
 
 from eve_ingest.ducklake.raw_tables import DuckLakeTableTarget
 
-logger = logging.getLogger("eve_ingest.ducklake")
+logger = logging.getLogger(__name__)
 
 _IDENTIFIER_RE = re.compile(r"^[^\s-]+$")
 

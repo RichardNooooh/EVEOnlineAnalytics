@@ -100,7 +100,7 @@ def test_process_result_is_idempotent_for_same_fuzzwork_orders_source_object(sha
             data_tables=(RawDuckLakeTable.FUZZWORK_ORDERS,),
             provenance_tables=(RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS,),
             publication_scope=SourceDateScope("fuzzwork_orders"),
-            write_policy=AppendSnapshotRows(batch_scope="source_date"),
+            write_policy=AppendSnapshotRows(),
         )
         prep_ctx = SourcePreparationContext(session=session)
         service = PublicationService(
@@ -133,7 +133,7 @@ def test_process_result_is_idempotent_for_same_fuzzwork_orders_source_object(sha
             data_tables=(RawDuckLakeTable.FUZZWORK_ORDERS,),
             provenance_tables=(RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS,),
             publication_scope=SourceDateScope("fuzzwork_orders"),
-            write_policy=AppendSnapshotRows(batch_scope="source_date"),
+            write_policy=AppendSnapshotRows(),
         )
         prep_ctx = SourcePreparationContext(session=session)
         service = PublicationService(
@@ -185,7 +185,7 @@ def test_process_result_writes_native_tsv_columns_metadata_and_provenance(shared
             data_tables=(RawDuckLakeTable.FUZZWORK_ORDERS,),
             provenance_tables=(RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS,),
             publication_scope=SourceDateScope("fuzzwork_orders"),
-            write_policy=AppendSnapshotRows(batch_scope="source_date"),
+            write_policy=AppendSnapshotRows(),
         )
         prep_ctx = SourcePreparationContext(session=session)
         service = PublicationService(

@@ -14,7 +14,7 @@ from eve_ingest.ducklake.sql import (
     table_sql,
 )
 
-logger = logging.getLogger("eve_ingest.ducklake")
+logger = logging.getLogger(__name__)
 
 
 class SourceObjectProvenanceRepository:

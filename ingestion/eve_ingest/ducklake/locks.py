@@ -11,7 +11,7 @@ from sqlalchemy.engine import make_url
 
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 
-logger = logging.getLogger("eve_ingest.ducklake")
+logger = logging.getLogger(__name__)
 
 ############################
 # Lock Model Scope
