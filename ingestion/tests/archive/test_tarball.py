@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import tarfile
+from unittest.mock import patch
 
 import pytest
 
@@ -141,3 +142,47 @@ class TestSupportsTarBz2:
         with ExtractedTarball(tarball) as archive:
             assert len(archive.list_files()) == 1
             assert archive.list_files()[0].path.read_text() == "bz2 content"
+
+
+class TestCleansUpTempDirOnEnterFailure:
+    def test_cleans_up_on_tarfile_open_failure(self, tmp_path: Path) -> None:
+        tarball = make_tarball(tmp_path / "test.tar.bz2", {"f.txt": "data"})
+        archive = ExtractedTarball(tarball)
+        root_path = None
+
+        def raise_on_open(*args: object, **kwargs: object) -> None:
+            nonlocal root_path
+            root_path = archive._root
+            raise OSError("mock open failure")
+
+        with patch("tarfile.open", side_effect=raise_on_open):
+            with pytest.raises(OSError, match="mock open failure"):
+                archive.__enter__()
+
+        assert archive._tmpdir is None
+        assert archive._root is None
+        assert archive._members is None
+        assert root_path is not None
+        assert not root_path.exists()
+
+    def test_cleans_up_on_extractall_failure(self, tmp_path: Path) -> None:
+        tarball = make_tarball(tmp_path / "test.tar.bz2", {"f.txt": "data"})
+        archive = ExtractedTarball(tarball)
+        root_path = None
+
+        def capture_and_raise(*args: object, **kwargs: object) -> None:
+            nonlocal root_path
+            root_path = archive._root
+            raise OSError("mock extractall failure")
+
+        with patch("tarfile.open") as mock_open:
+            mock_archive = mock_open.return_value.__enter__.return_value
+            mock_archive.extractall.side_effect = capture_and_raise
+            with pytest.raises(OSError, match="mock extractall failure"):
+                archive.__enter__()
+
+        assert archive._tmpdir is None
+        assert archive._root is None
+        assert archive._members is None
+        assert root_path is not None
+        assert not root_path.exists()

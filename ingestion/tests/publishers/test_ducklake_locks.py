@@ -45,6 +45,12 @@ class _FakeConnection:
         self.closed = False
         self.raise_on_lock: Exception | None = None
 
+    def __enter__(self) -> _FakeConnection:
+        return self
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        self.close()
+
     def cursor(self) -> _FakeCursor:
         return _FakeCursor(self)
 

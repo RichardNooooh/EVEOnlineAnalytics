@@ -13,6 +13,7 @@ from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLa
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.specs import DatasetPublisherSpec, InsertMissingKeysAuthoritativePartition
 from eve_ingest.raw_objects import UpdateMode
+from eve_ingest.publication.prepared_source import PreparedAuthoritativeArrowSource
 from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC, discover_objects, publish_one
 from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
 from tests.sources.everef.conftest import make_cache_result
@@ -144,7 +145,7 @@ def test_publish_one_calls_insert_missing_keys_arrow(monkeypatch: pytest.MonkeyP
         source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
     )
     ctx = MagicMock()
-    ctx.source_object_id.return_value = "fake_soid"
+    ctx.source_ref_id.return_value = "fake_soid"
     ctx.insert_missing_keys_arrow.return_value = PublishResult(
         success=True,
         source_date="2026-01-01",
@@ -160,7 +161,9 @@ def test_publish_one_calls_insert_missing_keys_arrow(monkeypatch: pytest.MonkeyP
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
     ctx.insert_missing_keys_arrow.assert_called_once()
-    call_kwargs = ctx.insert_missing_keys_arrow.call_args.kwargs
-    assert call_kwargs["table"] is RawDuckLakeTable.MARKET_HISTORY
-    assert "source_object_id" in call_kwargs["arrow_table"].column_names
-    assert "source_market_date" in call_kwargs["arrow_table"].column_names
+    call_args = ctx.insert_missing_keys_arrow.call_args
+    prepared: PreparedAuthoritativeArrowSource = call_args[0][0]
+    assert prepared.table is RawDuckLakeTable.MARKET_HISTORY
+    assert "source_ref_id" in prepared.arrow_table.column_names
+    assert "source_market_date" in prepared.arrow_table.column_names
+    assert call_args.kwargs["source_ref_id"] == "fake_soid"

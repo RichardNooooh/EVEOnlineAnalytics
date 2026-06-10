@@ -15,6 +15,7 @@ from eve_ingest.publication.specs import (
 from eve_ingest.sources.everef.discovery import build_listed_objects
 from eve_ingest.ducklake.session import SqlSource
 from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.runner import run_dataset_pipeline
 
@@ -87,11 +88,11 @@ def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
     snapshot_ts = datetime.strptime(str(raw_object.identity_key["snapshot_time"]), "%Y-%m-%d_%H-%M-%S").replace(
         tzinfo=UTC
     )
-    source_object_id = ctx.source_object_id(
+    source_ref_id = ctx.source_ref_id(
         source_system="fuzzwork", endpoint="fuzzwork_orders", source_url=raw_object.version.source_url
     )
     path_sql = ctx.quote_sql_string(raw_object.path)
-    source_object_id_sql = ctx.quote_sql_string(source_object_id)
+    source_ref_id_sql = ctx.quote_sql_string(source_ref_id)
     source_market_date_sql = ctx.quote_sql_string(source_market_date.isoformat())
     snapshot_ts_sql = ctx.quote_sql_string(snapshot_ts.isoformat())
     sql_source = SqlSource(
@@ -110,7 +111,7 @@ def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
             duration,
             region_id,
             order_set_id,
-            CAST({source_object_id_sql} AS VARCHAR) AS source_object_id,
+            CAST({source_ref_id_sql} AS VARCHAR) AS source_ref_id,
             CAST({source_market_date_sql} AS DATE) AS source_market_date,
             CAST({snapshot_ts_sql} AS TIMESTAMP WITH TIME ZONE) AS snapshot_ts
         FROM read_csv(
@@ -124,17 +125,17 @@ def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
         )
         """
     )
-    return ctx.append_snapshot_sql(
-        raw_object,
+    prepared = PreparedSnapshotSqlSource(
+        raw_object=raw_object,
         source_system="fuzzwork",
         endpoint="fuzzwork_orders",
         source_market_date=source_market_date,
         snapshot_ts=snapshot_ts,
         table=RawDuckLakeTable.FUZZWORK_ORDERS,
         sql_source=sql_source,
-        source_object_id=source_object_id,
         log_context={"order_set_id": raw_object.identity_key.get("order_set_id")},
     )
+    return ctx.append_snapshot_sql(prepared, source_ref_id=source_ref_id)
 
 
 def run_pipeline(config: EverefCliConfig) -> int:

@@ -32,6 +32,7 @@ class DuckLakeSession:
         self._con: duckdb.DuckDBPyConnection | None = None
         self._transaction_depth = 0
         self._transaction_rollback_only = False
+        self._poisoned = False
 
     def __enter__(self) -> DuckLakeSession:
         self._con = duckdb.connect()
@@ -53,6 +54,8 @@ class DuckLakeSession:
 
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
+        if self._poisoned:
+            raise RuntimeError("DuckLakeSession connection is poisoned after a failed transaction recovery")
         if self._con is None:
             raise RuntimeError("DuckLakeSession is not open; use as context manager")
         return self._con
@@ -123,6 +126,8 @@ class DuckLakeSession:
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
+        # Nested transaction scopes are logical only. They do not create savepoints.
+        # Any nested failure marks the outer transaction rollback-only.
         con = self.connection
 
         outermost = self._transaction_depth == 0
@@ -151,6 +156,13 @@ class DuckLakeSession:
                 except Exception:
                     try:
                         con.execute("ROLLBACK")
-                    except Exception:
-                        logger.exception("Failed to rollback after DuckLake commit failure")
+                    except Exception as rollback_exc:
+                        self._poisoned = True
+                        try:
+                            con.close()
+                        finally:
+                            self._con = None
+                        raise RuntimeError(
+                            "DuckLake transaction commit failed and rollback also failed"
+                        ) from rollback_exc
                     raise

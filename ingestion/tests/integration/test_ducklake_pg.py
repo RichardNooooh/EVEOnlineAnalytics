@@ -158,7 +158,7 @@ def test_insert_style_write_fails_when_bootstrapped_table_is_missing(
         {
             "order_id": [1],
             "price": [100.0],
-            "source_object_id": ["soid-1"],
+            "source_ref_id": ["soid-1"],
             "source_market_date": ["2026-01-01"],
             "snapshot_ts": ["2026-01-01"],
         }

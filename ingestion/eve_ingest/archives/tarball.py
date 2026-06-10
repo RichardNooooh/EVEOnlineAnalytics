@@ -42,30 +42,37 @@ class ExtractedTarball:
         self._tmpdir = tempfile.TemporaryDirectory(prefix=f"{self.tarball_path.stem}-")
         self._root = Path(self._tmpdir.name)
 
-        logger.info(
-            "Extracting tarball path=%s temp_root=%s",
-            self.tarball_path,
-            self.root,
-        )
-
-        with tarfile.open(self.tarball_path, mode="r:*") as archive:
-            archive.extractall(self._root, filter="data")
-
-        self._members = [
-            ExtractedTarMember(
-                archive_name=str(path.relative_to(self._root)),
-                path=path,
+        try:
+            logger.info(
+                "Extracting tarball path=%s temp_root=%s",
+                self.tarball_path,
+                self.root,
             )
-            for path in self._root.rglob("*")
-            if path.is_file()
-        ]
 
-        logger.info(
-            "Extracted tarball path=%s file_count=%d temp_root=%s",
-            self.tarball_path,
-            len(self._members),
-            self.root,
-        )
+            with tarfile.open(self.tarball_path, mode="r:*") as archive:
+                archive.extractall(self._root, filter="data")
+
+            self._members = [
+                ExtractedTarMember(
+                    archive_name=str(path.relative_to(self._root)),
+                    path=path,
+                )
+                for path in self._root.rglob("*")
+                if path.is_file()
+            ]
+
+            logger.info(
+                "Extracted tarball path=%s file_count=%d temp_root=%s",
+                self.tarball_path,
+                len(self._members),
+                self.root,
+            )
+        except Exception:
+            self._tmpdir.cleanup()
+            self._tmpdir = None
+            self._root = None
+            self._members = None
+            raise
 
         return self
 

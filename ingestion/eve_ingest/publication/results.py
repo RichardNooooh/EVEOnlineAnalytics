@@ -23,6 +23,6 @@ class PublishResult:
 
 @dataclass(frozen=True)
 class PublishedObject:
-    source_object_id: str
+    source_ref_id: str
     source_date: str | None
     write_metrics: tuple[DuckLakeWriteMetrics, ...]

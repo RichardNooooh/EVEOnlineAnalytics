@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from typing import Any
+
+import pyarrow as pa
+
+from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
+from eve_ingest.ducklake.session import SqlSource
+from eve_ingest.raw_objects.models import CacheResult
+
+
+@dataclass(frozen=True)
+class PreparedSnapshotSqlSource:
+    """A snapshot source ready for publication."""
+
+    raw_object: CacheResult
+    source_system: str
+    endpoint: str
+    source_market_date: date
+    snapshot_ts: datetime
+    table: RawDuckLakeTable
+    sql_source: SqlSource
+    log_context: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PreparedAuthoritativeArrowSource:
+    """An authoritative partition source (e.g. market history) ready for publication."""
+
+    raw_object: CacheResult
+    source_system: str
+    endpoint: str
+    source_market_date: date
+    table: RawDuckLakeTable
+    arrow_table: pa.Table
+    log_context: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PreparedReferenceTableSource:
+    """One reference table replacement ready for publication."""
+
+    raw_object: CacheResult | None
+    source_system: str
+    endpoint: str
+    table: RawDuckLakeTable
+    arrow_table: pa.Table
+    log_context: dict[str, Any] = field(default_factory=dict)

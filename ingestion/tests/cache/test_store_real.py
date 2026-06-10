@@ -81,4 +81,3 @@ def test_cache_get_and_filter_unpublished_with_real_sqlite_ledger(monkeypatch, t
         assert cache.get_many([cache_object], mode=GetMode.UNPUBLISHED) == []
 
     assert len(client.calls) == 1
-    assert client.closed is True

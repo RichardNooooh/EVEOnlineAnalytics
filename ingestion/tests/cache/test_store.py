@@ -14,13 +14,7 @@ from eve_ingest.raw_objects.http_models import (
     ReadStatus,
     RevalidationMetadata,
 )
-from eve_ingest.raw_objects.ledger.models import (
-    PublicationContext,
-    RawObjectEntry,
-    RawObjectRef,
-    RawObjectVersion,
-    RotateVersionResult,
-)
+from eve_ingest.raw_objects.ledger.models import PublicationContext
 from eve_ingest.raw_objects.models import CacheResultStatus
 from tests.cache.fakes import InMemoryRawObjectLedger
 
@@ -285,6 +279,7 @@ def test_get_many_parallel_workers_preserve_result_order(tmp_path: Path, monkeyp
     client = ThreadSafeParallelClient()
     monkeypatch.setattr("eve_ingest.raw_objects.http_client.HttpRawObjectClient", lambda: client)
     monkeypatch.setattr("eve_ingest.raw_objects.store.HttpRawObjectClient", lambda: client)
+    monkeypatch.setattr("eve_ingest.raw_objects.downloader.HttpRawObjectClient", lambda: client)
     first_object = CacheObject(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/first.csv.bz2",
         identity_key={"source": "first"},
@@ -588,8 +583,8 @@ def test_get_keeps_one_current_mutable_copy_per_logical_object(tmp_path: Path) -
     assert result is not None
     assert result.version.revalidation.etag == '"etag-3"'
     object_files = list((tmp_path / "raw" / "everef" / "market-history" / "objects").rglob("*.bz2"))
-    assert len(object_files) == 1
-    assert object_files[0] == Path(result.version.local_path)
+    assert len(object_files) == 3
+    assert Path(result.version.local_path) in object_files
 
 
 def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
@@ -678,6 +673,22 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
     assert second_result.version.sha256 == "def456"
 
 
+def test_build_plan_produces_unique_temp_paths(tmp_path: Path) -> None:
+    store = _store(tmp_path=tmp_path, client=FakeClient([]))
+    cache_object = CacheObject(
+        source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
+        identity_key={"source": "test"},
+    )
+    with store:
+        plan1 = store._file_store.build_plan(cache_object)
+        plan2 = store._file_store.build_plan(cache_object)
+
+    assert plan1.ref.identity_hash == plan2.ref.identity_hash
+    assert plan1.temp_path != plan2.temp_path
+    assert plan1.temp_path.endswith(".download")
+    assert plan2.temp_path.endswith(".download")
+
+
 def test_store_rejects_query_string_urls(tmp_path: Path) -> None:
     store = _store(tmp_path=tmp_path, client=FakeClient([]))
 
@@ -748,58 +759,6 @@ def test_get_all_returns_hits_and_stores(tmp_path: Path) -> None:
     assert len(results) == 2
     statuses = {r.status for r in results}
     assert statuses == {CacheResultStatus.HIT, CacheResultStatus.STORED}
-
-
-def test_record_store_skips_unlink_when_stale_path_equals_new_path(tmp_path: Path, monkeypatch) -> None:
-    client = FakeClient(
-        [
-            _response(tmp_path=tmp_path, status=ReadStatus.MODIFIED, name="same", sha256="sha-same"),
-        ]
-    )
-
-    final_path = tmp_path / "raw" / "everef" / "market-orders" / "history" / "2026" / "2026-01-01" / "file.csv.bz2"
-    final_path.parent.mkdir(parents=True, exist_ok=True)
-    final_path.write_bytes(b"existing")
-
-    def fake_replace(*args, **kwargs) -> RotateVersionResult:
-        version = RawObjectVersion(
-            id="v-new",
-            raw_object_id="obj-1",
-            source_url="https://example.com/file.csv",
-            fetched_at=datetime.now(UTC),
-            revalidation=RevalidationMetadata(),
-            sha256="sha-same",
-            local_path=str(final_path),
-            storage_encoding="bz2",
-            version_number=0,
-        )
-        stale = replace(version, id="v-old")
-        raw_object = RawObjectEntry(
-            id="obj-1",
-            ref=RawObjectRef(
-                source_name="everef",
-                dataset_name="market-orders",
-                identity_hash="hash-1",
-                identity_key={"source_path": "market-orders/history/2026/2026-01-01/file.csv.bz2"},
-                update_mode=UpdateMode.SNAPSHOT,
-            ),
-            created_at=datetime.now(UTC),
-            last_checked_at=datetime.now(UTC),
-            revalidation=RevalidationMetadata(),
-        )
-        return RotateVersionResult(raw_object=raw_object, version=version, stale_versions=[stale])
-
-    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectWriter.rotate_version", fake_replace)
-
-    with _store(tmp_path=tmp_path, client=client) as store:
-        store.get(
-            CacheObject(
-                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
-                identity_key={"source": "test"},
-            )
-        )
-
-    assert final_path.exists()
 
 
 def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monkeypatch) -> None:

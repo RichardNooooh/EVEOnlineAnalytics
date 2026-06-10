@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Mapping
-from contextlib import ExitStack
 from typing import Any
 
 import pyarrow as pa
@@ -21,14 +20,13 @@ from eve_ingest.publication.specs import (
     StaticScope,
 )
 from eve_ingest.publication.context import PublishContext
+from eve_ingest.publication.prepared_source import PreparedReferenceTableSource
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.runner import run_dataset_pipeline
 from eve_ingest.sources.everef.discovery import EVEREF_BASE
 
 logger = logging.getLogger("eve_ingest.sources.everef")
 
-
-type PreparedReferenceMember = tuple[str, RawDuckLakeTable, pa.Table, str]
 
 _REFERENCE_TABLES: dict[str, RawDuckLakeTable] = {
     "types": RawDuckLakeTable.REFERENCE_TYPES,
@@ -51,7 +49,7 @@ PUBLISHER_SPEC = DatasetPublisherSpec(
     update_mode=UpdateMode.MUTABLE,
     data_tables=tuple(_REFERENCE_TABLES.values()),
     provenance_tables=(RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,),
-    write_policy=ReplaceReferenceTables(transactional=True),
+    write_policy=ReplaceReferenceTables(),
     publication_scope=StaticScope("raw:references:full_extract"),
 )
 
@@ -194,10 +192,13 @@ def _parse_json_to_table(member_path: str, archive_name: str) -> pa.Table:
 def _prepare_reference_archive(
     *,
     raw_object: CacheResult,
-    ctx: PublishContext,
-    prepared_sources: ExitStack,
-) -> list[PreparedReferenceMember]:
-    prepared_members: list[PreparedReferenceMember] = []
+) -> list[PreparedReferenceTableSource]:
+    # Ownership: this helper does NOT own the ExitStack or DuckDB temp views.
+    # It parses the archive and returns prepared source descriptors.
+    # The caller (publish_one) passes them to the publication layer
+    # (PublicationService.replace_tables), which owns the ExitStack for
+    # Arrow temp-view registration and the DuckDB transaction lifecycle.
+    prepared_members: list[PreparedReferenceTableSource] = []
     total_rows = 0
 
     with ExtractedTarball(raw_object.path) as archive:
@@ -222,11 +223,11 @@ def _prepare_reference_archive(
         member_failed = 0
         for member in json_members:
             try:
-                prepared_member = _prepare_member_source(str(member.path), member.archive_name, ctx, prepared_sources)
+                prepared_member = _prepare_member_source(str(member.path), member.archive_name)
                 member_success += 1
                 if prepared_member is not None:
                     prepared_members.append(prepared_member)
-                    total_rows += prepared_member[2].num_rows
+                    total_rows += prepared_member.arrow_table.num_rows
             except Exception:
                 logger.exception("Failed to process archive_member=%s", member.archive_name)
                 member_failed += 1
@@ -256,28 +257,23 @@ def _prepare_reference_archive(
 
 
 def publish_one(raw_object: CacheResult, ctx: PublishContext) -> PublishResult:
-    with ExitStack() as prepared_sources:
-        prepared_members = _prepare_reference_archive(
-            raw_object=raw_object,
-            ctx=ctx,
-            prepared_sources=prepared_sources,
-        )
-        return ctx.replace_reference_tables(
-            raw_object,
-            source_system="everef",
-            endpoint="reference_data",
-            source_market_date=raw_object.version.fetched_at.date(),
-            prepared_tables=prepared_members,
-            provenance_table=RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,
-        )
+    prepared_members = _prepare_reference_archive(
+        raw_object=raw_object,
+    )
+    return ctx.replace_reference_tables(
+        raw_object,
+        source_system="everef",
+        endpoint="reference_data",
+        source_market_date=raw_object.version.fetched_at.date(),
+        prepared_tables=prepared_members,
+        provenance_table=RawDuckLakeProvenanceTable.REFERENCE_OBJECTS,
+    )
 
 
 def _prepare_member_source(
     member_path: str,
     archive_name: str,
-    ctx: PublishContext,
-    prepared_sources: ExitStack,
-) -> PreparedReferenceMember | None:
+) -> PreparedReferenceTableSource | None:
     filename = archive_name
     if filename.endswith(".json"):
         filename = filename[:-5]
@@ -287,14 +283,18 @@ def _prepare_member_source(
         logger.warning("Skipping unknown reference file archive_member=%s", archive_name)
         return None
 
-    table_key = table_info
     table = _parse_json_to_table(member_path, archive_name)
     if table.num_rows == 0:
         logger.warning("Zero-row table for archive_member=%s", archive_name)
         return None
 
-    source_name = prepared_sources.enter_context(ctx.session.prepare_arrow_source(table))
-    return archive_name, table_key, table, source_name
+    return PreparedReferenceTableSource(
+        raw_object=None,
+        source_system="everef",
+        endpoint="reference_data",
+        table=table_info,
+        arrow_table=table,
+    )
 
 
 def run_pipeline(config: EverefReferencesCliConfig) -> int:

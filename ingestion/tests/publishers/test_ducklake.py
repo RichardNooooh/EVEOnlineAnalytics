@@ -38,11 +38,14 @@ class FakeConnection:
         self.arrow_tables: list[pa.Table] = []
         self.closed = False
         self.raise_on_execute: str | None = None
+        self.raise_on_execute_multi: list[str] = []
         self.fetchall_result: list[tuple[object, ...]] = []
         self.fetchone_results: list[tuple[object, ...]] = []
 
     def execute(self, query: str, params: list[str] | None = None) -> FakeConnection:
         if self.raise_on_execute is not None and self.raise_on_execute in query:
+            raise RuntimeError("boom")
+        if any(trigger in query for trigger in self.raise_on_execute_multi):
             raise RuntimeError("boom")
         self.calls.append((query, params))
         self.events.append(("execute", query))
@@ -280,7 +283,7 @@ def test_raw_publisher_append_snapshot_rows_inserts_by_name_without_merge_or_cou
         {
             "price": [10.0, 20.0],
             "order_id": [1, 2],
-            "source_object_id": ["soid-1", "soid-1"],
+            "source_ref_id": ["soid-1", "soid-1"],
             "source_market_date": ["2026-01-01", "2026-01-01"],
             "snapshot_ts": ["2026-01-01", "2026-01-01"],
         }
@@ -323,7 +326,7 @@ def test_raw_publisher_insert_modes_require_bootstrapped_table(monkeypatch, mode
     arrow_table = pa.table(
         {
             "id": [1],
-            "source_object_id": ["soid-1"],
+            "source_ref_id": ["soid-1"],
             "source_market_date": ["2026-01-01"],
             "snapshot_ts": ["2026-01-01"],
             "value": [10],
@@ -532,7 +535,7 @@ def test_provenance_requires_lock_token_for_source_object(monkeypatch) -> None:
         provenance = SourceObjectProvenanceRepository(session)
         with pytest.raises(DuckLakeLockViolationError, match="requires DuckLakeLockToken"):
             provenance.record_source_object(
-                {"source_object_id": "soid-1", "status": "failed"},
+                {"source_ref_id": "soid-1", "status": "failed"},
                 table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
             )
 
@@ -552,7 +555,7 @@ def test_provenance_rejects_wrong_lock_token_for_source_object(monkeypatch) -> N
         provenance = SourceObjectProvenanceRepository(session, lock_token=token)
         with pytest.raises(DuckLakeLockViolationError, match="raw_market_orders_objects"):
             provenance.record_source_object(
-                {"source_object_id": "soid-1", "status": "failed"},
+                {"source_ref_id": "soid-1", "status": "failed"},
                 table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS,
             )
 
@@ -658,7 +661,7 @@ def test_append_snapshot_rows_requires_provenance_and_snapshot_columns(monkeypat
         raw = RawTablePublisher(session, lock_token=_test_lock_token())
         with pytest.raises(
             ValueError,
-            match="APPEND_SNAPSHOT_ROWS requires arrow_table columns: source_object_id, source_market_date, snapshot_ts",
+            match="APPEND_SNAPSHOT_ROWS requires arrow_table columns: source_ref_id, source_market_date, snapshot_ts",
         ):
             raw.write(
                 pa.table({"order_id": [1]}),
@@ -671,6 +674,7 @@ def test_append_snapshot_rows_requires_provenance_and_snapshot_columns(monkeypat
 
 def test_session_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
     con = FakeConnection()
+    con.fetchone_results = [(1,)]
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
@@ -725,7 +729,7 @@ def test_session_transaction_rolls_back_when_commit_fails(monkeypatch) -> None:
 
 def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transaction(monkeypatch) -> None:
     con = FakeConnection()
-    con.fetchone_results = [(1,), (0,), (1,)]
+    con.fetchone_results = [(1,), (1,), (0,), (1,)]
     arrow_table = pa.table({"type_id": [10], "price": [99.5], "source_market_date": ["2026-01-01"]})
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
@@ -770,7 +774,7 @@ def test_raw_publisher_records_multiple_table_writes_in_one_block(monkeypatch) -
     table_b = pa.table(
         {
             "order_id": [10],
-            "source_object_id": ["soid-1"],
+            "source_ref_id": ["soid-1"],
             "source_market_date": ["2026-01-01"],
             "snapshot_ts": ["2026-01-01"],
         }
@@ -802,7 +806,7 @@ def test_raw_publisher_records_multiple_table_writes_in_one_block(monkeypatch) -
 
 def test_append_snapshot_sql_uses_temp_sql_view_and_no_arrow(monkeypatch) -> None:
     con = FakeConnection()
-    con.fetchone_results = [(1,)]
+    con.fetchone_results = [(1,), (1,), (1,)]
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
     monkeypatch.setattr("eve_ingest.ducklake.raw_publish.target_exists", lambda *args, **kwargs: True)
@@ -811,7 +815,7 @@ def test_append_snapshot_sql_uses_temp_sql_view_and_no_arrow(monkeypatch) -> Non
         raw = RawTablePublisher(session, lock_token=_test_lock_token())
         provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
         sql_source = SqlSource(
-            sql="SELECT 1 AS order_id, 'soid-1' AS source_object_id, DATE '2026-01-01' AS source_market_date, TIMESTAMPTZ '2026-01-01T00:00:00+00:00' AS snapshot_ts"
+            sql="SELECT 1 AS order_id, 'soid-1' AS source_ref_id, DATE '2026-01-01' AS source_market_date, TIMESTAMPTZ '2026-01-01T00:00:00+00:00' AS snapshot_ts"
         )
         with session.prepare_sql_source(sql_source) as source_name:
             with session.transaction():
@@ -831,6 +835,7 @@ def test_append_snapshot_sql_uses_temp_sql_view_and_no_arrow(monkeypatch) -> Non
 
 def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) -> None:
     con = FakeConnection()
+    con.fetchone_results = [(1,)]
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
@@ -838,7 +843,7 @@ def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) 
         provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
         provenance.record_source_object(
             {
-                "source_object_id": "soid-1",
+                "source_ref_id": "soid-1",
                 "source_system": "everef",
                 "endpoint": "market_orders",
                 "source_url": "https://example.com/file.csv.bz2",
@@ -853,7 +858,7 @@ def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) 
     update_queries = [call for call in con.calls if call[0].lstrip().startswith("UPDATE")]
     assert len(merge_queries) == 1
     assert len(update_queries) == 1
-    assert "source.source_object_id" in merge_queries[0][0]
+    assert "source.source_ref_id" in merge_queries[0][0]
     assert update_queries[0][1][-1] == "soid-1"
 
 
@@ -960,3 +965,69 @@ def test_bootstrap_raw_ducklake_creates_all_raw_and_provenance_tables(monkeypatc
         assert any(f'"{table.value}"' in query for query in queries)
     for table in RawDuckLakeProvenanceTable:
         assert any(f'"{table.value}"' in query for query in queries)
+
+
+def test_connection_raises_when_poisoned(monkeypatch) -> None:
+    con = FakeConnection()
+
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+
+    with DuckLakeSession(_MINIMAL_ATTACH) as session:
+        session._poisoned = True
+        with pytest.raises(RuntimeError, match="connection is poisoned"):
+            _ = session.connection
+
+
+def test_transaction_commit_fail_with_rollback_fail_poisons_session_and_closes_connection(monkeypatch) -> None:
+    con = FakeConnection()
+    con.raise_on_execute_multi = ["COMMIT", "ROLLBACK"]
+
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+
+    with DuckLakeSession(_MINIMAL_ATTACH) as session:
+        with pytest.raises(RuntimeError, match="commit failed and rollback also failed"):
+            with session.transaction():
+                pass
+
+    assert session._poisoned is True
+    assert session._con is None
+    with pytest.raises(RuntimeError, match="connection is poisoned"):
+        _ = session.connection
+
+
+def test_provenance_mark_methods_raise_when_row_missing(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [None]
+
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
+        with pytest.raises(RuntimeError, match="Provenance row not found for source_ref_id=soid-missing"):
+            provenance.mark_parsed("soid-missing", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
+
+
+def test_provenance_mark_ingested_raises_when_row_missing(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [None]
+
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
+        with pytest.raises(RuntimeError, match="Provenance row not found for source_ref_id=soid-missing"):
+            provenance.mark_ingested("soid-missing", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
+
+
+def test_provenance_mark_failed_raises_when_row_missing(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [None]
+
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
+        with pytest.raises(RuntimeError, match="Provenance row not found for source_ref_id=soid-missing"):
+            provenance.mark_failed(
+                "soid-missing", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS, reason="test"
+            )

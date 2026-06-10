@@ -38,17 +38,17 @@ class FakeConnection:
         self.calls.append((query, params))
         self.fetchall_result = []
         normalized_query = " ".join(query.split()).upper()
-        if normalized_query.startswith("MERGE INTO") and "SOURCE_OBJECT_ID" in normalized_query and params:
-            self.provenance_objects[str(params[0])] = {"source_object_id": params[0]}
-        elif normalized_query.startswith("UPDATE") and "SOURCE_OBJECT_ID" in normalized_query and params:
+        if normalized_query.startswith("MERGE INTO") and "SOURCE_REF_ID" in normalized_query and params:
+            self.provenance_objects[str(params[0])] = {"source_ref_id": params[0]}
+        elif normalized_query.startswith("UPDATE") and "SOURCE_REF_ID" in normalized_query and params:
             pass
         elif (
             normalized_query.startswith("SELECT 1")
-            and "SOURCE_OBJECT_ID" in normalized_query
+            and "SOURCE_REF_ID" in normalized_query
             and "SHA256" in normalized_query
         ):
             self.fetchone_results.append(None)
-        elif normalized_query.startswith("SELECT SHA256") and "SOURCE_OBJECT_ID" in normalized_query:
+        elif normalized_query.startswith("SELECT SHA256") and "SOURCE_REF_ID" in normalized_query:
             self.fetchone_results.append(None)
         return self
 
@@ -142,6 +142,7 @@ def install_pipeline_fakes(
 ) -> tuple[FakeConnection, MagicMock]:
     mock_pubtrack = MagicMock()
     mock_pubtrack.filter_published.return_value = set()
+    mock_pubtrack.filter_unpublished.side_effect = lambda results: results
 
     @contextmanager
     def fake_hold_publication_domain_locks(
@@ -190,21 +191,8 @@ def install_pipeline_fakes(
                 for result in selected
             }
 
-    class FakePublicationRegistry:
-        def __init__(self, pubtrack: object) -> None:
-            pass
-
-        def filter_unpublished(self, results: list[CacheResult]) -> list[CacheResult]:
-            return results
-
-        def mark_published_many(
-            self,
-            results: list[CacheResult],
-            *,
-            publication_scope: str,
-            publisher_run_id: str | None = None,
-        ) -> None:
-            mock_pubtrack.mark_published_many(results)
+        def filter_current_versions(self, results: list[CacheResult]) -> tuple[list[CacheResult], int, int]:
+            return results, 0, 0
 
     con = FakeConnection()
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
@@ -222,14 +210,6 @@ def install_pipeline_fakes(
 
     monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeRawObjectStore)
     monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeRawObjectStore)
-    monkeypatch.setattr(
-        "eve_ingest.raw_objects.publication_registry.PublicationRegistry",
-        FakePublicationRegistry,
-    )
-    monkeypatch.setattr(
-        "eve_ingest.publication.runner.PublicationRegistry",
-        FakePublicationRegistry,
-    )
     monkeypatch.setattr(
         "eve_ingest.publication.runner.hold_ducklake_lock_domains",
         fake_hold_ducklake_lock_domains,
