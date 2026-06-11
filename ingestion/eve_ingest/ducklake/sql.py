@@ -76,6 +76,7 @@ def count_source_rows_with_matches(
         )
         """
     ).fetchone()
+    assert row is not None
     return int(row[0])
 
 
@@ -98,4 +99,5 @@ def count_source_rows_without_matches(
         )
         """
     ).fetchone()
+    assert row is not None
     return int(row[0])

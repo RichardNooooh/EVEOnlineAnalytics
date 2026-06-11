@@ -23,6 +23,7 @@ from eve_ingest.publication.prepared_source import (
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.specs import (
     AppendSnapshotRows,
+    DatasetPublisherSpec,
     InsertMissingKeysAuthoritativePartition,
     ReplaceReferenceTables,
 )
@@ -44,7 +45,7 @@ class PublicationService:
     raw_tables: RawTablePublisher
     provenance: SourceObjectProvenanceRepository
     session: DuckLakeSession
-    spec: object
+    spec: DatasetPublisherSpec
 
     ##############################
     # Provenance Lifecycle

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, cast
 
 import pyarrow as pa
 
@@ -57,7 +57,7 @@ PUBLISHER_SPEC = DatasetPublisherSpec(
 def _english_text(value: object) -> str | None:
     if not isinstance(value, Mapping):
         return None
-    english_value = value.get("en")
+    english_value = cast(Mapping[str, Any], value).get("en")
     return english_value if isinstance(english_value, str) else None
 
 

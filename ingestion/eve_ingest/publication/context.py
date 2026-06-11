@@ -13,6 +13,7 @@ from eve_ingest.publication.prepared_source import (
 )
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.service import PublicationService
+from eve_ingest.publication.specs import DatasetPublisherSpec
 from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.raw_objects.models import AcquiredRawObject
 
@@ -32,7 +33,7 @@ class PublishContext:
     ``SourcePreparationContext`` and lifecycle management to ``PublicationService``.
     """
 
-    spec: object
+    spec: DatasetPublisherSpec
     prep_ctx: SourcePreparationContext
     service: PublicationService
     publication_scope: str

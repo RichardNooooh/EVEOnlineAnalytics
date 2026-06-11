@@ -217,7 +217,7 @@ class RawTablePublisher:
         session: DuckLakeSession,
         *,
         lock_token: DuckLakeLockToken | None = None,
-        declared_policy: object = None,
+        declared_policy: DuckLakeWriterMode | None = None,
         dataset_name: str | None = None,
     ) -> None:
         self._session = session
@@ -313,7 +313,9 @@ class RawTablePublisher:
 
         if mode is DuckLakeWriterMode.REPLACE_TABLE:
             require_table(con, alias=alias, target=target)
-            replaced_rows = int(con.execute(f"SELECT COUNT(*) FROM {quoted_target}").fetchone()[0])
+            row = con.execute(f"SELECT COUNT(*) FROM {quoted_target}").fetchone()
+            assert row is not None
+            replaced_rows = int(row[0])
             with self._session.transaction():
                 con.execute(f"DELETE FROM {quoted_target}")
                 con.execute(
@@ -322,7 +324,9 @@ class RawTablePublisher:
                     SELECT * FROM {quoted_source}
                     """
                 )
-            attempted_rows = int(con.execute(f"SELECT COUNT(*) FROM {quoted_source}").fetchone()[0])
+            row = con.execute(f"SELECT COUNT(*) FROM {quoted_source}").fetchone()
+            assert row is not None
+            attempted_rows = int(row[0])
             metrics = DuckLakeWriteMetrics(
                 table=table,
                 mode=mode,
@@ -420,7 +424,9 @@ class RawTablePublisher:
             SELECT * FROM {quoted_source}
             """
         )
-        attempted_rows = int(con.execute(f"SELECT COUNT(*) FROM {quoted_source}").fetchone()[0])
+        row = con.execute(f"SELECT COUNT(*) FROM {quoted_source}").fetchone()
+        assert row is not None
+        attempted_rows = int(row[0])
         metrics = DuckLakeWriteMetrics(
             table=table,
             mode=DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,

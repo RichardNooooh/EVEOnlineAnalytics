@@ -4,6 +4,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
 from eve_ingest.ducklake.attach_config import build_ducklake_attach_config_from_url
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 ##############################
 
 
-class PipelineConfigProtocol:
+class PipelineConfigProtocol(Protocol):
     data_root: str
     raw_files: RawFilesCliConfig
     ducklake: DuckLakeCliConfig

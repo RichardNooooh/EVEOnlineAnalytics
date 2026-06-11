@@ -183,11 +183,11 @@ def test_publish_context_fail_source_object() -> None:
     session = _FakeSession()
     provenance = _FakeProvenanceRepository(None, lock_token=None)
     raw_tables = _FakeRawTablePublisher(session, lock_token=None)
-    prep_ctx = SourcePreparationContext(session=session)
+    prep_ctx = SourcePreparationContext(session=session)  # ty: ignore[invalid-argument-type]
     service = PublicationService(
-        raw_tables=raw_tables,
-        provenance=provenance,
-        session=session,
+        raw_tables=raw_tables,  # ty: ignore[invalid-argument-type]
+        provenance=provenance,  # ty: ignore[invalid-argument-type]
+        session=session,  # ty: ignore[invalid-argument-type]
         spec=MARKET_ORDERS_SPEC,
     )
     ctx = PublishContext(

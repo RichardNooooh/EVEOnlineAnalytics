@@ -268,6 +268,6 @@ def test_raw_bootstrap_acquires_migration_and_all_raw_domains(monkeypatch) -> No
         ),
     )
 
-    assert run_raw_bootstrap(config) == 0
+    assert run_raw_bootstrap(config) == 0  # ty: ignore[invalid-argument-type]
     assert captured.bootstrapped is True
     assert captured.lock_domains == raw_bootstrap_lock_domains()

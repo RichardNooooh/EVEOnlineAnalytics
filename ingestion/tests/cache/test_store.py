@@ -142,9 +142,9 @@ def _store(
         "ledger": ledger or InMemoryRawObjectLedger(),
     }
     if raw_download_workers is not None:
-        kwargs["raw_download_workers"] = raw_download_workers
+        kwargs["raw_download_workers"] = raw_download_workers  # ty: ignore[invalid-assignment]
     return RawObjectStore(
-        **kwargs,
+        **kwargs,  # ty: ignore[invalid-argument-type]
     )
 
 

@@ -28,7 +28,7 @@ class InMemoryRawObjectReader:
         *,
         ref: RawObjectRef,
     ) -> RawObjectEntry | None:
-        return self._ledger._raw_objects_by_key.get(ref.group_key + (ref.identity_hash,))
+        return self._ledger._raw_objects_by_key.get(ref.group_key + (ref.identity_hash,))  # ty: ignore[invalid-argument-type]
 
     def load_raw_objects(
         self,
@@ -38,7 +38,7 @@ class InMemoryRawObjectReader:
     ) -> dict[str, RawObjectEntry]:
         result: dict[str, RawObjectEntry] = {}
         for identity_hash in identity_hashes:
-            entry = self._ledger._raw_objects_by_key.get(group_key + (identity_hash,))
+            entry = self._ledger._raw_objects_by_key.get(group_key + (identity_hash,))  # ty: ignore[invalid-argument-type]
             if entry is not None:
                 result[identity_hash] = entry
         return result
@@ -64,7 +64,7 @@ class InMemoryRawObjectReader:
     ) -> dict[str, CurrentRawObjectState | None]:
         raw_objects: dict[str, RawObjectEntry] = {}
         for ref in refs:
-            entry = self._ledger._raw_objects_by_key.get(ref.group_key + (ref.identity_hash,))
+            entry = self._ledger._raw_objects_by_key.get(ref.group_key + (ref.identity_hash,))  # ty: ignore[invalid-argument-type]
             if entry is not None:
                 raw_objects[ref.identity_hash] = entry
 
@@ -99,7 +99,7 @@ class InMemoryRawObjectWriter:
         revalidation: RevalidationMetadata | None = None,
     ) -> RawObjectEntry:
         key = ref.group_key + (ref.identity_hash,)
-        existing = self._ledger._raw_objects_by_key.get(key)
+        existing = self._ledger._raw_objects_by_key.get(key)  # ty: ignore[invalid-argument-type]
         revalidation = revalidation or RevalidationMetadata()
         if existing is None:
             raw_object = RawObjectEntry(
@@ -109,7 +109,7 @@ class InMemoryRawObjectWriter:
                 last_checked_at=checked_at,
                 revalidation=revalidation,
             )
-            self._ledger._raw_objects_by_key[key] = raw_object
+            self._ledger._raw_objects_by_key[key] = raw_object  # ty: ignore[invalid-assignment]
             return raw_object
 
         updated = replace(
@@ -117,7 +117,7 @@ class InMemoryRawObjectWriter:
             last_checked_at=checked_at,
             revalidation=merge_revalidation(existing.revalidation, revalidation),
         )
-        self._ledger._raw_objects_by_key[key] = updated
+        self._ledger._raw_objects_by_key[key] = updated  # ty: ignore[invalid-assignment]
         return updated
 
     def rotate_version(
@@ -228,7 +228,7 @@ class InMemoryRawObjectLedger:
     def transaction(self) -> Iterator[LedgerTx]:
         reader = InMemoryRawObjectReader(self)
         yield LedgerTx(
-            reader=reader,
-            writer=InMemoryRawObjectWriter(self),
-            publications=InMemoryPublicationTrackerTx(self),
+            reader=reader,  # ty: ignore[invalid-argument-type]
+            writer=InMemoryRawObjectWriter(self),  # ty: ignore[invalid-argument-type]
+            publications=InMemoryPublicationTrackerTx(self),  # ty: ignore[invalid-argument-type]
         )
