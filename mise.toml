@@ -2,21 +2,15 @@
 minimum_release_age = "7d"
 
 [tools]
-# Python ecosystem
-python = "3.13.13"
-uv = "latest"
-
-# Static site and BI tooling
-node = "22.22.3"
+uv = "0.11.19"
+node = "22.22.3" # Static site and BI tooling
 
 # Tools
 jq = "latest"
 ripgrep = "latest"
 
-# Data engineering — dbt-core via pipx (not a standalone binary)
-"pipx:dbt-core" = "latest"
+# Data engineering
 duckdb = "latest"
 
 # Python linting/formatting
-ruff = "latest"
 pre-commit = "latest"

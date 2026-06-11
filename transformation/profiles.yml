@@ -1,6 +1,12 @@
 eve_market_transform:
   target: dev
   outputs:
+    lint:
+      type: duckdb
+      path: "/tmp/eve_market_sqlfluff.duckdb"
+      schema: main
+      threads: 2
+
     dev:
       type: duckdb
       path: "{{ env_var('DBT_DUCKDB_PATH', '/tmp/eve_market_transform.duckdb') }}"

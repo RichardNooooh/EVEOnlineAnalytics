@@ -9,7 +9,7 @@ on:
       - "**/pyproject.toml"
       - "mise.toml"
       - ".pre-commit-config.yaml"
-      - ".github/workflows/python-checks.yml"
+      - ".github/workflows/python-lint-checks.yml"
   push:
     branches:
       - master
@@ -19,7 +19,7 @@ on:
       - "**/pyproject.toml"
       - "mise.toml"
       - ".pre-commit-config.yaml"
-      - ".github/workflows/python-checks.yml"
+      - ".github/workflows/python-lint-checks.yml"
 
 permissions:
   contents: read
@@ -31,27 +31,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+         uses: actions/checkout@v4
 
       - name: Install toolchain with mise
         uses: jdx/mise-action@v4
+
+      - name: Install ruff tool
+        run: uv tool install ruff
 
       - name: Check Python linting
-        run: ruff check --output-format=github .
+        run: uvx ruff check --output-format=github .
 
       - name: Check Python formatting
-        run: ruff format --check --diff .
-
-  type-check:
-    name: Ty Check (ingestion)
-    runs-on: [self-hosted, Linux, X64, eve, ci, python]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install toolchain with mise
-        uses: jdx/mise-action@v4
-
-      - name: Run type check
-        run: ty check --output=format github ingestion/
+        run: uvx ruff format --check --diff .

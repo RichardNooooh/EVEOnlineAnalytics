@@ -12,30 +12,36 @@ repos:
     hooks:
       - id: python-ruff-format
         name: python ruff format
-        entry: ruff format
+        entry: uvx ruff format
         language: system
         files: \.(py|pyi)$
+
       - id: python-ruff-check
         name: python ruff check
-        entry: ruff check
+        entry: uvx ruff check
         language: system
         files: \.(py|pyi)$
-      - id: sqlfluff-fix
-        name: sqlfluff fix
-        entry: uv run --project transformation sqlfluff fix --force
-        language: system
-        files: ^transformation/.*\.sql$
-        exclude: ^transformation/(target|dbt_packages|macros|\.venv)/
-      - id: sqlfluff-lint
-        name: sqlfluff lint
-        entry: uv run --project transformation sqlfluff lint
-        language: system
-        files: ^transformation/.*\.sql$
-        exclude: ^transformation/(target|dbt_packages|macros|\.venv)/
+
       - id: ty-check
         name: ty check (ingestion)
-        entry: ty check ingestion/
+        entry: uv run --project ingestion ty check
         language: system
         pass_filenames: false
         require_serial: true
         files: ^ingestion/.*\.py$
+
+      - id: sqlfluff-fix
+        name: sqlfluff fix (jinja)
+        entry: bash -c 'cd transformation && uv run sqlfluff fix --force --ignore-local-config --config .sqlfluff'
+        language: system
+        pass_filenames: false
+        files: ^transformation/.*\.sql$
+        exclude: ^transformation/(target|dbt_packages|macros|\.venv)/
+
+      - id: sqlfluff-lint
+        name: sqlfluff lint (jinja)
+        entry: bash -c 'cd transformation && uv run sqlfluff lint --ignore-local-config --config .sqlfluff'
+        language: system
+        pass_filenames: false
+        files: ^transformation/.*\.sql$
+        exclude: ^transformation/(target|dbt_packages|macros|\.venv)/

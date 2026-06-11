@@ -10,6 +10,7 @@ amended:
   - 2026-05-10
   - 2026-05-12
   - 2026-05-22
+  - 2026-06-11
 ---
 
 # ADR-003 - Tools Used and Not Used
@@ -45,7 +46,8 @@ The stack is defined by the two tables below.
 | **ML Serving** | BentoML | Packages trained models as REST APIs with health checks and rolling restarts. |
 | **Model Monitoring** | Evidently | Generates data drift and model performance reports as part of the analytics workload. |
 | **Cloud Proof - Managed Warehouse** | Snowflake (trial only) | Managed warehouse proof-of-concept kept as a scoped analytics-side compatibility path rather than a steady-state runtime. |
-| **Tool Version Management** | mise | Manages analytics-scoped CLI tools such as Python, `uv`, dbt, `ruff`, and local validation utilities via `mise.toml`. Platform-only tooling belongs in `homelab-data-platform`. |
+| **Runtime Bootstrap** | mise | Bootstraps non-Python runtime/toolchain entrypoints: Python and `uv`. |
+| **Python Project & Tool Management** | uv | Manages scoped Python environments, lockfiles, and Python CLI tools such as `ruff`, `ty`, `sqlfluff`, `dbt`, and `pytest`. |
 | **Local Validation** | pre-commit | Runs repo-scoped validation before commit. |
 | **CI/CD** | GitHub Actions + GHCR | Runs validation workflows and publishes trusted ingestion container images. |
 
@@ -96,3 +98,13 @@ The stack is defined by the two tables below.
     workload-owned analytics tooling.
   - Platform tooling and implementation-specific products such as infra monitoring,
     storage vendors, and infrastructure automation are left to `homelab-data-platform`.
+
+- 2026-06-11 - Clarified mise/uv tool management boundary
+  - The earlier taxonomy described `mise` as the tool version manager for all
+    CLI tools including Python, dbt, and Ruff.
+  - `mise` now bootstraps only non-Python runtime/toolchain entrypoints:
+    Python and `uv`.
+  - `uv` owns Python-specific tool management: scoped project environments,
+    lockfiles, and Python CLI tools (`ruff`, `ty`, `sqlfluff`, `dbt`, `pytest`).
+  - CI may pre-install Python CLI tools with `uv tool install` before invoking
+    them through `uvx` for clean validation output.
