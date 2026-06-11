@@ -4,7 +4,7 @@ with market_history as (
 )
 
 select
-    market_date as date,
+    market_date,
     region_id,
     type_id,
     volume as traded_units,
