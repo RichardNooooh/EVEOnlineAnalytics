@@ -1,3 +1,14 @@
+[project]
+name = "eve-market-orchestration"
+version = "0.1.0"
+description = "Orchestration package for eve-market."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+
+[dependency-groups]
+dev = [
+    "ty", "ruff"
+]
+
 [tool.ty.environment]
-python = "../.venv-airflow"
-python-version = "3.13"
+python-version = "3.13.14"

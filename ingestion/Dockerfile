@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM ghcr.io/astral-sh/uv:0.11.14-python3.13-trixie-slim
+FROM ghcr.io/astral-sh/uv:0.11.19-python3.13-trixie-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -24,15 +24,13 @@ RUN groupadd --system --gid "${APP_GID}" app \
 COPY pyproject.toml uv.lock ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project --no-editable
+    uv sync --locked --no-default-groups --no-install-project --no-editable
 
 COPY README.md ./
-# COPY .dlt/config.toml ./.dlt/config.toml
 COPY eve_ingest ./eve_ingest
-# COPY main.py ./main.py
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable \
+    uv sync --locked --no-default-groups --no-editable \
     && mkdir -p /app/.dlt /opt/eve-market/data /scratch/dlt /scratch/local /scratch/home /scratch/tmp \
     && chown -R app:app /app /opt/eve-market/data /scratch
 
