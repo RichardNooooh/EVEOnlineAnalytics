@@ -1,3 +1,6 @@
+[tool.uv]
+exclude-newer = "1 week"
+
 [tool.ruff]
 indent-width = 4
 target-version = "py313"
@@ -51,4 +54,4 @@ exclude = [
 
 [tool.ty.terminal]
 output-format = "full"
-error-on-warning = false # TODO fix this
+error-on-warning = true
