@@ -5,13 +5,12 @@ from threading import Barrier, Thread
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
-
 from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger.models import RawObjectRef
 from eve_ingest.raw_objects.ledger.schema import _METADATA, raw_object_versions, raw_objects
 from eve_ingest.raw_objects.primitives import UpdateMode
+from sqlalchemy import func, select
 
 
 @pytest.mark.integration

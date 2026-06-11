@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
-from eve_ingest.raw_objects import RawObjectStore, RawObjectRequest, AcquisitionMode, UpdateMode
+from eve_ingest.raw_objects import AcquisitionMode, RawObjectRequest, RawObjectStore, UpdateMode
 from eve_ingest.raw_objects.http_models import ModifiedRead, ReadStatus, RevalidationMetadata
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger import repository as ledger_runtime

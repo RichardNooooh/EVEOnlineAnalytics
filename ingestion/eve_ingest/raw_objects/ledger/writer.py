@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Connection
 
 from eve_ingest.raw_objects.helpers import merge_revalidation
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
+from eve_ingest.raw_objects.ledger._db import _execute, _fetchall, _fetchone
+from eve_ingest.raw_objects.ledger.models import RawObjectEntry, RawObjectRef, RawObjectVersion, RotateVersionResult
+from eve_ingest.raw_objects.ledger.reader import RawObjectReader
 from eve_ingest.raw_objects.ledger.row_mappers import (
     raw_object_seen_values,
     raw_object_values,
@@ -16,12 +19,12 @@ from eve_ingest.raw_objects.ledger.row_mappers import (
     row_to_raw_object,
     row_to_raw_object_version,
 )
-from eve_ingest.raw_objects.ledger._db import _execute, _fetchall, _fetchone
-from eve_ingest.raw_objects.ledger.reader import RawObjectReader
 from eve_ingest.raw_objects.ledger.schema import raw_object_versions, raw_objects
-from eve_ingest.raw_objects.ledger.models import RotateVersionResult
-from eve_ingest.raw_objects.http_models import RevalidationMetadata
-from eve_ingest.raw_objects.ledger.models import RawObjectEntry, RawObjectRef, RawObjectVersion
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from sqlalchemy.engine import Connection
 
 
 class RawObjectWriter:

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
-from types import TracebackType
+from typing import TYPE_CHECKING
 
-from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger.models import PublicationContext, RawObjectRef
-from eve_ingest.raw_objects.models import AcquiredRawObject
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from types import TracebackType
+
+    from eve_ingest.raw_objects.ledger import RawObjectLedger
+    from eve_ingest.raw_objects.models import AcquiredRawObject
 
 
 class PublicationTracker:
@@ -107,7 +111,7 @@ class PublicationTracker:
                 (result.raw_object.ref, result.version.sha256, result.version.id, ctx)
             )
         with self._ledger.transaction() as tx:
-            for group_key, pubs in grouped.items():
+            for _group_key, pubs in grouped.items():
                 tx.publications.mark_published_many(pubs)
 
     def is_published(self, result: AcquiredRawObject) -> bool:

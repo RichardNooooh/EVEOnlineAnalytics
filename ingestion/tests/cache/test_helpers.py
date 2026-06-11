@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import pytest
-
-from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.helpers import merge_revalidation
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
 
 
 class TestMergeRevalidation:

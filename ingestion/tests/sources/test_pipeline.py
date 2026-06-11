@@ -8,7 +8,6 @@ from threading import Barrier, Lock, Thread
 from types import SimpleNamespace
 
 import pytest
-
 from eve_ingest.cli.config import EverefReferencesCliConfig
 from eve_ingest.ducklake.locks import DuckLakeLockTimeoutError, DuckLakeLockToken
 from eve_ingest.ducklake.raw_tables import (
@@ -18,12 +17,12 @@ from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeTable,
 )
 from eve_ingest.publication.context import PublishContext
-from eve_ingest.publication.source_prep import SourcePreparationContext
-from eve_ingest.publication.service import PublicationService
 from eve_ingest.publication.errors import SnapshotScopePublishError
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.runner import run_dataset_pipeline
-from eve_ingest.raw_objects import RawObjectRequest, AcquiredRawObject, UpdateMode
+from eve_ingest.publication.service import PublicationService
+from eve_ingest.publication.source_prep import SourcePreparationContext
+from eve_ingest.raw_objects import AcquiredRawObject, RawObjectRequest, UpdateMode
 from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, PublicationContext
 from eve_ingest.sources.everef.fuzzwork_orders import PUBLISHER_SPEC as FUZZWORK_ORDERS_SPEC
 from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC as MARKET_HISTORY_SPEC

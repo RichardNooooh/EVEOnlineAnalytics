@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
-from sqlalchemy.engine import Connection
-
-from eve_ingest.raw_objects.ledger.row_mappers import row_to_raw_object, row_to_raw_object_version
-from eve_ingest.raw_objects.ledger._db import _fetchall, _fetchone
-from eve_ingest.raw_objects.ledger.schema import raw_object_versions, raw_objects
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
+from sqlalchemy import func, select
+
+from eve_ingest.raw_objects.ledger._db import _fetchall, _fetchone
 from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, RawObjectEntry, RawObjectRef, RawObjectVersion
+from eve_ingest.raw_objects.ledger.row_mappers import row_to_raw_object, row_to_raw_object_version
+from eve_ingest.raw_objects.ledger.schema import raw_object_versions, raw_objects
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 
 class RawObjectReader:

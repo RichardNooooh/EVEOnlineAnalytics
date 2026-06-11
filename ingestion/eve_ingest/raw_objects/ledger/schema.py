@@ -1,11 +1,11 @@
 from sqlalchemy import (
+    JSON,
     Column,
     DateTime,
     Enum,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     MetaData,
     Table,
     Text,

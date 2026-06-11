@@ -12,9 +12,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
-from eve_ingest.raw_objects.primitives import IdentityKey, UpdateMode
-from eve_ingest.raw_objects.ledger.models import RawObjectEntry, RawObjectVersion
+if TYPE_CHECKING:
+    from eve_ingest.raw_objects.ledger.models import RawObjectEntry, RawObjectVersion
+    from eve_ingest.raw_objects.primitives import IdentityKey, UpdateMode
 
 
 class AcquisitionStatus(StrEnum):

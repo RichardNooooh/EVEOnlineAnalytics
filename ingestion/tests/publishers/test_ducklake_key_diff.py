@@ -3,7 +3,6 @@ from __future__ import annotations
 import duckdb
 import pyarrow as pa
 import pytest
-
 from eve_ingest.ducklake.raw_publish import (
     assert_matched_key_rows_identical,
     assert_target_rows_missing_from_source,
@@ -35,15 +34,17 @@ def test_all_columns_are_key_columns_early_return(real_con):
 @pytest.mark.real_duckdb
 def test_query_error_raises_value_error(real_con):
     src = pa.table({"id": [1], "val": [10]})
-    with arrow_view(real_con, src) as view:
-        with pytest.raises(ValueError, match="Could not query target for key validation"):
-            assert_matched_key_rows_identical(
-                real_con,
-                src,
-                quoted_target='"nonexistent"',
-                quoted_source=f'"{view}"',
-                key_columns=["id"],
-            )
+    with (
+        arrow_view(real_con, src) as view,
+        pytest.raises(ValueError, match="Could not query target for key validation"),
+    ):
+        assert_matched_key_rows_identical(
+            real_con,
+            src,
+            quoted_target='"nonexistent"',
+            quoted_source=f'"{view}"',
+            key_columns=["id"],
+        )
 
 
 @pytest.mark.real_duckdb
@@ -70,15 +71,14 @@ def test_matched_key_rows_with_differing_values_raise(real_con):
     real_con.execute('CREATE TABLE "target" ("id" INTEGER, "val" INTEGER)')
     real_con.execute('INSERT INTO "target" VALUES (1, 10)')
 
-    with arrow_view(real_con, src) as view:
-        with pytest.raises(ValueError, match="differing values"):
-            assert_matched_key_rows_identical(
-                real_con,
-                src,
-                quoted_target='"target"',
-                quoted_source=f'"{view}"',
-                key_columns=["id"],
-            )
+    with arrow_view(real_con, src) as view, pytest.raises(ValueError, match="differing values"):
+        assert_matched_key_rows_identical(
+            real_con,
+            src,
+            quoted_target='"target"',
+            quoted_source=f'"{view}"',
+            key_columns=["id"],
+        )
 
 
 @pytest.mark.real_duckdb
@@ -105,15 +105,14 @@ def test_matched_key_rows_composite_key_differences_raise(real_con):
     real_con.execute('CREATE TABLE "target" ("region_id" INTEGER, "type_id" INTEGER, "val" INTEGER)')
     real_con.execute('INSERT INTO "target" VALUES (10000002, 34, 10)')
 
-    with arrow_view(real_con, src) as view:
-        with pytest.raises(ValueError, match="region_id=10000002, type_id=34"):
-            assert_matched_key_rows_identical(
-                real_con,
-                src,
-                quoted_target='"target"',
-                quoted_source=f'"{view}"',
-                key_columns=["region_id", "type_id"],
-            )
+    with arrow_view(real_con, src) as view, pytest.raises(ValueError, match="region_id=10000002, type_id=34"):
+        assert_matched_key_rows_identical(
+            real_con,
+            src,
+            quoted_target='"target"',
+            quoted_source=f'"{view}"',
+            key_columns=["region_id", "type_id"],
+        )
 
 
 @pytest.mark.real_duckdb
@@ -123,15 +122,14 @@ def test_matched_key_rows_compare_null_values_with_distinct_semantics(real_con):
     real_con.execute('CREATE TABLE "target" ("id" INTEGER, "val" INTEGER)')
     real_con.execute('INSERT INTO "target" VALUES (1, NULL), (2, NULL)')
 
-    with arrow_view(real_con, src) as view:
-        with pytest.raises(ValueError, match="id=2"):
-            assert_matched_key_rows_identical(
-                real_con,
-                src,
-                quoted_target='"target"',
-                quoted_source=f'"{view}"',
-                key_columns=["id"],
-            )
+    with arrow_view(real_con, src) as view, pytest.raises(ValueError, match="id=2"):
+        assert_matched_key_rows_identical(
+            real_con,
+            src,
+            quoted_target='"target"',
+            quoted_source=f'"{view}"',
+            key_columns=["id"],
+        )
 
 
 @pytest.mark.real_duckdb
@@ -175,15 +173,17 @@ def test_target_rows_missing_from_source_raises_for_missing_target_row(real_con)
     real_con.execute('CREATE TABLE "target" ("source_market_date" VARCHAR, "type_id" INTEGER, "val" INTEGER)')
     real_con.execute("INSERT INTO target VALUES ('2026-01-01', 34, 10), ('2026-01-01', 35, 20)")
 
-    with arrow_view(real_con, src) as view:
-        with pytest.raises(ValueError, match="source_date='2026-01-01', keys=\\{'type_id': 35\\}"):
-            assert_target_rows_missing_from_source(
-                real_con,
-                src,
-                quoted_target='"target"',
-                quoted_source=f'"{view}"',
-                key_columns=["type_id"],
-            )
+    with (
+        arrow_view(real_con, src) as view,
+        pytest.raises(ValueError, match="source_date='2026-01-01', keys=\\{'type_id': 35\\}"),
+    ):
+        assert_target_rows_missing_from_source(
+            real_con,
+            src,
+            quoted_target='"target"',
+            quoted_source=f'"{view}"',
+            key_columns=["type_id"],
+        )
 
 
 @pytest.mark.real_duckdb

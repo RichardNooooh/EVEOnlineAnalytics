@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Connection
 
+from eve_ingest.raw_objects.ledger._db import _execute, _fetchall, _fetchone
 from eve_ingest.raw_objects.ledger.row_mappers import raw_object_publication_values
-from eve_ingest.raw_objects.ledger._db import _execute, _fetchone, _fetchall
 from eve_ingest.raw_objects.ledger.schema import raw_object_publications
-from eve_ingest.raw_objects.ledger.models import PublicationContext, RawObjectRef
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
+
+    from eve_ingest.raw_objects.ledger.models import PublicationContext, RawObjectRef
 
 
 class PublicationTrackerTx:

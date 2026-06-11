@@ -6,9 +6,11 @@ Isolated in its own module to avoid circular imports between ``reader.py``,
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
-from sqlalchemy.engine import Connection, CursorResult, RowMapping
-from sqlalchemy.sql import Executable
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection, CursorResult, RowMapping
+    from sqlalchemy.sql import Executable
 
 
 def _execute(con: Connection, statement: Executable) -> CursorResult:

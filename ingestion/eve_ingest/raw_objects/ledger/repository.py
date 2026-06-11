@@ -8,18 +8,21 @@ sub-accessors for reading, writing, plan resolution, and publication tracking.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from types import TracebackType
+from typing import TYPE_CHECKING
+
 from sqlalchemy import create_engine, text
 
-from eve_ingest.raw_objects.ledger.row_mappers import normalize_ledger_url
 from eve_ingest.raw_objects.ledger.publication_repository import PublicationTrackerTx
 from eve_ingest.raw_objects.ledger.reader import RawObjectReader
+from eve_ingest.raw_objects.ledger.row_mappers import normalize_ledger_url
 from eve_ingest.raw_objects.ledger.schema import _METADATA
 from eve_ingest.raw_objects.ledger.writer import RawObjectWriter
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from types import TracebackType
 
 _BOOTSTRAP_LOCK_DOMAIN = "raw-ledger:bootstrap"
 

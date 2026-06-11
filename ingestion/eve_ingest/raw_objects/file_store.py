@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from eve_ingest.raw_objects.fetch_plan import FetchPlan
 from eve_ingest.raw_objects.identity import (
@@ -10,11 +10,15 @@ from eve_ingest.raw_objects.identity import (
     resolve_identity_key,
 )
 from eve_ingest.raw_objects.ledger.models import RawObjectRef
-from eve_ingest.raw_objects.models import RawObjectRequest
 from eve_ingest.raw_objects.paths import (
     build_temp_path,
 )
-from eve_ingest.raw_objects.primitives import UpdateMode
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from eve_ingest.raw_objects.models import RawObjectRequest
+    from eve_ingest.raw_objects.primitives import UpdateMode
 
 
 class RawObjectFileStore:

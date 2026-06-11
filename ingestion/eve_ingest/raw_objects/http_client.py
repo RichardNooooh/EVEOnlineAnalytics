@@ -8,24 +8,26 @@ new content or detect unchanged mutable objects.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from types import TracebackType
-
-import logging
+from typing import TYPE_CHECKING
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from eve_ingest.raw_objects.http_models import (
-    ReadStatus,
-    ReadResult,
     ModifiedRead,
     NotModifiedRead,
+    ReadResult,
+    ReadStatus,
     RevalidationMetadata,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from types import TracebackType
 
 logger = logging.getLogger(__name__)
 

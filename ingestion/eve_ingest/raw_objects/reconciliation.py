@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from eve_ingest.raw_objects.ledger import RawObjectLedger
+if TYPE_CHECKING:
+    from eve_ingest.raw_objects.ledger import RawObjectLedger
 
 
 class RawFileReconciler:
@@ -43,13 +45,13 @@ class RawFileReconciler:
                 than this duration.
         """
         ledger_paths = self.list_ledger_paths()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         orphans: list[Path] = []
         for disk_file in self.list_files_on_disk():
             if str(disk_file) in ledger_paths:
                 continue
             if older_than is not None:
-                mtime = datetime.fromtimestamp(disk_file.stat().st_mtime, tz=timezone.utc)
+                mtime = datetime.fromtimestamp(disk_file.stat().st_mtime, tz=UTC)
                 if now - mtime <= older_than:
                     continue
             orphans.append(disk_file)

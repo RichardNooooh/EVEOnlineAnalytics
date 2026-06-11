@@ -1,26 +1,29 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime
-from collections.abc import Mapping
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
-from sqlalchemy.engine import RowMapping
-
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger.columns import (
     RAW_OBJECT_COLUMNS,
     RAW_OBJECT_SEEN_COLUMNS,
     RAW_OBJECT_VERSION_COLUMNS,
 )
-from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger.models import (
     PublicationContext,
     RawObjectEntry,
     RawObjectRef,
     RawObjectVersion,
 )
-from eve_ingest.raw_objects.primitives import UpdateMode
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from datetime import datetime
+
+    from sqlalchemy.engine import RowMapping
+
+    from eve_ingest.raw_objects.primitives import UpdateMode
 
 
 def normalize_ledger_url(ledger_url: str) -> str:
@@ -96,10 +99,7 @@ def entity_to_row(
         parts = field_path.split(".")
         value: Any = raw
         for part in parts:
-            if isinstance(value, dict):
-                value = value.get(part)
-            else:
-                value = getattr(value, part)
+            value = value.get(part) if isinstance(value, dict) else getattr(value, part)
         result[col_name] = value
     if overrides:
         result.update(overrides)
@@ -139,40 +139,40 @@ def raw_object_publication_values(
 
 
 def row_to_raw_object(row: RowMapping) -> RawObjectEntry:
-    identity_key: dict[str, Any] = cast(dict[str, Any], row["identity_key"])
-    update_mode: UpdateMode = cast(UpdateMode, row["update_mode"])
+    identity_key: dict[str, Any] = cast("dict[str, Any]", row["identity_key"])
+    update_mode: UpdateMode = cast("UpdateMode", row["update_mode"])
     return RawObjectEntry(
-        id=cast(str, row["id"]),
+        id=cast("str", row["id"]),
         ref=RawObjectRef(
-            source_name=cast(str, row["source_name"]),
-            dataset_name=cast(str, row["dataset_name"]),
-            identity_hash=cast(str, row["identity_hash"]),
+            source_name=cast("str", row["source_name"]),
+            dataset_name=cast("str", row["dataset_name"]),
+            identity_hash=cast("str", row["identity_hash"]),
             identity_key=identity_key,
             update_mode=update_mode,
         ),
-        created_at=cast(datetime, row["created_at"]),
-        last_checked_at=cast(datetime | None, row["last_checked_at"]),
+        created_at=cast("datetime", row["created_at"]),
+        last_checked_at=cast("datetime | None", row["last_checked_at"]),
         revalidation=RevalidationMetadata(
-            etag=cast(str | None, row["etag"]),
-            last_modified=cast(str | None, row["last_modified"]),
-            content_length=cast(int | None, row["content_length"]),
+            etag=cast("str | None", row["etag"]),
+            last_modified=cast("str | None", row["last_modified"]),
+            content_length=cast("int | None", row["content_length"]),
         ),
     )
 
 
 def row_to_raw_object_version(row: RowMapping) -> RawObjectVersion:
     return RawObjectVersion(
-        id=cast(str, row["id"]),
-        raw_object_id=cast(str, row["raw_object_id"]),
-        source_url=cast(str, row["source_url"]),
-        fetched_at=cast(datetime, row["fetched_at"]),
+        id=cast("str", row["id"]),
+        raw_object_id=cast("str", row["raw_object_id"]),
+        source_url=cast("str", row["source_url"]),
+        fetched_at=cast("datetime", row["fetched_at"]),
         revalidation=RevalidationMetadata(
-            etag=cast(str | None, row["etag"]),
-            last_modified=cast(str | None, row["last_modified"]),
-            content_length=cast(int | None, row["content_length"]),
+            etag=cast("str | None", row["etag"]),
+            last_modified=cast("str | None", row["last_modified"]),
+            content_length=cast("int | None", row["content_length"]),
         ),
-        sha256=cast(str, row["sha256"]),
-        local_path=cast(str, row["local_path"]),
-        storage_encoding=cast(str, row["storage_encoding"]),
-        version_number=cast(int, row["version_number"]),
+        sha256=cast("str", row["sha256"]),
+        local_path=cast("str", row["local_path"]),
+        storage_encoding=cast("str", row["storage_encoding"]),
+        version_number=cast("int", row["version_number"]),
     )

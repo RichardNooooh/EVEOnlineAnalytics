@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
 from eve_ingest.ducklake.attach_config import build_ducklake_attach_config_from_url
 from eve_ingest.ducklake.locks import (
     DuckLakeLockContext,
@@ -16,14 +14,19 @@ from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
 from eve_ingest.ducklake.raw_publish import RawTablePublisher
 from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.publication.context import PublishContext
-from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.service import PublicationService
-from eve_ingest.publication.results import PublishResult
+from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.specs import AppendSnapshotRows, DatasetPublisherSpec
-from eve_ingest.raw_objects import RawObjectRequest, AcquiredRawObject
 from eve_ingest.raw_objects.ledger.models import PublicationContext
-from eve_ingest.raw_objects.publishing import PublicationTracker
 from eve_ingest.raw_objects.store import RawObjectStore
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
+    from eve_ingest.publication.results import PublishResult
+    from eve_ingest.raw_objects import AcquiredRawObject, RawObjectRequest
+    from eve_ingest.raw_objects.publishing import PublicationTracker
 
 logger = logging.getLogger(__name__)
 

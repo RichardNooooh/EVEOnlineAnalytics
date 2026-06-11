@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import bz2
 from datetime import date
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
 import pytest
-
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
-from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
+from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
 from eve_ingest.ducklake.raw_publish import RawTablePublisher
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
@@ -19,9 +18,12 @@ from eve_ingest.publication.service import PublicationService
 from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.specs import DatasetPublisherSpec, InsertMissingKeysAuthoritativePartition, SourceDateScope
 from eve_ingest.raw_objects import UpdateMode
-from eve_ingest.sources.everef.market_history import publish_one
 from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
+from eve_ingest.sources.everef.market_history import publish_one
 from tests.sources.everef.conftest import make_cache_result
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _KeepConnection:
@@ -71,10 +73,8 @@ def bootstrapped(shared_con) -> None:
 def _write_history_file(path: Path) -> None:
     path.write_bytes(
         bz2.compress(
-            (
-                "average,date,highest,lowest,order_count,volume,http_last_modified,region_id,type_id\n"
-                "9.99,2026-01-01,9.99,9.99,1,24,2026-01-02T11:01:55Z,10000001,19\n"
-            ).encode()
+            b"average,date,highest,lowest,order_count,volume,http_last_modified,region_id,type_id\n"
+            b"9.99,2026-01-01,9.99,9.99,1,24,2026-01-02T11:01:55Z,10000001,19\n"
         )
     )
 

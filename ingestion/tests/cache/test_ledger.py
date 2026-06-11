@@ -3,19 +3,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import insert, select
-
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.ledger import _db as ledger_db
 from eve_ingest.raw_objects.ledger import repository as ledger_runtime
+from eve_ingest.raw_objects.ledger.models import RawObjectRef
 from eve_ingest.raw_objects.ledger.publication_repository import PublicationTrackerTx
 from eve_ingest.raw_objects.ledger.reader import RawObjectReader
 from eve_ingest.raw_objects.ledger.repository import LedgerTx
-from eve_ingest.raw_objects.ledger.schema import raw_objects, raw_object_versions
+from eve_ingest.raw_objects.ledger.schema import raw_object_versions, raw_objects
 from eve_ingest.raw_objects.ledger.writer import RawObjectWriter
-from eve_ingest.raw_objects.http_models import RevalidationMetadata
-from eve_ingest.raw_objects.ledger.models import RawObjectRef
 from eve_ingest.raw_objects.primitives import UpdateMode
+from sqlalchemy import insert, select
 
 
 class FakeBegin:
@@ -150,23 +149,22 @@ def test_rotate_version_rolls_back_on_insert_failure(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.raw_objects.ledger.writer._execute", flaky_execute)
 
-    with pytest.raises(RuntimeError, match="boom"):
-        with ledger.transaction() as tx:
-            tx.writer.rotate_version(
-                ref=RawObjectRef(
-                    source_name="everef",
-                    dataset_name="market-history",
-                    identity_hash="hash-1",
-                    identity_key={"source_date": "2026-01-01"},
-                    update_mode=UpdateMode.MUTABLE,
-                ),
-                source_url="https://example.com/file.csv",
-                fetched_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
-                revalidation=RevalidationMetadata(),
-                sha256="new",
-                local_path="/tmp/file.csv",
-                storage_encoding="csv",
-            )
+    with pytest.raises(RuntimeError, match="boom"), ledger.transaction() as tx:
+        tx.writer.rotate_version(
+            ref=RawObjectRef(
+                source_name="everef",
+                dataset_name="market-history",
+                identity_hash="hash-1",
+                identity_key={"source_date": "2026-01-01"},
+                update_mode=UpdateMode.MUTABLE,
+            ),
+            source_url="https://example.com/file.csv",
+            fetched_at=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+            revalidation=RevalidationMetadata(),
+            sha256="new",
+            local_path="/tmp/file.csv",
+            storage_encoding="csv",
+        )
 
     with ledger._engine.begin() as con:
         rows = ledger_db._fetchall(

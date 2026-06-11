@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from eve_ingest.raw_objects.http_models import RevalidationMetadata
-from eve_ingest.raw_objects.primitives import IdentityKey, UpdateMode
+
+if TYPE_CHECKING:
+    from eve_ingest.raw_objects.primitives import IdentityKey, UpdateMode
 
 
 @dataclass(frozen=True)
@@ -41,7 +44,7 @@ class RawObjectEntry:
     ref: RawObjectRef
     created_at: datetime
     last_checked_at: datetime | None = None
-    revalidation: RevalidationMetadata = RevalidationMetadata()
+    revalidation: RevalidationMetadata = field(default_factory=RevalidationMetadata)
 
 
 @dataclass(frozen=True)

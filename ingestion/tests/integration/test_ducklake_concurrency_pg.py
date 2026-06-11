@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from threading import Barrier, Thread
 from time import sleep
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-import duckdb
 import pytest
-
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig, build_ducklake_attach_config_from_url
+from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
 from eve_ingest.ducklake.locks import (
     DuckLakeLockTimeoutError,
     ducklake_lock_domains_for_publication_scope,
@@ -16,9 +17,11 @@ from eve_ingest.ducklake.locks import (
     raw_bootstrap_lock_domains,
 )
 from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
-from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
 from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.ducklake.sql import quote_identifier
+
+if TYPE_CHECKING:
+    import duckdb
 
 
 @pytest.fixture
@@ -93,10 +96,8 @@ def test_separate_connections_can_commit_to_different_tables_concurrently(attach
             con.execute("COMMIT")
         except BaseException as exc:  # pragma: no cover - surfaced via assertion below
             errors.append(exc)
-            try:
+            with contextlib.suppress(Exception):
                 con.execute("ROLLBACK")
-            except Exception:
-                pass
         finally:
             con.close()
 
@@ -110,10 +111,8 @@ def test_separate_connections_can_commit_to_different_tables_concurrently(attach
             con.execute("COMMIT")
         except BaseException as exc:  # pragma: no cover - surfaced via assertion below
             errors.append(exc)
-            try:
+            with contextlib.suppress(Exception):
                 con.execute("ROLLBACK")
-            except Exception:
-                pass
         finally:
             con.close()
 
@@ -180,18 +179,20 @@ def test_same_table_publication_scopes_serialize_on_shared_lock_domains(pg_url: 
     first_scope = "raw:market_orders:source_date=2026-01-01"
     second_scope = "raw:market_orders:source_date=2026-01-02"
 
-    with hold_ducklake_lock_domains(
-        catalog_url=pg_url,
-        lock_domains=ducklake_lock_domains_for_publication_scope(first_scope),
-        timeout_seconds=5,
+    with (
+        hold_ducklake_lock_domains(
+            catalog_url=pg_url,
+            lock_domains=ducklake_lock_domains_for_publication_scope(first_scope),
+            timeout_seconds=5,
+        ),
+        pytest.raises(DuckLakeLockTimeoutError, match="raw_market_orders"),
+        hold_ducklake_lock_domains(
+            catalog_url=pg_url,
+            lock_domains=ducklake_lock_domains_for_publication_scope(second_scope),
+            timeout_seconds=0.1,
+        ),
     ):
-        with pytest.raises(DuckLakeLockTimeoutError, match="raw_market_orders"):
-            with hold_ducklake_lock_domains(
-                catalog_url=pg_url,
-                lock_domains=ducklake_lock_domains_for_publication_scope(second_scope),
-                timeout_seconds=0.1,
-            ):
-                pytest.fail("same-table publication scopes should serialize on shared lock domains")
+        pytest.fail("same-table publication scopes should serialize on shared lock domains")
 
 
 @pytest.mark.integration
@@ -199,17 +200,19 @@ def test_different_table_publication_domains_can_overlap(pg_url: str) -> None:
     market_history_domains = ducklake_lock_domains_for_publication_scope("raw:market_history:source_date=2026-01-01")
     market_orders_domains = ducklake_lock_domains_for_publication_scope("raw:market_orders:source_date=2026-01-01")
 
-    with hold_ducklake_lock_domains(
-        catalog_url=pg_url,
-        lock_domains=market_history_domains,
-        timeout_seconds=5,
-    ):
-        with hold_ducklake_lock_domains(
+    with (
+        hold_ducklake_lock_domains(
+            catalog_url=pg_url,
+            lock_domains=market_history_domains,
+            timeout_seconds=5,
+        ),
+        hold_ducklake_lock_domains(
             catalog_url=pg_url,
             lock_domains=market_orders_domains,
             timeout_seconds=0.1,
-        ):
-            pass
+        ),
+    ):
+        pass
 
 
 @pytest.mark.integration
@@ -227,13 +230,15 @@ def test_raw_bootstrap_lock_set_blocks_every_writer_domain(pg_url: str) -> None:
         timeout_seconds=5,
     ):
         for writer_scope in writer_scopes:
-            with pytest.raises(DuckLakeLockTimeoutError):
-                with hold_ducklake_lock_domains(
+            with (
+                pytest.raises(DuckLakeLockTimeoutError),
+                hold_ducklake_lock_domains(
                     catalog_url=pg_url,
                     lock_domains=ducklake_lock_domains_for_publication_scope(writer_scope),
                     timeout_seconds=0.1,
-                ):
-                    pytest.fail(f"bootstrap lock set should block writer scope {writer_scope}")
+                ),
+            ):
+                pytest.fail(f"bootstrap lock set should block writer scope {writer_scope}")
 
 
 def test_static_contract_rejects_legacy_raw_source_objects_references() -> None:

@@ -1,12 +1,11 @@
 import argparse
 
-from eve_ingest.logging_config import log_cli_run_start
-
 from eve_ingest.cli.config_builders import (
     build_ducklake_bootstrap_config,
     build_everef_config,
     build_everef_references_config,
 )
+from eve_ingest.logging_config import log_cli_run_start
 from eve_ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,

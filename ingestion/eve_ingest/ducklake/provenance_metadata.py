@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 from datetime import UTC, date, datetime
 from email.utils import parsedate_to_datetime
+from typing import TYPE_CHECKING
 
-from eve_ingest.raw_objects import AcquiredRawObject
+if TYPE_CHECKING:
+    from eve_ingest.raw_objects import AcquiredRawObject
 
 logger = logging.getLogger(__name__)
 

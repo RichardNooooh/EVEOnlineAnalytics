@@ -1,21 +1,26 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import duckdb
-import pyarrow as pa
 
 from eve_ingest.ducklake.attach_config import DEFAULT_RAW_SCHEMA, DuckLakeAttachConfig
-from eve_ingest.ducklake.locks import DuckLakeLockToken
 from eve_ingest.ducklake.sql import (
     SqlSource,
     arrow_view,
     quote_identifier,
     quote_sql_string,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    import pyarrow as pa
+
+    from eve_ingest.ducklake.locks import DuckLakeLockToken
 
 logger = logging.getLogger(__name__)
 

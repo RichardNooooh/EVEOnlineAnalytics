@@ -1,26 +1,28 @@
 from __future__ import annotations
 
-from datetime import UTC
-from pathlib import Path
 import bz2
+from datetime import UTC
+from typing import TYPE_CHECKING
 
 import duckdb
 import pytest
-
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
-from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
-from eve_ingest.ducklake.session import DuckLakeSession
+from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
 from eve_ingest.ducklake.raw_publish import RawTablePublisher
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable, compute_source_ref_id
+from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.publication.context import PublishContext
 from eve_ingest.publication.service import PublicationService
 from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.specs import AppendSnapshotRows, DatasetPublisherSpec, SourceDateScope
 from eve_ingest.raw_objects import UpdateMode
-from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable, compute_source_ref_id
 from eve_ingest.sources.everef.market_orders import publish_one
 from tests.sources.everef.conftest import make_cache_result
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _KeepConnection:

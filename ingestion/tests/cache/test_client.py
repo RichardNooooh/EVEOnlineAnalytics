@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import requests
-
 from eve_ingest.raw_objects.http_client import HttpRawObjectClient
 from eve_ingest.raw_objects.http_models import ReadStatus
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class FakeResponse:
@@ -36,8 +38,7 @@ class FakeResponse:
 
     def iter_content(self, chunk_size: int):
         del chunk_size
-        for chunk in self._chunks:
-            yield chunk
+        yield from self._chunks
         if self._error is not None:
             raise self._error
 
@@ -137,13 +138,12 @@ def test_read_removes_partial_file_when_stream_fails(monkeypatch, tmp_path: Path
     monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
 
     temp_path = tmp_path / "file.download"
-    with HttpRawObjectClient() as client:
-        with pytest.raises(RuntimeError, match="boom"):
-            client.read(
-                source_url="https://example.com/file.csv",
-                request_headers={},
-                temp_path=str(temp_path),
-            )
+    with HttpRawObjectClient() as client, pytest.raises(RuntimeError, match="boom"):
+        client.read(
+            source_url="https://example.com/file.csv",
+            request_headers={},
+            temp_path=str(temp_path),
+        )
 
     assert temp_path.exists() is False
     assert response.closed is True
@@ -191,12 +191,11 @@ def test_read_raises_on_http_error_status(monkeypatch, tmp_path: Path, status_co
     monkeypatch.setattr("eve_ingest.raw_objects.http_client.requests.Session", lambda: session)
 
     temp_path = tmp_path / "file.download"
-    with HttpRawObjectClient() as client:
-        with pytest.raises(requests.HTTPError):
-            client.read(
-                source_url="https://example.com/file.csv",
-                request_headers={},
-                temp_path=str(temp_path),
-            )
+    with HttpRawObjectClient() as client, pytest.raises(requests.HTTPError):
+        client.read(
+            source_url="https://example.com/file.csv",
+            request_headers={},
+            temp_path=str(temp_path),
+        )
 
     assert temp_path.exists() is False

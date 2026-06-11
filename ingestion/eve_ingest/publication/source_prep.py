@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime
+from typing import TYPE_CHECKING
 
-import pyarrow as pa
-
-from eve_ingest.ducklake.raw_tables import compute_source_ref_id
-from eve_ingest.ducklake.session import DuckLakeSession, SqlSource
-from eve_ingest.raw_objects.models import AcquiredRawObject
 from eve_ingest.ducklake.provenance_metadata import build_source_object_metadata
+from eve_ingest.ducklake.raw_tables import compute_source_ref_id
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from datetime import date, datetime
+
+    import pyarrow as pa
+
+    from eve_ingest.ducklake.session import DuckLakeSession, SqlSource
+    from eve_ingest.raw_objects.models import AcquiredRawObject
 
 
 @dataclass

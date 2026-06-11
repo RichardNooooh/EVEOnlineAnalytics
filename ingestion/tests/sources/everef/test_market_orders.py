@@ -4,28 +4,29 @@ import bz2
 import logging
 import pathlib
 from datetime import date
+from typing import TYPE_CHECKING, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.specs import AppendSnapshotRows, DatasetPublisherSpec
 from eve_ingest.raw_objects import UpdateMode
-from eve_ingest.publication.results import PublishResult
-from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
+from eve_ingest.sources.everef import discovery as everef_discovery
+from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
+from eve_ingest.sources.everef.discovery import list_snapshots
 from eve_ingest.sources.everef.market_orders import (
     _MARKET_ORDERS_SQL_SCHEMA,
-    PUBLISHER_SPEC,
     _SNAPSHOT_RE,
+    PUBLISHER_SPEC,
     _decompressed_snapshot_csv,
     discover_objects,
     publish_one,
 )
-from eve_ingest.sources.everef.discovery import list_snapshots
-from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
-from eve_ingest.sources.everef import discovery as everef_discovery
-
 from tests.sources.everef.conftest import make_cache_result
+
+if TYPE_CHECKING:
+    from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
 
 logger = logging.getLogger("eve_ingest.sources.everef")
 
@@ -122,7 +123,7 @@ class TestListSnapshotsWithRealFixture:
 
     # Hardcoded from the real everef listing for 2025-01-01.
     # Regenerate by running the extraction against the fixture HTML.
-    EXPECTED_FILENAMES = [
+    EXPECTED_FILENAMES: ClassVar[list[str]] = [
         "market-orders-2025-01-01_00-15-05.v3.csv.bz2",
         "market-orders-2025-01-01_00-45-06.v3.csv.bz2",
         "market-orders-2025-01-01_01-15-05.v3.csv.bz2",

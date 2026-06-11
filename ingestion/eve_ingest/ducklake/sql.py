@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-import duckdb
-import pyarrow as pa
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
-from eve_ingest.ducklake.raw_tables import DuckLakeTableTarget
+    import duckdb
+    import pyarrow as pa
+
+    from eve_ingest.ducklake.raw_tables import DuckLakeTableTarget
 
 logger = logging.getLogger(__name__)
 

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.helpers import merge_revalidation
-from eve_ingest.raw_objects.ledger.repository import LedgerTx
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger.models import (
     CurrentRawObjectState,
     PublicationContext,
@@ -17,6 +15,11 @@ from eve_ingest.raw_objects.ledger.models import (
     RawObjectVersion,
     RotateVersionResult,
 )
+from eve_ingest.raw_objects.ledger.repository import LedgerTx
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from datetime import datetime
 
 
 class InMemoryRawObjectReader:
@@ -28,7 +31,7 @@ class InMemoryRawObjectReader:
         *,
         ref: RawObjectRef,
     ) -> RawObjectEntry | None:
-        return self._ledger._raw_objects_by_key.get(ref.group_key + (ref.identity_hash,))  # ty: ignore[invalid-argument-type]
+        return self._ledger._raw_objects_by_key.get((*ref.group_key, ref.identity_hash))
 
     def load_raw_objects(
         self,
@@ -38,7 +41,7 @@ class InMemoryRawObjectReader:
     ) -> dict[str, RawObjectEntry]:
         result: dict[str, RawObjectEntry] = {}
         for identity_hash in identity_hashes:
-            entry = self._ledger._raw_objects_by_key.get(group_key + (identity_hash,))  # ty: ignore[invalid-argument-type]
+            entry = self._ledger._raw_objects_by_key.get((*group_key, identity_hash))
             if entry is not None:
                 result[identity_hash] = entry
         return result
@@ -64,7 +67,7 @@ class InMemoryRawObjectReader:
     ) -> dict[str, CurrentRawObjectState | None]:
         raw_objects: dict[str, RawObjectEntry] = {}
         for ref in refs:
-            entry = self._ledger._raw_objects_by_key.get(ref.group_key + (ref.identity_hash,))  # ty: ignore[invalid-argument-type]
+            entry = self._ledger._raw_objects_by_key.get((*ref.group_key, ref.identity_hash))
             if entry is not None:
                 raw_objects[ref.identity_hash] = entry
 
@@ -98,8 +101,8 @@ class InMemoryRawObjectWriter:
         checked_at: datetime,
         revalidation: RevalidationMetadata | None = None,
     ) -> RawObjectEntry:
-        key = ref.group_key + (ref.identity_hash,)
-        existing = self._ledger._raw_objects_by_key.get(key)  # ty: ignore[invalid-argument-type]
+        key = (*ref.group_key, ref.identity_hash)
+        existing = self._ledger._raw_objects_by_key.get(key)
         revalidation = revalidation or RevalidationMetadata()
         if existing is None:
             raw_object = RawObjectEntry(
@@ -109,7 +112,7 @@ class InMemoryRawObjectWriter:
                 last_checked_at=checked_at,
                 revalidation=revalidation,
             )
-            self._ledger._raw_objects_by_key[key] = raw_object  # ty: ignore[invalid-assignment]
+            self._ledger._raw_objects_by_key[key] = raw_object
             return raw_object
 
         updated = replace(
@@ -117,7 +120,7 @@ class InMemoryRawObjectWriter:
             last_checked_at=checked_at,
             revalidation=merge_revalidation(existing.revalidation, revalidation),
         )
-        self._ledger._raw_objects_by_key[key] = updated  # ty: ignore[invalid-assignment]
+        self._ledger._raw_objects_by_key[key] = updated
         return updated
 
     def rotate_version(

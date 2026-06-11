@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from eve_ingest.ducklake.locks import DuckLakeLockToken, DuckLakeLockViolationError
 from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeProvenanceTable,
     provenance_target_for,
 )
-from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.ducklake.sql import (
     datetime_now_utc,
     quote_identifier,
     table_sql,
 )
+
+if TYPE_CHECKING:
+    from eve_ingest.ducklake.session import DuckLakeSession
 
 logger = logging.getLogger(__name__)
 

@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-import duckdb
 import pyarrow as pa
 import pytest
-
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig, build_ducklake_attach_config_from_url
 from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
 from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
+from eve_ingest.ducklake.raw_publish import RawTablePublisher
 from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.ducklake.sql import quote_identifier
-from eve_ingest.ducklake.raw_publish import RawTablePublisher
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import duckdb
 
 
 @pytest.fixture

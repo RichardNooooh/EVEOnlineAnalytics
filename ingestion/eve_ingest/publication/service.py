@@ -3,22 +3,13 @@ from __future__ import annotations
 import logging
 from contextlib import ExitStack
 from dataclasses import dataclass
-from datetime import date
+from typing import TYPE_CHECKING
 
-from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
-from eve_ingest.ducklake.raw_publish import RawTablePublisher
 from eve_ingest.ducklake.raw_tables import (
     DuckLakeWriteMetrics,
     DuckLakeWriterMode,
     RawDuckLakeProvenanceTable,
     provenance_table_for_data_table,
-)
-from eve_ingest.ducklake.session import DuckLakeSession
-from eve_ingest.publication.source_prep import SourcePreparationContext
-from eve_ingest.publication.prepared_source import (
-    PreparedAuthoritativeArrowSource,
-    PreparedReferenceTableSource,
-    PreparedSnapshotSqlSource,
 )
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.specs import (
@@ -27,7 +18,20 @@ from eve_ingest.publication.specs import (
     InsertMissingKeysAuthoritativePartition,
     ReplaceReferenceTables,
 )
-from eve_ingest.raw_objects.models import AcquiredRawObject
+
+if TYPE_CHECKING:
+    from datetime import date
+
+    from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
+    from eve_ingest.ducklake.raw_publish import RawTablePublisher
+    from eve_ingest.ducklake.session import DuckLakeSession
+    from eve_ingest.publication.prepared_source import (
+        PreparedAuthoritativeArrowSource,
+        PreparedReferenceTableSource,
+        PreparedSnapshotSqlSource,
+    )
+    from eve_ingest.publication.source_prep import SourcePreparationContext
+    from eve_ingest.raw_objects.models import AcquiredRawObject
 
 logger = logging.getLogger(__name__)
 
@@ -118,17 +122,16 @@ class PublicationService:
             snapshot_ts=prepared.snapshot_ts,
         )
 
-        with ctx.prepare_sql_source(prepared.sql_source) as source_name:
-            with self.session.transaction():
-                self.record_provenance(soid, metadata, table=provenance_table)
-                self.mark_parsed(soid, table=provenance_table)
+        with ctx.prepare_sql_source(prepared.sql_source) as source_name, self.session.transaction():
+            self.record_provenance(soid, metadata, table=provenance_table)
+            self.mark_parsed(soid, table=provenance_table)
 
-                metrics = self.raw_tables.append_snapshot_prepared_source(
-                    source_name=source_name,
-                    table=prepared.table,
-                )
+            metrics = self.raw_tables.append_snapshot_prepared_source(
+                source_name=source_name,
+                table=prepared.table,
+            )
 
-                self.mark_ingested(soid, table=provenance_table)
+            self.mark_ingested(soid, table=provenance_table)
 
         if prepared.log_context:
             logger.debug(
@@ -179,20 +182,19 @@ class PublicationService:
             snapshot_ts=None,
         )
 
-        with ctx.prepare_arrow_source(prepared.arrow_table) as source_name:
-            with self.session.transaction():
-                self.record_provenance(soid, metadata, table=provenance_table)
-                self.mark_parsed(soid, table=provenance_table)
+        with ctx.prepare_arrow_source(prepared.arrow_table) as source_name, self.session.transaction():
+            self.record_provenance(soid, metadata, table=provenance_table)
+            self.mark_parsed(soid, table=provenance_table)
 
-                metrics = self.raw_tables.write_prepared_source(
-                    prepared.arrow_table,
-                    source_name=source_name,
-                    table=prepared.table,
-                    mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-                    key_columns=policy.key_columns,
-                )
+            metrics = self.raw_tables.write_prepared_source(
+                prepared.arrow_table,
+                source_name=source_name,
+                table=prepared.table,
+                mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+                key_columns=policy.key_columns,
+            )
 
-                self.mark_ingested(soid, table=provenance_table)
+            self.mark_ingested(soid, table=provenance_table)
 
         return PublishResult(
             success=True,

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import json
 import tarfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
-
 
 from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
 from eve_ingest.ducklake.raw_publish import RawTablePublisher
@@ -16,8 +15,8 @@ from eve_ingest.ducklake.raw_tables import (
 )
 from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.publication.context import PublishContext
-from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.service import PublicationService
+from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.specs import DatasetPublisherSpec, ReplaceReferenceTables, StaticScope
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.reference_data import (
@@ -27,6 +26,9 @@ from eve_ingest.sources.everef.reference_data import (
     publish_one,
 )
 from tests.sources.everef.conftest import make_cache_result
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_publisher_spec_declares_reference_mutations() -> None:

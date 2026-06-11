@@ -2,34 +2,36 @@ from __future__ import annotations
 
 import gzip
 import logging
-import pathlib
 from datetime import date
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
+import pyarrow.csv as pac
 import pytest
-
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.specs import AppendSnapshotRows, DatasetPublisherSpec
 from eve_ingest.raw_objects import UpdateMode
-from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
+from eve_ingest.sources.everef import discovery as everef_discovery
+from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
+from eve_ingest.sources.everef.discovery import list_snapshots
 from eve_ingest.sources.everef.fuzzwork_orders import (
-    PUBLISHER_SPEC,
     _FUZZWORK_COLUMN_NAMES,
-    _FUZZWORK_SQL_SCHEMA,
     _FUZZWORK_RE,
+    _FUZZWORK_SQL_SCHEMA,
+    PUBLISHER_SPEC,
     discover_objects,
     publish_one,
 )
-from eve_ingest.sources.everef.discovery import list_snapshots
-from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
-from eve_ingest.sources.everef import discovery as everef_discovery
-
 from tests.sources.everef.conftest import make_cache_result
 
 logger = logging.getLogger("eve_ingest.sources.everef")
 
-import pyarrow.csv as pac  # noqa: E402
+
+if TYPE_CHECKING:
+    import pathlib
+
+    from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
 
 _TSV_DATA = "1\t34\t2026-01-01T00:00:00Z\tTrue\t10\t100\t1\t9.99\t60000001\t0\t30\t10000002\t161676\n"
 

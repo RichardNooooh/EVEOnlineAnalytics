@@ -34,7 +34,7 @@ repos:
         exclude: ^transformation/(target|dbt_packages|macros|\.venv)/
       - id: ty-check
         name: ty check (ingestion)
-        entry: uv run --project ingestion ty check ingestion/
+        entry: ty check ingestion/
         language: system
         pass_filenames: false
         require_serial: true

@@ -4,12 +4,11 @@ import logging
 from unittest.mock import patch
 
 import pytest
-
-from eve_ingest.cli.config_builders import build_everef_config
+from eve_ingest.__main__ import main
 from eve_ingest.cli.config import RawFilesCliConfig
+from eve_ingest.cli.config_builders import build_everef_config
 from eve_ingest.cli.parser import build_parser
 from eve_ingest.logging_config import configure_logging
-from eve_ingest.__main__ import main
 from eve_ingest.util import (
     DEFAULT_DATA_ROOT,
     DEFAULT_DUCKLAKE_CATALOG,

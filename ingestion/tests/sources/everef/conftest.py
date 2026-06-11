@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
-import pyarrow as pa
-
+from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
+from eve_ingest.ducklake.locks import DuckLakeLockToken
 from eve_ingest.raw_objects import AcquiredRawObject, AcquisitionStatus
 from eve_ingest.raw_objects.http_models import RevalidationMetadata
 from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, RawObjectEntry, RawObjectRef, RawObjectVersion
-from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.models import AcquisitionMode
-from eve_ingest.cli.config import DuckLakeCliConfig, RawFilesCliConfig
-from eve_ingest.ducklake.locks import DuckLakeLockToken
+from eve_ingest.raw_objects.primitives import UpdateMode
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 class FakeRelation:
@@ -46,9 +47,7 @@ class FakeConnection:
             normalized_query.startswith("SELECT 1")
             and "SOURCE_REF_ID" in normalized_query
             and "SHA256" in normalized_query
-        ):
-            self.fetchone_results.append(None)
-        elif normalized_query.startswith("SELECT SHA256") and "SOURCE_REF_ID" in normalized_query:
+        ) or (normalized_query.startswith("SELECT SHA256") and "SOURCE_REF_ID" in normalized_query):
             self.fetchone_results.append(None)
         return self
 
