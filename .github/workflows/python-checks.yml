@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   format:
-    name: Ruff Format
+    name: Ruff Format and Lint
     runs-on: [self-hosted, Linux, X64, eve, ci, python]
 
     steps:
@@ -36,8 +36,11 @@ jobs:
       - name: Install toolchain with mise
         uses: jdx/mise-action@v4
 
+      - name: Check Python linting
+        run: ruff check --output-format=github .
+
       - name: Check Python formatting
-        run: make python-format-check
+        run: ruff format --check --diff .
 
   type-check:
     name: Ty Check (ingestion)
@@ -51,4 +54,4 @@ jobs:
         uses: jdx/mise-action@v4
 
       - name: Run type check
-        run: make python-ty-check
+        run: ty check --output=format github ingestion/

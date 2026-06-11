@@ -13,31 +13,12 @@ INGESTION_IMAGE ?= $(EVE_MARKET_INGESTION_IMAGE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help python-format python-format-check python-ty-check sql-format sql-lint ingestion-image ingestion-image-rebuild ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke local-data-permissions-fix local-bi-up local-bi-down local-bi-smoke local-transform-bi-smoke
+.PHONY: help ingestion-image ingestion-image-smoke local-airflow-env local-airflow-up local-airflow-down local-airflow-reset local-pipeline-smoke local-airflow-docker-smoke local-data-permissions-fix local-bi-up local-bi-down local-bi-smoke local-transform-bi-smoke
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-python-format: ## Format Python files with Ruff
-	ruff format .
-
-python-format-check: ## Check Python formatting with Ruff
-	ruff format --check .
-
-python-ty-check: ## Check Python types with Ty (ingestion)
-	ty check ingestion/
-
-sql-format: ## Format transformation SQL with SQLFluff
-	sqlfluff format transformation/
-
-sql-lint: ## Lint transformation SQL with SQLFluff
-	sqlfluff lint transformation/
-
 ingestion-image: ## Build ingestion job image
-	docker rmi $(INGESTION_IMAGE) 2>/dev/null || true
-	docker build -f ingestion/Dockerfile -t $(INGESTION_IMAGE) ingestion
-
-ingestion-image-rebuild: ## Rebuild ingestion job image without cache
 	docker rmi $(INGESTION_IMAGE) 2>/dev/null || true
 	docker build --pull --no-cache -f ingestion/Dockerfile -t $(INGESTION_IMAGE) ingestion
 

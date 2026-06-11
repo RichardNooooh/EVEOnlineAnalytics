@@ -86,18 +86,9 @@ Build the ingestion task image used by local `DockerOperator` DAGs:
 make ingestion-image
 ```
 
-If Docker layer reuse or a mutable base image leaves you with a stale local task
-image, force a clean rebuild:
-
-```bash
-make ingestion-image-rebuild
-```
-
 Local DAGs default to `eve-market-ingestion:local`. Set
 `EVE_MARKET_INGESTION_IMAGE` in `infra/local/.env` if you need to test a different
-tag. The Makefile reads the same setting, so `make ingestion-image` and
-`make ingestion-image-rebuild` build the exact image tag Airflow will run by
-default.
+tag.
 
 Local Airflow also includes a manual `bootstrap_backfill_all` DAG. It runs raw
 DuckLake bootstrap first, then fans out to market orders, market history,
@@ -160,14 +151,13 @@ make local-airflow-docker-smoke
 
 1. edit ingestion and dlt code
 2. `make ingestion-image`
-3. if image refresh looks stale, `make ingestion-image-rebuild`
-4. run raw backfill through local Airflow
-5. run host dbt from `transformation/` against local Compose PostgreSQL
-6. run `make local-data-permissions-fix` if needed, then host `dbt build` so final curated marts materialize into repo-root `.local/data`
-7. run local Evidence through Compose profile `bi`
-8. commit
-9. validate in CI and publish GHCR image tags from trusted `master` builds
-10. deploy through `homelab-data-platform`
+3. run raw backfill through local Airflow
+4. run host dbt from `transformation/` against local Compose PostgreSQL
+5. run `make local-data-permissions-fix` if needed, then host `dbt build` so final curated marts materialize into repo-root `.local/data`
+6. run local Evidence through Compose profile `bi`
+7. commit
+8. validate in CI and publish GHCR image tags from trusted `master` builds
+9. deploy through `homelab-data-platform`
 
 ## Notes
 
