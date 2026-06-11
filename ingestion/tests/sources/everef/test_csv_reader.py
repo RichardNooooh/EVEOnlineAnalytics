@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
-
-import pytest
+from typing import TYPE_CHECKING
 
 from eve_ingest.ducklake.provenance_metadata import parse_last_modified_timestamp
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_parse_last_modified_timestamp_supports_iso_and_http_date() -> None:

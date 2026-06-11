@@ -3,27 +3,29 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Mapping
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pyarrow as pa
 
 from eve_ingest.archives.tarball import ExtractedTarball
-from eve_ingest.raw_objects import RawObjectRequest, AcquiredRawObject, UpdateMode
-from eve_ingest.cli.config import EverefReferencesCliConfig
 from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
 )
+from eve_ingest.publication.prepared_source import PreparedReferenceTableSource
+from eve_ingest.publication.runner import run_dataset_pipeline
 from eve_ingest.publication.specs import (
     DatasetPublisherSpec,
     ReplaceReferenceTables,
     StaticScope,
 )
-from eve_ingest.publication.context import PublishContext
-from eve_ingest.publication.prepared_source import PreparedReferenceTableSource
-from eve_ingest.publication.results import PublishResult
-from eve_ingest.publication.runner import run_dataset_pipeline
+from eve_ingest.raw_objects import AcquiredRawObject, RawObjectRequest, UpdateMode
 from eve_ingest.sources.everef.discovery import EVEREF_BASE
+
+if TYPE_CHECKING:
+    from eve_ingest.cli.config import EverefReferencesCliConfig
+    from eve_ingest.publication.context import PublishContext
+    from eve_ingest.publication.results import PublishResult
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,7 @@ PUBLISHER_SPEC = DatasetPublisherSpec(
 def _english_text(value: object) -> str | None:
     if not isinstance(value, Mapping):
         return None
-    english_value = cast(Mapping[str, Any], value).get("en")
+    english_value = cast("Mapping[str, Any]", value).get("en")
     return english_value if isinstance(english_value, str) else None
 
 

@@ -5,23 +5,24 @@ import gzip
 import json
 import tarfile
 from datetime import date
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
-
-from eve_ingest.raw_objects import RawObjectRequest
 from eve_ingest.cli.config import EverefCliConfig, EverefReferencesCliConfig
+from eve_ingest.raw_objects import RawObjectRequest
 from eve_ingest.sources.everef import fuzzwork_orders, market_history, market_orders, reference_data
 from tests.sources.everef.conftest import install_pipeline_fakes, make_cache_result, make_everef_pipeline_config
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def _write_history_file(path: Path) -> None:
     path.write_bytes(
         bz2.compress(
-            (
-                "average,date,highest,lowest,order_count,volume,http_last_modified,region_id,type_id\n"
-                "9.99,2026-01-01,9.99,9.99,1,24,2026-01-02T11:01:55Z,10000001,19\n"
-            ).encode()
+            b"average,date,highest,lowest,order_count,volume,http_last_modified,region_id,type_id\n"
+            b"9.99,2026-01-01,9.99,9.99,1,24,2026-01-02T11:01:55Z,10000001,19\n"
         )
     )
 
@@ -29,10 +30,8 @@ def _write_history_file(path: Path) -> None:
 def _write_orders_file(path: Path) -> None:
     path.write_bytes(
         bz2.compress(
-            (
-                "duration,is_buy_order,issued,location_id,min_volume,order_id,price,range,system_id,type_id,volume_remain,volume_total,http_last_modified,station_id,region_id,constellation_id\n"
-                "30,True,2026-01-01T00:00:00Z,60000001,1,1,9.99,0,30000001,34,10,100,2026-01-01T00:00:00Z,60000001,10000001,20000001\n"
-            ).encode()
+            b"duration,is_buy_order,issued,location_id,min_volume,order_id,price,range,system_id,type_id,volume_remain,volume_total,http_last_modified,station_id,region_id,constellation_id\n"
+            b"30,True,2026-01-01T00:00:00Z,60000001,1,1,9.99,0,30000001,34,10,100,2026-01-01T00:00:00Z,60000001,10000001,20000001\n"
         )
     )
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import duckdb
 
-from eve_ingest.cli.config import DuckLakeBootstrapCliConfig
 from eve_ingest.ducklake.attach_config import DEFAULT_RAW_SCHEMA, DuckLakeAttachConfig, _build_default_attach_config
 from eve_ingest.ducklake.locks import hold_ducklake_lock_domains, raw_bootstrap_lock_domains
 from eve_ingest.ducklake.raw_publish import add_missing_columns, ensure_expected_partitioning
@@ -16,6 +17,9 @@ from eve_ingest.ducklake.raw_tables import (
     source_ref_column_definitions,
 )
 from eve_ingest.ducklake.sql import quote_identifier, table_sql
+
+if TYPE_CHECKING:
+    from eve_ingest.cli.config import DuckLakeBootstrapCliConfig
 
 
 def bootstrap_raw_ducklake(config: DuckLakeAttachConfig | None = None) -> None:

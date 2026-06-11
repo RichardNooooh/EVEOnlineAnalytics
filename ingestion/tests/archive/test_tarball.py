@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tarfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from eve_ingest.archives.tarball import ExtractedTarball, ExtractedTarMember
 
 
@@ -127,9 +126,8 @@ class TestRaisesOutsideLifecycle:
 class TestRejectsPathTraversal:
     def test_rejects_path_traversal(self, tmp_path: Path) -> None:
         malicious = _make_malicious_tarball(tmp_path / "malicious.tar.bz2")
-        with pytest.raises(tarfile.OutsideDestinationError):
-            with ExtractedTarball(malicious):
-                pass
+        with pytest.raises(tarfile.OutsideDestinationError), ExtractedTarball(malicious):
+            pass
         assert not (tmp_path / "escape.json").exists()
 
 
@@ -155,9 +153,8 @@ class TestCleansUpTempDirOnEnterFailure:
             root_path = archive._root
             raise OSError("mock open failure")
 
-        with patch("tarfile.open", side_effect=raise_on_open):
-            with pytest.raises(OSError, match="mock open failure"):
-                archive.__enter__()
+        with patch("tarfile.open", side_effect=raise_on_open), pytest.raises(OSError, match="mock open failure"):
+            archive.__enter__()
 
         assert archive._tmpdir is None
         assert archive._root is None

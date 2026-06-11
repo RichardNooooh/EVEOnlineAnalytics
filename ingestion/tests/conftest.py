@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import pytest
 from testcontainers.postgres import PostgresContainer
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

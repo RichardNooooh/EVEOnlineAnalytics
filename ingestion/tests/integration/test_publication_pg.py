@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-
 from eve_ingest.ducklake.locks import (
     DuckLakeLockTimeoutError,
     ducklake_lock_key,
@@ -86,8 +85,10 @@ def test_hold_ducklake_lock_domains_times_out_on_contention(pg_url: str) -> None
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_lock(%s)", (ducklake_lock_key(lock_domain),))
 
-        with pytest.raises(DuckLakeLockTimeoutError, match=lock_domain):
-            with hold_ducklake_lock_domains(catalog_url=pg_url, lock_domains=(lock_domain,), timeout_seconds=0.1):
-                pytest.fail("lock acquisition should have timed out")
+        with (
+            pytest.raises(DuckLakeLockTimeoutError, match=lock_domain),
+            hold_ducklake_lock_domains(catalog_url=pg_url, lock_domains=(lock_domain,), timeout_seconds=0.1),
+        ):
+            pytest.fail("lock acquisition should have timed out")
     finally:
         connection.close()

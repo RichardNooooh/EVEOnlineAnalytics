@@ -1,11 +1,54 @@
 [tool.ruff]
+indent-width = 4
 target-version = "py313"
 line-length = 120
 include = ["*.py", "*.pyi"]
 extend-exclude = [".local"]
 force-exclude = true
 
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes
+  "I",    # import sorting
+  "B",    # flake8-bugbear
+  "UP",   # pyupgrade
+  "SIM",  # flake8-simplify
+  "C4",   # flake8-comprehensions
+  "RUF",  # Ruff-specific rules
+  "TC",  # type-checking import hygiene
+]
+
+ignore = [
+  "E501",
+]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
+skip-magic-trailing-comma = false
+docstring-code-format = false
+
+[tool.ty.environment]
+python-version = "3.13"
+root = ["./ingestion"]
+
+[tool.ty.src]
+include = [
+  "ingestion",
+  "tests",
+]
+
+exclude = [
+  "**/.venv/**",
+  "**/__pycache__/**",
+  "**/build/**",
+  "**/dist/**",
+  "**/data/**",
+  "**/logs/**",
+]
+
+[tool.ty.terminal]
+output-format = "full"
+error-on-warning = false # TODO fix this

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa
+if TYPE_CHECKING:
+    from datetime import date, datetime
 
-from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
-from eve_ingest.ducklake.session import SqlSource
-from eve_ingest.raw_objects.models import AcquiredRawObject
+    import pyarrow as pa
+
+    from eve_ingest.ducklake.raw_tables import RawDuckLakeTable
+    from eve_ingest.ducklake.session import SqlSource
+    from eve_ingest.raw_objects.models import AcquiredRawObject
 
 
 @dataclass(frozen=True)

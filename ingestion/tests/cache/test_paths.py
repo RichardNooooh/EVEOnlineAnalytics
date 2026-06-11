@@ -4,10 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from eve_ingest.raw_objects.fetch_plan import FetchPlan
 from eve_ingest.raw_objects.ledger.models import RawObjectRef
-from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.paths import (
     build_final_path,
     build_snapshot_path,
@@ -15,6 +13,7 @@ from eve_ingest.raw_objects.paths import (
     detect_storage_encoding,
     validate_path_segment,
 )
+from eve_ingest.raw_objects.primitives import UpdateMode
 
 
 def _plan(
@@ -78,7 +77,7 @@ class TestBuildTempPath:
             identity_key={"source_path": "market-orders/history/2026/file.csv.bz2"},
             update_mode=UpdateMode.SNAPSHOT,
         )
-        with pytest.raises(ValueError, match="must be a safe non-empty|must not contain"):
+        with pytest.raises(ValueError, match=r"must be a safe non-empty|must not contain"):
             build_temp_path(raw_root=Path("/data"), ref=ref)
 
 

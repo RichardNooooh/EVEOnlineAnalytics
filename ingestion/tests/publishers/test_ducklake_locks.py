@@ -4,12 +4,11 @@ import logging
 from types import SimpleNamespace
 
 import pytest
-
 from eve_ingest.ducklake.locks import (
     DUCKLAKE_MIGRATION_LOCK_DOMAIN,
     DuckLakeLockContext,
-    DuckLakeLockToken,
     DuckLakeLockTimeoutError,
+    DuckLakeLockToken,
     all_raw_publication_lock_domains,
     ducklake_lock_domains_for_publication_scope,
     ducklake_lock_domains_for_tables,
@@ -163,8 +162,9 @@ def test_hold_ducklake_lock_domains_sets_timeout_orders_domains_and_logs_context
     duck_logger = logging.getLogger("eve_ingest.ducklake")
     duck_logger.addHandler(caplog.handler)
     try:
-        with caplog.at_level("INFO", logger="eve_ingest.ducklake"):
-            with hold_ducklake_lock_domains(
+        with (
+            caplog.at_level("INFO", logger="eve_ingest.ducklake"),
+            hold_ducklake_lock_domains(
                 catalog_url="postgresql://user:pass@localhost:5432/db",
                 lock_domains=("ducklake:support:raw_market_orders_objects", "ducklake:raw:raw_market_orders"),
                 timeout_seconds=12.5,
@@ -175,13 +175,14 @@ def test_hold_ducklake_lock_domains_sets_timeout_orders_domains_and_logs_context
                     source_date="2026-01-01",
                     airflow_run_id="airflow-run-123",
                 ),
-            ) as token:
-                assert isinstance(token, DuckLakeLockToken)
-                assert token.is_active is True
-                assert token.held_domains == (
-                    "ducklake:raw:raw_market_orders",
-                    "ducklake:support:raw_market_orders_objects",
-                )
+            ) as token,
+        ):
+            assert isinstance(token, DuckLakeLockToken)
+            assert token.is_active is True
+            assert token.held_domains == (
+                "ducklake:raw:raw_market_orders",
+                "ducklake:support:raw_market_orders_objects",
+            )
     finally:
         duck_logger.removeHandler(caplog.handler)
 
@@ -225,13 +226,15 @@ def test_hold_ducklake_lock_domains_raises_timeout(monkeypatch) -> None:
     connection.raise_on_lock = __import__("psycopg").errors.QueryCanceled()
     monkeypatch.setattr("eve_ingest.ducklake.locks.psycopg.connect", lambda *args, **kwargs: connection)
 
-    with pytest.raises(DuckLakeLockTimeoutError, match="ducklake:raw:raw_market_orders"):
-        with hold_ducklake_lock_domains(
+    with (
+        pytest.raises(DuckLakeLockTimeoutError, match="ducklake:raw:raw_market_orders"),
+        hold_ducklake_lock_domains(
             catalog_url="postgresql://user:pass@localhost:5432/db",
             lock_domains=("ducklake:raw:raw_market_orders",),
             timeout_seconds=0.1,
-        ):
-            pytest.fail("lock acquisition should have timed out")
+        ),
+    ):
+        pytest.fail("lock acquisition should have timed out")
 
 
 def test_raw_bootstrap_acquires_migration_and_all_raw_domains(monkeypatch) -> None:

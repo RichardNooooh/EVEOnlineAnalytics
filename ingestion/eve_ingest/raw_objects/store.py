@@ -18,29 +18,32 @@ Output: AcquiredRawObject with status HIT (local) or STORED (downloaded).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import logging
 from contextlib import ExitStack
 from pathlib import Path
-from types import TracebackType
-
-import logging
+from typing import TYPE_CHECKING
 
 from eve_ingest.raw_objects.downloader import RawObjectDownloader
 from eve_ingest.raw_objects.file_store import RawObjectFileStore
 from eve_ingest.raw_objects.http_client import HttpRawObjectClient
 from eve_ingest.raw_objects.ledger import RawObjectLedger
 from eve_ingest.raw_objects.models import (
-    RawObjectRequest,
     AcquiredRawObject,
-    AcquisitionStatus,
     AcquisitionMode,
+    AcquisitionStatus,
+    RawObjectRequest,
 )
+from eve_ingest.raw_objects.paths import validate_path_segment
 from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.publishing import PublicationTracker
-from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
 from eve_ingest.raw_objects.repository import RawObjectRepository
-from eve_ingest.raw_objects.paths import validate_path_segment
 from eve_ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from types import TracebackType
+
+    from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
 
 logger = logging.getLogger(__name__)
 

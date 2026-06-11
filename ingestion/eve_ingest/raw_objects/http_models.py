@@ -9,9 +9,11 @@ produces these; ``RawObjectStore`` consumes them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
-from typing import Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class ReadStatus(StrEnum):
@@ -74,4 +76,4 @@ class ModifiedRead:
     revalidation: RevalidationMetadata = RevalidationMetadata()
 
 
-ReadResult: TypeAlias = NotModifiedRead | ModifiedRead
+type ReadResult = NotModifiedRead | ModifiedRead

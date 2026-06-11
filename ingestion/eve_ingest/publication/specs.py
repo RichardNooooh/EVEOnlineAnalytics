@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from eve_ingest.ducklake.locks import ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.raw_tables import (
@@ -9,7 +9,9 @@ from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,
 )
-from eve_ingest.raw_objects.primitives import IdentityKey, UpdateMode
+
+if TYPE_CHECKING:
+    from eve_ingest.raw_objects.primitives import IdentityKey, UpdateMode
 
 ##############################
 # Publication Scope

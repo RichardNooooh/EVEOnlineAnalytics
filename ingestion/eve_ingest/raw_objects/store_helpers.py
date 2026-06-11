@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from eve_ingest.raw_objects.http_models import (
     ModifiedRead,
@@ -9,8 +9,12 @@ from eve_ingest.raw_objects.http_models import (
     ReadStatus,
     RevalidationMetadata,
 )
-from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
 from eve_ingest.raw_objects.primitives import UpdateMode
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
 
 
 def file_exists(path: str | None) -> bool:

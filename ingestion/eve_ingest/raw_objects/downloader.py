@@ -2,24 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import logging
-
-from eve_ingest.raw_objects.fetch_plan import FetchPlan
 from eve_ingest.raw_objects.http_client import HttpRawObjectClient
 from eve_ingest.raw_objects.http_models import (
     ModifiedRead,
     ReadResult,
     ReadStatus,
 )
-from eve_ingest.raw_objects.ledger import RawObjectLedger
-from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
 from eve_ingest.raw_objects.models import AcquiredRawObject, AcquisitionStatus
-from eve_ingest.raw_objects.file_store import RawObjectFileStore
 from eve_ingest.raw_objects.paths import build_final_path, detect_storage_encoding
 from eve_ingest.raw_objects.store_helpers import (
     ensure_downloaded,
@@ -27,6 +22,14 @@ from eve_ingest.raw_objects.store_helpers import (
     request_headers_for,
     revalidation_for_hit,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
+    from eve_ingest.raw_objects.fetch_plan import FetchPlan
+    from eve_ingest.raw_objects.file_store import RawObjectFileStore
+    from eve_ingest.raw_objects.ledger import RawObjectLedger
+    from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
 
 logger = logging.getLogger(__name__)
 

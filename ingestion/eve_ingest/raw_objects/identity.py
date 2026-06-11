@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import posixpath
-from collections.abc import Mapping
 from hashlib import sha256
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from eve_ingest.raw_objects.primitives import IdentityKey, IdentityScalar
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from eve_ingest.raw_objects.primitives import IdentityKey, IdentityScalar
 
 _SCALAR_TYPES = (str, int, float, bool, type(None))
 

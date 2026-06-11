@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
-import re
-from collections.abc import Callable
-from datetime import date
+from typing import TYPE_CHECKING
 
 from eve_ingest.raw_objects import RawObjectRequest
 from eve_ingest.sources.everef.listing_client import EverefSnapshotClient
 from eve_ingest.util import iter_dates
+
+if TYPE_CHECKING:
+    import re
+    from collections.abc import Callable
+    from datetime import date
 
 logger = logging.getLogger(__name__)
 

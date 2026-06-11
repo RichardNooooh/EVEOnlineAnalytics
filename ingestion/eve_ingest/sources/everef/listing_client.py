@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
-
-import requests
+from typing import TYPE_CHECKING
 
 from eve_ingest.raw_objects.http_client import build_retry_session
+
+if TYPE_CHECKING:
+    import requests
 
 logger = logging.getLogger(__name__)
 

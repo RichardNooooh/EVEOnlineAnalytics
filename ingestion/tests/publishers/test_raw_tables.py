@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeProvenanceTable,
     RawDuckLakeTable,

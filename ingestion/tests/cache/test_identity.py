@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+from typing import TYPE_CHECKING
 
 import pytest
-
 from eve_ingest.raw_objects.identity import (
     canonical_identity_json,
     hash_identity_key,
@@ -12,8 +12,9 @@ from eve_ingest.raw_objects.identity import (
     resolve_identity_key,
     validate_identity_key,
 )
-from eve_ingest.raw_objects.primitives import IdentityKey, IdentityScalar
 
+if TYPE_CHECKING:
+    from eve_ingest.raw_objects.primitives import IdentityKey, IdentityScalar
 
 # ── normalize_source_relative_path ─────────────────────────────────
 

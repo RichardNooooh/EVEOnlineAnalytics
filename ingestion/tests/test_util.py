@@ -3,13 +3,12 @@ from __future__ import annotations
 import importlib
 from datetime import date
 
+import eve_ingest.util as util
 import pytest
-
 from eve_ingest.util import (
     iter_dates,
     parse_iso_date,
 )
-import eve_ingest.util as util
 
 
 class TestConstants:

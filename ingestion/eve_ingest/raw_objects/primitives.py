@@ -11,14 +11,13 @@ Dep graph:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
-from typing import Mapping, TypeAlias
 
-
-IdentityScalar: TypeAlias = str | int | float | bool | None
+type IdentityScalar = str | int | float | bool | None
 """A single value in an identity key — must be a JSON-compatible scalar."""
 
-IdentityKey: TypeAlias = Mapping[str, IdentityScalar]
+type IdentityKey = Mapping[str, IdentityScalar]
 """Logical identity of a raw object.
 
 Identity keys are deterministic dicts of scalar values (``str | int | float |

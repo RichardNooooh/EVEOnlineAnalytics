@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from eve_ingest.raw_objects.fetch_plan import FetchPlan
-from eve_ingest.raw_objects.ledger.models import RawObjectRef
 from eve_ingest.raw_objects.primitives import UpdateMode
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from eve_ingest.raw_objects.fetch_plan import FetchPlan
+    from eve_ingest.raw_objects.ledger.models import RawObjectRef
 
 
 def build_temp_path(*, raw_root: Path, ref: RawObjectRef) -> Path:

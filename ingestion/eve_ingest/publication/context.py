@@ -1,21 +1,24 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from typing import TYPE_CHECKING
 
-from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable
-from eve_ingest.publication.prepared_source import (
-    PreparedAuthoritativeArrowSource,
-    PreparedReferenceTableSource,
-    PreparedSnapshotSqlSource,
-)
-from eve_ingest.publication.results import PublishResult
-from eve_ingest.publication.service import PublicationService
-from eve_ingest.publication.specs import DatasetPublisherSpec
-from eve_ingest.publication.source_prep import SourcePreparationContext
-from eve_ingest.raw_objects.models import AcquiredRawObject
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from datetime import date
+
+    from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable
+    from eve_ingest.publication.prepared_source import (
+        PreparedAuthoritativeArrowSource,
+        PreparedReferenceTableSource,
+        PreparedSnapshotSqlSource,
+    )
+    from eve_ingest.publication.results import PublishResult
+    from eve_ingest.publication.service import PublicationService
+    from eve_ingest.publication.source_prep import SourcePreparationContext
+    from eve_ingest.publication.specs import DatasetPublisherSpec
+    from eve_ingest.raw_objects.models import AcquiredRawObject
 
 logger = logging.getLogger(__name__)
 
