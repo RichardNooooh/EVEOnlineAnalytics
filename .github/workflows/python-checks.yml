@@ -38,3 +38,17 @@ jobs:
 
       - name: Check Python formatting
         run: make python-format-check
+
+  type-check:
+    name: Ty Check (ingestion)
+    runs-on: [self-hosted, Linux, X64, eve, ci, python]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install toolchain with mise
+        uses: jdx/mise-action@v4
+
+      - name: Run type check
+        run: make python-ty-check
