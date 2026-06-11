@@ -84,7 +84,7 @@ def ledger(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
 
 class TestLifecycle:
     def test_context_manager_sets_active_flag(self):
-        tracker = PublicationTracker(InMemoryRawObjectLedger())
+        tracker = PublicationTracker(InMemoryRawObjectLedger())  # ty: ignore[invalid-argument-type]
         assert not tracker._active
 
         with tracker:
@@ -93,22 +93,22 @@ class TestLifecycle:
         assert not tracker._active
 
     def test_mark_published_raises_outside_context(self):
-        tracker = PublicationTracker(InMemoryRawObjectLedger())
+        tracker = PublicationTracker(InMemoryRawObjectLedger())  # ty: ignore[invalid-argument-type]
         with pytest.raises(RuntimeError, match="must be used within its owning context"):
             tracker.mark_published(_result())
 
     def test_mark_published_many_raises_outside_context(self):
-        tracker = PublicationTracker(InMemoryRawObjectLedger())
+        tracker = PublicationTracker(InMemoryRawObjectLedger())  # ty: ignore[invalid-argument-type]
         with pytest.raises(RuntimeError, match="must be used within its owning context"):
             tracker.mark_published_many([])
 
     def test_is_published_raises_outside_context(self):
-        tracker = PublicationTracker(InMemoryRawObjectLedger())
+        tracker = PublicationTracker(InMemoryRawObjectLedger())  # ty: ignore[invalid-argument-type]
         with pytest.raises(RuntimeError, match="must be used within its owning context"):
             tracker.is_published(_result())
 
     def test_filter_published_raises_outside_context(self):
-        tracker = PublicationTracker(InMemoryRawObjectLedger())
+        tracker = PublicationTracker(InMemoryRawObjectLedger())  # ty: ignore[invalid-argument-type]
         with pytest.raises(RuntimeError, match="must be used within its owning context"):
             tracker.filter_published([])
 
@@ -232,7 +232,7 @@ class TestFilterPublished:
 
     def test_filter_published_calls_per_group_key(self):
         ledger = InMemoryRawObjectLedger()
-        with PublicationTracker(ledger) as tracker:
+        with PublicationTracker(ledger) as tracker:  # ty: ignore[invalid-argument-type]
             group_a = [
                 _result(source_name="everef", dataset_name="market-orders", identity_hash=f"h{i}", sha256=f"s{i}")
                 for i in range(3)
@@ -246,7 +246,7 @@ class TestFilterPublished:
             assert ledger.filter_published_calls == 2
 
     def test_filter_published_deduplicates_duplicate_input(self):
-        with PublicationTracker(InMemoryRawObjectLedger()) as tracker:
+        with PublicationTracker(InMemoryRawObjectLedger()) as tracker:  # ty: ignore[invalid-argument-type]
             result = _result(identity_hash="hash-a", sha256="sha-a")
             tracker.mark_published(result)
             published = tracker.filter_published([result, result, result])

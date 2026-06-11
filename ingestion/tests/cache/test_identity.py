@@ -118,7 +118,7 @@ def test_validate_identity_key_rejects_empty() -> None:
 
 def test_validate_identity_key_rejects_non_string_key() -> None:
     with pytest.raises(ValueError, match="identity_key keys must be non-empty strings"):
-        validate_identity_key({1: "value"})  # type: ignore[dict-item]
+        validate_identity_key({1: "value"})  # ty: ignore[invalid-argument-type]
 
 
 def test_validate_identity_key_rejects_empty_string_key() -> None:
@@ -128,12 +128,12 @@ def test_validate_identity_key_rejects_empty_string_key() -> None:
 
 def test_validate_identity_key_rejects_list_value() -> None:
     with pytest.raises(ValueError, match="identity_key values must be JSON scalar types"):
-        validate_identity_key({"key": [1, 2, 3]})  # type: ignore[dict-item]
+        validate_identity_key({"key": [1, 2, 3]})  # ty: ignore[invalid-argument-type]
 
 
 def test_validate_identity_key_rejects_dict_value() -> None:
     with pytest.raises(ValueError, match="identity_key values must be JSON scalar types"):
-        validate_identity_key({"key": {"nested": 1}})  # type: ignore[dict-item]
+        validate_identity_key({"key": {"nested": 1}})  # ty: ignore[invalid-argument-type]
 
 
 # ── resolve_identity_key ────────────────────────────────────────────
