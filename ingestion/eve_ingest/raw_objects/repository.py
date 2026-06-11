@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from eve_ingest.raw_objects.fetch_plan import FetchPlan
-from eve_ingest.raw_objects.http_client import HttpRawObjectClient
-from eve_ingest.raw_objects.ledger import RawObjectLedger
-from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, RawObjectEntry
-from eve_ingest.raw_objects.models import AcquiredRawObject
 from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.store_helpers import file_exists
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from eve_ingest.raw_objects.fetch_plan import FetchPlan
+    from eve_ingest.raw_objects.http_client import HttpRawObjectClient
+    from eve_ingest.raw_objects.ledger import RawObjectLedger
+    from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState, RawObjectEntry
+    from eve_ingest.raw_objects.models import AcquiredRawObject
 
 
 class RawObjectRepository:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from eve_ingest.cli.config import (
     DuckLakeBootstrapCliConfig,
@@ -11,6 +11,9 @@ from eve_ingest.cli.config import (
     RawFilesCliConfig,
 )
 from eve_ingest.util import parse_iso_date
+
+if TYPE_CHECKING:
+    import argparse
 
 
 def build_everef_config(args: argparse.Namespace) -> EverefCliConfig:

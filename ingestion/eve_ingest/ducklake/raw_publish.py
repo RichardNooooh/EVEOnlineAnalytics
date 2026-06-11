@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-
-import duckdb
-import pyarrow as pa
+from typing import TYPE_CHECKING
 
 from eve_ingest.ducklake.locks import DuckLakeLockToken, DuckLakeLockViolationError
 from eve_ingest.ducklake.raw_tables import (
@@ -14,13 +11,20 @@ from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeTable,
     _target_for,
 )
-from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.ducklake.sql import (
-    quote_identifier,
-    table_sql,
     count_source_rows_with_matches,
     count_source_rows_without_matches,
+    quote_identifier,
+    table_sql,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    import duckdb
+    import pyarrow as pa
+
+    from eve_ingest.ducklake.session import DuckLakeSession
 
 logger = logging.getLogger(__name__)
 
@@ -163,10 +167,11 @@ def assert_matched_key_rows_identical(
     try:
         differing = con.execute(query).fetchall()
     except Exception:
-        raise ValueError("Could not query target for key validation")
+        raise ValueError("Could not query target for key validation") from None
     if differing:
         examples = ", ".join(
-            ", ".join(f"{key}={value!r}" for key, value in zip(key_columns, row)) for row in differing[:10]
+            ", ".join(f"{key}={value!r}" for key, value in zip(key_columns, row, strict=False))
+            for row in differing[:10]
         )
         raise ValueError(f"Matched key rows have differing values: {examples}")
 
@@ -206,7 +211,7 @@ def assert_target_rows_missing_from_source(
         raise ValueError("Could not query target for source-date coverage check") from exc
     if missing:
         examples = ", ".join(
-            f"source_date={row[0]!r}, keys={dict(zip(key_columns, row[1:]))!r}" for row in missing[:10]
+            f"source_date={row[0]!r}, keys={dict(zip(key_columns, row[1:], strict=False))!r}" for row in missing[:10]
         )
         raise ValueError(f"Target has rows for source_date(s) absent from the newly downloaded source file: {examples}")
 

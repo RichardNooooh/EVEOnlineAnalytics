@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable
 
 
 class SnapshotScopePublishError(RuntimeError):

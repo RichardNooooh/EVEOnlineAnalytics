@@ -581,14 +581,16 @@ def test_raw_publisher_closes_connection_when_write_fails(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with pytest.raises(RuntimeError, match="boom"):
-        with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
-            raw = RawTablePublisher(session, lock_token=_test_lock_token())
-            raw.write(
-                pa.table({"id": [1]}),
-                table=RawDuckLakeTable.MARKET_HISTORY,
-                mode=DuckLakeWriterMode.REPLACE_TABLE,
-            )
+    with (
+        pytest.raises(RuntimeError, match="boom"),
+        DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session,
+    ):
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        raw.write(
+            pa.table({"id": [1]}),
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.REPLACE_TABLE,
+        )
 
     assert any("DROP VIEW IF EXISTS" in query for query in _queries(con))
     assert "ROLLBACK" in _queries(con)
@@ -680,9 +682,8 @@ def test_session_nested_transactions_only_begin_and_commit_once(monkeypatch) -> 
 
     with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
         provenance = SourceObjectProvenanceRepository(session, lock_token=_test_lock_token())
-        with session.transaction():
-            with session.transaction():
-                provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
+        with session.transaction(), session.transaction():
+            provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
 
     queries = _queries(con)
     assert queries.count("BEGIN") == 1
@@ -695,14 +696,16 @@ def test_session_nested_transaction_inner_failure_marks_outer_rollback_only(monk
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
-        with pytest.raises(RuntimeError, match="rollback-only"):
+    with (
+        DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session,
+        pytest.raises(RuntimeError, match="rollback-only"),
+        session.transaction(),
+    ):
+        try:
             with session.transaction():
-                try:
-                    with session.transaction():
-                        raise ValueError("inner")
-                except ValueError:
-                    pass
+                raise ValueError("inner")
+        except ValueError:
+            pass
 
     queries = _queries(con)
     assert queries.count("BEGIN") == 1
@@ -717,9 +720,8 @@ def test_session_transaction_rolls_back_when_commit_fails(monkeypatch) -> None:
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
     with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
-        with pytest.raises(RuntimeError, match="boom"):
-            with session.transaction():
-                pass
+        with pytest.raises(RuntimeError, match="boom"), session.transaction():
+            pass
         assert session._transaction_depth == 0
 
     queries = _queries(con)
@@ -743,16 +745,15 @@ def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transacti
             mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
             key_columns=["type_id"],
         )
-        with session.prepare_arrow_source(arrow_table) as source_name:
-            with session.transaction():
-                provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
-                raw.write_prepared_source(
-                    arrow_table,
-                    source_name=source_name,
-                    table=RawDuckLakeTable.MARKET_HISTORY,
-                    mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-                    key_columns=["type_id"],
-                )
+        with session.prepare_arrow_source(arrow_table) as source_name, session.transaction():
+            provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
+            raw.write_prepared_source(
+                arrow_table,
+                source_name=source_name,
+                table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+                key_columns=["type_id"],
+            )
 
     event_names = [event[0] for event in con.events]
     begin_index = next(i for i, event in enumerate(con.events) if event == ("execute", "BEGIN"))
@@ -817,14 +818,13 @@ def test_append_snapshot_sql_uses_temp_sql_view_and_no_arrow(monkeypatch) -> Non
         sql_source = SqlSource(
             sql="SELECT 1 AS order_id, 'soid-1' AS source_ref_id, DATE '2026-01-01' AS source_market_date, TIMESTAMPTZ '2026-01-01T00:00:00+00:00' AS snapshot_ts"
         )
-        with session.prepare_sql_source(sql_source) as source_name:
-            with session.transaction():
-                provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
-                metrics = raw.append_snapshot_prepared_source(
-                    source_name=source_name,
-                    table=RawDuckLakeTable.MARKET_ORDERS,
-                )
-                provenance.mark_ingested("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
+        with session.prepare_sql_source(sql_source) as source_name, session.transaction():
+            provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
+            metrics = raw.append_snapshot_prepared_source(
+                source_name=source_name,
+                table=RawDuckLakeTable.MARKET_ORDERS,
+            )
+            provenance.mark_ingested("soid-1", table=RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS)
 
     assert con.arrow_tables == []
     queries = _queries(con)
@@ -984,10 +984,12 @@ def test_transaction_commit_fail_with_rollback_fail_poisons_session_and_closes_c
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeSession(_MINIMAL_ATTACH) as session:
-        with pytest.raises(RuntimeError, match="commit failed and rollback also failed"):
-            with session.transaction():
-                pass
+    with (
+        DuckLakeSession(_MINIMAL_ATTACH) as session,
+        pytest.raises(RuntimeError, match="commit failed and rollback also failed"),
+        session.transaction(),
+    ):
+        pass
 
     assert session._poisoned is True
     assert session._con is None

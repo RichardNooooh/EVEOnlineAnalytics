@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-
+from eve_ingest.raw_objects.http_models import RevalidationMetadata
+from eve_ingest.raw_objects.ledger.models import (
+    PublicationContext,
+    RawObjectEntry,
+    RawObjectRef,
+    RawObjectVersion,
+)
 from eve_ingest.raw_objects.ledger.row_mappers import (
     entity_to_row,
     normalize_ledger_url,
@@ -11,13 +17,6 @@ from eve_ingest.raw_objects.ledger.row_mappers import (
     raw_object_seen_values,
     raw_object_values,
     raw_object_version_values,
-)
-from eve_ingest.raw_objects.http_models import RevalidationMetadata
-from eve_ingest.raw_objects.ledger.models import (
-    PublicationContext,
-    RawObjectEntry,
-    RawObjectRef,
-    RawObjectVersion,
 )
 from eve_ingest.raw_objects.primitives import UpdateMode
 

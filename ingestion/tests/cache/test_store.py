@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from eve_ingest.raw_objects import RawObjectStore, RawObjectRequest, AcquisitionMode, UpdateMode
+from eve_ingest.raw_objects import AcquisitionMode, RawObjectRequest, RawObjectStore, UpdateMode
 from eve_ingest.raw_objects.http_models import (
     ModifiedRead,
     NotModifiedRead,
@@ -355,20 +355,22 @@ def test_get_rejects_update_mode_mismatch(tmp_path: Path) -> None:
             )
         )
 
-    with _store(
-        tmp_path=tmp_path,
-        client=FakeClient([]),
-        dataset_name="market-orders",
-        update_mode=UpdateMode.MUTABLE,
-        ledger=ledger,
-    ) as store:
-        with pytest.raises(ValueError, match="update_mode mismatch"):
-            store.get(
-                RawObjectRequest(
-                    source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
-                    identity_key={"source": "test"},
-                )
+    with (
+        _store(
+            tmp_path=tmp_path,
+            client=FakeClient([]),
+            dataset_name="market-orders",
+            update_mode=UpdateMode.MUTABLE,
+            ledger=ledger,
+        ) as store,
+        pytest.raises(ValueError, match="update_mode mismatch"),
+    ):
+        store.get(
+            RawObjectRequest(
+                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
+                identity_key={"source": "test"},
             )
+        )
 
 
 def test_get_uses_conditional_headers_for_mutable_files(tmp_path: Path) -> None:
@@ -694,13 +696,12 @@ def test_build_plan_produces_unique_temp_paths(tmp_path: Path) -> None:
 def test_store_rejects_query_string_urls(tmp_path: Path) -> None:
     store = _store(tmp_path=tmp_path, client=FakeClient([]))
 
-    with store:
-        with pytest.raises(ValueError, match="must not include query strings or fragments"):
-            store.get(
-                RawObjectRequest(
-                    source_url="https://data.everef.net/file.csv.bz2?token=abc", identity_key={"source": "test"}
-                )
+    with store, pytest.raises(ValueError, match="must not include query strings or fragments"):
+        store.get(
+            RawObjectRequest(
+                source_url="https://data.everef.net/file.csv.bz2?token=abc", identity_key={"source": "test"}
             )
+        )
 
 
 @pytest.mark.parametrize(
@@ -710,9 +711,8 @@ def test_store_rejects_query_string_urls(tmp_path: Path) -> None:
 def test_store_rejects_invalid_http_source_urls(tmp_path: Path, source_url: str) -> None:
     store = _store(tmp_path=tmp_path, client=FakeClient([]))
 
-    with store:
-        with pytest.raises(ValueError, match="must be an https URL with a host"):
-            store.get(RawObjectRequest(source_url=source_url, identity_key={"source": "test"}))
+    with store, pytest.raises(ValueError, match="must be an https URL with a host"):
+        store.get(RawObjectRequest(source_url=source_url, identity_key={"source": "test"}))
 
 
 def test_store_accepts_non_everef_hosts_and_uncompressed_paths(tmp_path: Path) -> None:
@@ -775,14 +775,13 @@ def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monke
 
     monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectWriter.rotate_version", fail_replace)
 
-    with pytest.raises(RuntimeError, match="boom"):
-        with _store(tmp_path=tmp_path, client=client) as store:
-            store.get(
-                RawObjectRequest(
-                    source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
-                    identity_key={"source": "test"},
-                )
+    with pytest.raises(RuntimeError, match="boom"), _store(tmp_path=tmp_path, client=client) as store:
+        store.get(
+            RawObjectRequest(
+                source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
+                identity_key={"source": "test"},
             )
+        )
 
     final_path = tmp_path / "raw" / "everef" / "market-orders" / "history" / "2026" / "2026-01-01" / "file.csv.bz2"
     assert not final_path.exists()

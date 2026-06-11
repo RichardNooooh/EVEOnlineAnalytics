@@ -2,21 +2,24 @@ from __future__ import annotations
 
 import bz2
 import logging
-import pathlib
 from datetime import date
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pyarrow as pa
 import pytest
-
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.specs import DatasetPublisherSpec, InsertMissingKeysAuthoritativePartition
 from eve_ingest.raw_objects import UpdateMode
-from eve_ingest.publication.prepared_source import PreparedAuthoritativeArrowSource
-from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC, discover_objects, publish_one
 from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
+from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC, discover_objects, publish_one
 from tests.sources.everef.conftest import make_cache_result
+
+if TYPE_CHECKING:
+    import pathlib
+
+    from eve_ingest.publication.prepared_source import PreparedAuthoritativeArrowSource
 
 _ORIGINAL_COLS = [
     "average",

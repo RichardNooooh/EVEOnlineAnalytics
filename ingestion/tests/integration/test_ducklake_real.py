@@ -5,12 +5,11 @@ from datetime import date
 import duckdb
 import pyarrow as pa
 import pytest
-
 from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
 from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
 from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
-from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.ducklake.raw_publish import RawTablePublisher
+from eve_ingest.ducklake.raw_tables import DuckLakeWriterMode, RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.ducklake.session import DuckLakeSession
 
 

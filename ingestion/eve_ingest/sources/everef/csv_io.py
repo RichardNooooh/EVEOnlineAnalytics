@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.csv as pac
 
-from eve_ingest.raw_objects import AcquiredRawObject
 from eve_ingest.util import file_size
+
+if TYPE_CHECKING:
+    from eve_ingest.raw_objects import AcquiredRawObject
 
 logger = logging.getLogger(__name__)
 

@@ -3,21 +3,24 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 
-from eve_ingest.raw_objects import RawObjectRequest, AcquiredRawObject, UpdateMode
-from eve_ingest.cli.config import EverefCliConfig
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.session import SqlSource
+from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
+from eve_ingest.publication.runner import run_dataset_pipeline
 from eve_ingest.publication.specs import (
     AppendSnapshotRows,
     DatasetPublisherSpec,
     SourceDateScope,
 )
+from eve_ingest.raw_objects import AcquiredRawObject, RawObjectRequest, UpdateMode
 from eve_ingest.sources.everef.discovery import build_listed_objects
-from eve_ingest.ducklake.session import SqlSource
-from eve_ingest.publication.context import PublishContext
-from eve_ingest.publication.prepared_source import PreparedSnapshotSqlSource
-from eve_ingest.publication.results import PublishResult
-from eve_ingest.publication.runner import run_dataset_pipeline
+
+if TYPE_CHECKING:
+    from eve_ingest.cli.config import EverefCliConfig
+    from eve_ingest.publication.context import PublishContext
+    from eve_ingest.publication.results import PublishResult
 
 logger = logging.getLogger(__name__)
 
