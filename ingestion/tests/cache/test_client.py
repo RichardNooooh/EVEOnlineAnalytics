@@ -125,7 +125,7 @@ def test_read_streams_file_and_computes_sha256(monkeypatch, tmp_path: Path) -> N
 
     assert result.status is ReadStatus.MODIFIED
     assert result.revalidation.content_length == 11
-    assert result.sha256 == ("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
+    assert result.sha256 == ("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")  # ty: ignore[unresolved-attribute]
     assert temp_path.read_bytes() == b"hello world"
     assert response.closed is True
 

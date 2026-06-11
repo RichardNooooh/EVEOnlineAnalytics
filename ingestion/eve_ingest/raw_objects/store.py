@@ -37,6 +37,7 @@ from eve_ingest.raw_objects.models import (
 )
 from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.publishing import PublicationTracker
+from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
 from eve_ingest.raw_objects.repository import RawObjectRepository
 from eve_ingest.raw_objects.paths import validate_path_segment
 from eve_ingest.util import DEFAULT_RAW_LEDGER_URL, DEFAULT_RAW_ROOT
@@ -130,7 +131,7 @@ class RawObjectStore:
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
         tb: TracebackType | None,
-    ) -> None:
+    ) -> bool | None:
         self._pubtrack = None
         return self._exit_stack.__exit__(exc_type, exc, tb)
 
@@ -196,5 +197,5 @@ class RawObjectStore:
     def load_current_states_for_results(
         self,
         results: Iterable[AcquiredRawObject],
-    ) -> dict[str, ...]:
+    ) -> dict[str, CurrentRawObjectState | None]:
         return self._repository.load_current_states_for_results(results)

@@ -40,7 +40,7 @@ class FakeConnection:
         self.raise_on_execute: str | None = None
         self.raise_on_execute_multi: list[str] = []
         self.fetchall_result: list[tuple[object, ...]] = []
-        self.fetchone_results: list[tuple[object, ...]] = []
+        self.fetchone_results: list[tuple[object, ...] | None] = []
 
     def execute(self, query: str, params: list[str] | None = None) -> FakeConnection:
         if self.raise_on_execute is not None and self.raise_on_execute in query:
@@ -57,7 +57,7 @@ class FakeConnection:
     def fetchone(self) -> tuple[object, ...]:
         if not self.fetchone_results:
             raise AssertionError("no fetchone result queued")
-        return self.fetchone_results.pop(0)
+        return self.fetchone_results.pop(0)  # ty: ignore[invalid-return-type]
 
     def from_arrow(self, arrow_table: pa.Table) -> FakeRelation:
         self.arrow_tables.append(arrow_table)
@@ -759,7 +759,7 @@ def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transacti
     raw_merge_index = next(
         i
         for i, event in enumerate(con.events)
-        if event[0] == "execute" and "MERGE INTO" in event[1] and RawDuckLakeTable.MARKET_HISTORY.value in event[1]
+        if event[0] == "execute" and "MERGE INTO" in event[1] and RawDuckLakeTable.MARKET_HISTORY.value in event[1]  # ty: ignore[unsupported-operator]
     )
 
     assert event_names.count("from_arrow") == 1
@@ -859,7 +859,7 @@ def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) 
     assert len(merge_queries) == 1
     assert len(update_queries) == 1
     assert "source.source_ref_id" in merge_queries[0][0]
-    assert update_queries[0][1][-1] == "soid-1"
+    assert update_queries[0][1][-1] == "soid-1"  # ty: ignore[not-subscriptable]
 
 
 def test_ensure_expected_partitioning_skips_alter_when_metadata_matches(monkeypatch) -> None:
@@ -870,7 +870,7 @@ def test_ensure_expected_partitioning_skips_alter_when_metadata_matches(monkeypa
     )
 
     ensure_expected_partitioning(
-        con,
+        con,  # ty: ignore[invalid-argument-type]
         alias="raw_lake",
         target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
         partition_columns=("source_market_date",),
@@ -885,7 +885,7 @@ def test_ensure_expected_partitioning_emits_exact_target_when_missing(monkeypatc
     monkeypatch.setattr("eve_ingest.ducklake.raw_publish.ducklake_partition_columns", lambda *args, **kwargs: ())
 
     ensure_expected_partitioning(
-        con,
+        con,  # ty: ignore[invalid-argument-type]
         alias="raw_lake",
         target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
         partition_columns=("source_market_date",),
@@ -906,7 +906,7 @@ def test_ensure_expected_partitioning_raises_when_metadata_differs(monkeypatch) 
 
     with pytest.raises(RuntimeError, match="partitioning differs"):
         ensure_expected_partitioning(
-            con,
+            con,  # ty: ignore[invalid-argument-type]
             alias="raw_lake",
             target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
             partition_columns=("source_market_date",),

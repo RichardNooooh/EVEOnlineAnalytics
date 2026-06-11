@@ -37,13 +37,13 @@ def _touch(path: Path) -> None:
 
 def test_list_files_on_disk_empty(tmp_path: Path) -> None:
     ledger = InMemoryRawObjectLedger()
-    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)
+    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)  # ty: ignore[invalid-argument-type]
     assert reconciler.list_files_on_disk() == []
 
 
 def test_list_files_on_disk_skips_temp(tmp_path: Path) -> None:
     ledger = InMemoryRawObjectLedger()
-    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)
+    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)  # ty: ignore[invalid-argument-type]
     _touch(tmp_path / "raw" / "everef" / "file.csv")
     _touch(tmp_path / "raw" / ".tmp" / "everef" / "download.tmp")
     files = reconciler.list_files_on_disk()
@@ -53,7 +53,7 @@ def test_list_files_on_disk_skips_temp(tmp_path: Path) -> None:
 
 def test_list_ledger_paths(tmp_path: Path) -> None:
     ledger = _make_ledger_with_paths(["/ledger/file1.csv", "/ledger/file2.csv"])
-    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)
+    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)  # ty: ignore[invalid-argument-type]
     assert reconciler.list_ledger_paths() == {"/ledger/file1.csv", "/ledger/file2.csv"}
 
 
@@ -61,7 +61,7 @@ def test_find_orphans_none(tmp_path: Path) -> None:
     tracked = str(tmp_path / "raw" / "everef" / "file.csv")
     ledger = _make_ledger_with_paths([tracked])
     _touch(Path(tracked))
-    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)
+    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)  # ty: ignore[invalid-argument-type]
     assert reconciler.find_orphans() == []
 
 
@@ -71,7 +71,7 @@ def test_find_orphans_some(tmp_path: Path) -> None:
     ledger = _make_ledger_with_paths([tracked])
     _touch(Path(tracked))
     _touch(orphan_path)
-    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)
+    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)  # ty: ignore[invalid-argument-type]
     orphans = reconciler.find_orphans()
     assert orphan_path in orphans
     assert Path(tracked) not in orphans
@@ -93,7 +93,7 @@ def test_find_orphans_with_retention(tmp_path: Path) -> None:
 
     os.utime(str(old_orphan), (old_ts, old_ts))
 
-    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)
+    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)  # ty: ignore[invalid-argument-type]
     orphans = reconciler.find_orphans(older_than=timedelta(days=7))
     assert old_orphan in orphans
     assert new_orphan not in orphans
@@ -105,7 +105,7 @@ def test_delete_orphans(tmp_path: Path) -> None:
     ledger = _make_ledger_with_paths([tracked])
     _touch(Path(tracked))
     _touch(orphan_path)
-    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)
+    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)  # ty: ignore[invalid-argument-type]
     count = reconciler.delete_orphans()
     assert count == 1
     assert not orphan_path.exists()
@@ -126,7 +126,7 @@ def test_delete_orphans_respects_retention(tmp_path: Path) -> None:
 
     os.utime(str(old_orphan), (old_ts, old_ts))
 
-    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)
+    reconciler = RawFileReconciler(raw_root=tmp_path / "raw", ledger=ledger)  # ty: ignore[invalid-argument-type]
     count = reconciler.delete_orphans(older_than=timedelta(days=7))
     assert count == 1
     assert not old_orphan.exists()
@@ -135,5 +135,5 @@ def test_delete_orphans_respects_retention(tmp_path: Path) -> None:
 
 def test_list_files_on_disk_when_raw_root_missing(tmp_path: Path) -> None:
     ledger = InMemoryRawObjectLedger()
-    reconciler = RawFileReconciler(raw_root=tmp_path / "nonexistent", ledger=ledger)
+    reconciler = RawFileReconciler(raw_root=tmp_path / "nonexistent", ledger=ledger)  # ty: ignore[invalid-argument-type]
     assert reconciler.list_files_on_disk() == []

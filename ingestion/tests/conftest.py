@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from testcontainers.postgres import PostgresContainer
 
@@ -28,6 +30,6 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest.fixture(scope="session")
-def pg_url() -> str:
+def pg_url() -> Iterator[str]:
     with PostgresContainer("postgres:16-alpine") as pg:
         yield pg.get_connection_url().replace("+psycopg2", "+psycopg")

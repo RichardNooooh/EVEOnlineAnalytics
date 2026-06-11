@@ -64,7 +64,7 @@ def test_get_and_filter_unpublished_with_real_sqlite_ledger(monkeypatch, tmp_pat
         dataset_name="market-history",
         update_mode=UpdateMode.SNAPSHOT,
         raw_root=str(tmp_path / "raw"),
-        client=client,
+        client=client,  # ty: ignore[invalid-argument-type]
         ledger=ledger,
     ) as store:
         stored = store.get(request_obj)

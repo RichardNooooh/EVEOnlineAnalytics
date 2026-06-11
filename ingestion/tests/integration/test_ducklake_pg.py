@@ -143,7 +143,7 @@ def test_replace_table_rows_are_queryable_through_attached_duckdb(
 
     count = raw_con.execute(
         f"SELECT count(*) FROM {quote_identifier(attach_config.alias)}.raw.raw_market_history"
-    ).fetchone()[0]
+    ).fetchone()[0]  # ty: ignore[not-subscriptable]
     assert count == 3
 
 
