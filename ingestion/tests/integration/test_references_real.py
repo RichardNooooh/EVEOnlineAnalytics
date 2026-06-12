@@ -4,14 +4,10 @@ import json
 import tarfile
 from typing import TYPE_CHECKING
 
-import duckdb
 import pytest
-from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
-from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
-from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
 from eve_ingest.ducklake.raw_publish import RawTablePublisher
-from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable, compute_source_ref_id
 from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.publication.context import PublishContext
 from eve_ingest.publication.service import PublicationService
@@ -21,52 +17,10 @@ from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.reference_data import publish_one
 from tests.sources.everef.conftest import make_cache_result
 
+from .conftest import ATTACH, create_lock_token
+
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-class _KeepConnection:
-    def __init__(self) -> None:
-        self._con = duckdb.connect(":memory:")
-
-    def __getattr__(self, name: str):
-        return getattr(self._con, name)
-
-    def close(self) -> None:
-        pass
-
-
-@pytest.fixture
-def shared_con(monkeypatch):
-    con = _KeepConnection()
-    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.bootstrap.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.session.DuckLakeSession._attach", lambda self: None)
-    monkeypatch.setattr("eve_ingest.ducklake.bootstrap._attach_bootstrap", lambda c, config: None)
-    yield con._con
-    con._con.close()
-
-
-_ATTACH = DuckLakeAttachConfig(
-    attach_uri=":memory:",
-    data_path="",
-    metadata_schema="memory",
-    alias="memory",
-)
-
-
-def _test_lock_token() -> DuckLakeLockToken:
-    return DuckLakeLockToken.unsafe_for_tests(
-        ducklake_lock_domains_for_tables(
-            data_tables=tuple(RawDuckLakeTable),
-            provenance_tables=tuple(RawDuckLakeProvenanceTable),
-        )
-    )
-
-
-@pytest.fixture(autouse=True)
-def bootstrapped(shared_con) -> None:
-    bootstrap_raw_ducklake(_ATTACH)
 
 
 def _make_tarball(path: Path, files: dict[str, str]) -> Path:
@@ -143,8 +97,8 @@ def test_process_references_result_writes_real_tables(shared_con, tmp_path: Path
         identity_key={"source_date": "latest"},
         source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
     )
-    lock_token = _test_lock_token()
-    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+    lock_token = create_lock_token()
+    with DuckLakeSession(ATTACH, lock_token=lock_token) as session:
         raw_tables = RawTablePublisher(session, lock_token=lock_token)
         provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
         prep_ctx = SourcePreparationContext(session=session)
@@ -219,8 +173,8 @@ def test_process_references_result_marks_failed_on_archive_error(shared_con, tmp
         identity_key={"source_date": "latest"},
         source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
     )
-    lock_token = _test_lock_token()
-    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+    lock_token = create_lock_token()
+    with DuckLakeSession(ATTACH, lock_token=lock_token) as session:
         raw_tables = RawTablePublisher(session, lock_token=lock_token)
         provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
         prep_ctx = SourcePreparationContext(session=session)
@@ -236,5 +190,11 @@ def test_process_references_result_marks_failed_on_archive_error(shared_con, tmp
             service=service,
             publication_scope="raw:references:full_extract",
         )
-        with pytest.raises((ValueError, RuntimeError, tarfile.ReadError)):
+        with pytest.raises(tarfile.ReadError):
             publish_one(result, ctx)
+
+    compute_source_ref_id("everef", "reference_data", result.version.source_url)
+    prov_rows = shared_con.execute(
+        f'SELECT source_ref_id, status FROM "memory"."raw"."{RawDuckLakeProvenanceTable.REFERENCE_OBJECTS.value}"'
+    ).fetchall()
+    assert prov_rows == []

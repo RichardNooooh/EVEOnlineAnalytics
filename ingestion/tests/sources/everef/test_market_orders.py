@@ -180,11 +180,11 @@ class TestListSnapshotsWithRealFixture:
         assert filenames == self.EXPECTED_FILENAMES
 
 
-class TestBuildCacheObjectsWithRealFixture:
+class TestBuildRawObjectsWithRealFixture:
     fixture_date = date(2025, 1, 1)
     EXPECTED_FILENAMES = TestListSnapshotsWithRealFixture.EXPECTED_FILENAMES
 
-    def test_builds_cache_objects_from_real_listing(self, real_listing_html: str) -> None:
+    def test_builds_raw_objects_from_real_listing(self, real_listing_html: str) -> None:
         with patch.object(everef_discovery, "EverefSnapshotClient") as mock_cls:
             mock_cls.return_value.__enter__.return_value.fetch_text.return_value = real_listing_html
             objects = discover_objects(MagicMock(start_date=self.fixture_date, end_date=self.fixture_date))

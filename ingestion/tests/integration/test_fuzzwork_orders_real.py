@@ -4,11 +4,7 @@ import gzip
 from datetime import UTC
 from typing import TYPE_CHECKING
 
-import duckdb
 import pytest
-from eve_ingest.ducklake.attach_config import DuckLakeAttachConfig
-from eve_ingest.ducklake.bootstrap import bootstrap_raw_ducklake
-from eve_ingest.ducklake.locks import DuckLakeLockToken, ducklake_lock_domains_for_tables
 from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
 from eve_ingest.ducklake.raw_publish import RawTablePublisher
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable, compute_source_ref_id
@@ -21,52 +17,10 @@ from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.fuzzwork_orders import publish_one
 from tests.sources.everef.conftest import make_cache_result
 
+from .conftest import ATTACH, create_lock_token
+
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-class _KeepConnection:
-    def __init__(self) -> None:
-        self._con = duckdb.connect(":memory:")
-
-    def __getattr__(self, name: str):
-        return getattr(self._con, name)
-
-    def close(self) -> None:
-        pass
-
-
-@pytest.fixture
-def shared_con(monkeypatch):
-    con = _KeepConnection()
-    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.bootstrap.duckdb.connect", lambda: con)
-    monkeypatch.setattr("eve_ingest.ducklake.session.DuckLakeSession._attach", lambda self: None)
-    monkeypatch.setattr("eve_ingest.ducklake.bootstrap._attach_bootstrap", lambda c, config: None)
-    yield con._con
-    con._con.close()
-
-
-_ATTACH = DuckLakeAttachConfig(
-    attach_uri=":memory:",
-    data_path="",
-    metadata_schema="memory",
-    alias="memory",
-)
-
-
-def _test_lock_token() -> DuckLakeLockToken:
-    return DuckLakeLockToken.unsafe_for_tests(
-        ducklake_lock_domains_for_tables(
-            data_tables=tuple(RawDuckLakeTable),
-            provenance_tables=tuple(RawDuckLakeProvenanceTable),
-        )
-    )
-
-
-@pytest.fixture(autouse=True)
-def bootstrapped(shared_con) -> None:
-    bootstrap_raw_ducklake(_ATTACH)
 
 
 def _write_orderset_file(path: Path, price: float) -> None:
@@ -91,8 +45,8 @@ def test_process_result_is_idempotent_for_same_fuzzwork_orders_source_object(sha
         source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_00-00-00.csv.gz",
     )
 
-    lock_token = _test_lock_token()
-    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+    lock_token = create_lock_token()
+    with DuckLakeSession(ATTACH, lock_token=lock_token) as session:
         raw_tables = RawTablePublisher(session, lock_token=lock_token)
         provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
         spec = DatasetPublisherSpec(
@@ -124,8 +78,8 @@ def test_process_result_is_idempotent_for_same_fuzzwork_orders_source_object(sha
     assert first_outcome.write_metrics[0].inserted_rows == 1
     assert first_outcome.write_metrics[0].matched_rows == 0
 
-    lock_token = _test_lock_token()
-    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+    lock_token = create_lock_token()
+    with DuckLakeSession(ATTACH, lock_token=lock_token) as session:
         raw_tables = RawTablePublisher(session, lock_token=lock_token)
         provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
         spec = DatasetPublisherSpec(
@@ -176,8 +130,8 @@ def test_process_result_writes_native_tsv_columns_metadata_and_provenance(shared
         source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_00-00-00.csv.gz",
     )
 
-    lock_token = _test_lock_token()
-    with DuckLakeSession(_ATTACH, lock_token=lock_token) as session:
+    lock_token = create_lock_token()
+    with DuckLakeSession(ATTACH, lock_token=lock_token) as session:
         raw_tables = RawTablePublisher(session, lock_token=lock_token)
         provenance = SourceObjectProvenanceRepository(session, lock_token=lock_token)
         spec = DatasetPublisherSpec(

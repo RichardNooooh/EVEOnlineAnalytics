@@ -1,3 +1,5 @@
+"""Tests for raw-object identity and key construction."""
+
 from __future__ import annotations
 
 import hashlib

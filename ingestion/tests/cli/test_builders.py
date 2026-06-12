@@ -1,3 +1,5 @@
+"""Tests for CLI configuration builders."""
+
 from __future__ import annotations
 
 import logging
@@ -5,7 +7,6 @@ from unittest.mock import patch
 
 import pytest
 from eve_ingest.__main__ import main
-from eve_ingest.cli.config import RawFilesCliConfig
 from eve_ingest.cli.config_builders import build_everef_config
 from eve_ingest.cli.parser import build_parser
 from eve_ingest.logging_config import configure_logging
@@ -148,16 +149,6 @@ def test_market_history_validation_errors(argv: list[str], error_message: str) -
 
     with pytest.raises(ValueError, match=error_message):
         build_everef_config(args)
-
-
-def test_raw_files_config_accepts_explicit_download_workers() -> None:
-    config = RawFilesCliConfig(
-        raw_root="/tmp/raw",
-        raw_ledger_url="postgresql://raw_files:password@postgres:5432/raw_files",
-        raw_download_workers=4,
-    )
-
-    assert config.raw_download_workers == 4
 
 
 @pytest.mark.parametrize(

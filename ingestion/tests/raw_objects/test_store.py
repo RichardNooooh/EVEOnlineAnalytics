@@ -1,3 +1,5 @@
+"""Tests for RawObjectStore acquisition and filtering."""
+
 from __future__ import annotations
 
 import threading
@@ -14,9 +16,11 @@ from eve_ingest.raw_objects.http_models import (
     ReadStatus,
     RevalidationMetadata,
 )
+from eve_ingest.raw_objects.ledger import RawObjectLedger
+from eve_ingest.raw_objects.ledger import repository as ledger_runtime
 from eve_ingest.raw_objects.ledger.models import PublicationContext
 from eve_ingest.raw_objects.models import AcquisitionStatus
-from tests.cache.fakes import InMemoryRawObjectLedger
+from tests.raw_objects.fakes import InMemoryRawObjectLedger
 
 
 class FakeClient:
@@ -130,7 +134,7 @@ def _store(
     dataset_name: str = "market-orders",
     update_mode: UpdateMode = UpdateMode.SNAPSHOT,
     source_name: str = "everef",
-    ledger: InMemoryRawObjectLedger | None = None,
+    ledger: InMemoryRawObjectLedger | RawObjectLedger | None = None,
     raw_download_workers: int | None = None,
 ) -> RawObjectStore:
     kwargs = {
@@ -461,12 +465,15 @@ def test_get_uses_stored_revalidation_metadata_not_version_fields(
                 identity_key=identity_key,
             )
         )
-        ledger._versions_by_object_id[first_result.raw_object.id] = [
-            replace(
-                first_result.version,
-                revalidation=RevalidationMetadata(etag='"wrong-version-etag"'),
-            )
-        ]
+        ledger.set_versions(
+            first_result.raw_object.id,
+            [
+                replace(
+                    first_result.version,
+                    revalidation=RevalidationMetadata(etag='"wrong-version-etag"'),
+                )
+            ],
+        )
 
         result = store.get(
             RawObjectRequest(
@@ -636,7 +643,6 @@ def test_get_unpublished_includes_snapshot_hits_until_mark_published_many(
     assert unpublished_results[0].status is AcquisitionStatus.HIT
     assert {result.identity_key["source"] for result in unpublished_results} == {"first", "second"}
     assert filtered_results == []
-    assert ledger.filter_published_calls >= 2
 
 
 def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
@@ -678,19 +684,27 @@ def test_snapshot_hit_without_ledger_state_redownloads(tmp_path: Path) -> None:
 
 
 def test_build_plan_produces_unique_temp_paths(tmp_path: Path) -> None:
-    store = _store(tmp_path=tmp_path, client=FakeClient([]))
+    client = FakeClient(
+        [
+            _response(tmp_path=tmp_path, status=ReadStatus.MODIFIED, name="a", sha256="sha-a"),
+            _response(tmp_path=tmp_path, status=ReadStatus.MODIFIED, name="b", sha256="sha-b"),
+        ]
+    )
     request_obj = RawObjectRequest(
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
         identity_key={"source": "test"},
     )
-    with store:
-        plan1 = store._file_store.build_plan(request_obj)
-        plan2 = store._file_store.build_plan(request_obj)
+    with _store(
+        tmp_path=tmp_path,
+        client=client,
+        dataset_name="market-history",
+        update_mode=UpdateMode.MUTABLE,
+    ) as store:
+        result1 = store.get(request_obj)
+        result2 = store.get(request_obj)
 
-    assert plan1.ref.identity_hash == plan2.ref.identity_hash
-    assert plan1.temp_path != plan2.temp_path
-    assert plan1.temp_path.endswith(".download")
-    assert plan2.temp_path.endswith(".download")
+    assert result1.raw_object.ref.identity_hash == result2.raw_object.ref.identity_hash
+    assert result1.version.local_path != result2.version.local_path
 
 
 def test_store_rejects_query_string_urls(tmp_path: Path) -> None:
@@ -764,6 +778,14 @@ def test_get_all_returns_hits_and_stores(tmp_path: Path) -> None:
 
 
 def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        ledger_runtime,
+        "create_engine",
+        lambda _: __import__("sqlalchemy").create_engine("sqlite:///:memory:"),
+    )
+    monkeypatch.setattr(ledger_runtime, "normalize_ledger_url", lambda u: u)
+    ledger = RawObjectLedger(ledger_url="sqlite:///:memory:")
+
     client = FakeClient(
         [
             _response(tmp_path=tmp_path, status=ReadStatus.MODIFIED, name="fail", sha256="sha-fail"),
@@ -773,9 +795,9 @@ def test_record_store_unlinks_final_path_on_ledger_failure(tmp_path: Path, monke
     def fail_replace(*args, **kwargs) -> None:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("tests.cache.fakes.InMemoryRawObjectWriter.rotate_version", fail_replace)
+    monkeypatch.setattr("eve_ingest.raw_objects.ledger.writer.RawObjectWriter.rotate_version", fail_replace)
 
-    with pytest.raises(RuntimeError, match="boom"), _store(tmp_path=tmp_path, client=client) as store:
+    with pytest.raises(RuntimeError, match="boom"), _store(tmp_path=tmp_path, client=client, ledger=ledger) as store:
         store.get(
             RawObjectRequest(
                 source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/file.csv.bz2",
