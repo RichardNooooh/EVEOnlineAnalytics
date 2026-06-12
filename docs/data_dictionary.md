@@ -40,12 +40,12 @@ Current support tables:
 
 Expected contract elements:
 
-- deterministic `source_object_id` derived from `source_system`, `endpoint`,
+- deterministic `source_ref_id` derived from `source_system`, `endpoint`,
   and `source_url`
 - `source_url`, `sha256`, `content_length`, timestamps, and operational status
   per object
 - `raw_market_orders`, `raw_fuzzwork_orders`, and `raw_market_history` use
-  `source_object_id` as a foreign key for lineage instead of storing
+  `source_ref_id` as a foreign key for lineage instead of storing
   row-level provenance
 - reference row tables carry payload columns only; their provenance is the
   archive object row

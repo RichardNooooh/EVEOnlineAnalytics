@@ -1,3 +1,5 @@
+"""Tests for key-diff validation logic used by authoritative partition publication."""
+
 from __future__ import annotations
 
 import duckdb

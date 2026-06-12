@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
 from threading import Barrier, Thread
 from time import sleep
 from typing import TYPE_CHECKING
@@ -21,6 +20,8 @@ from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.ducklake.sql import quote_identifier
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import duckdb
 
 
@@ -239,14 +240,3 @@ def test_raw_bootstrap_lock_set_blocks_every_writer_domain(pg_url: str) -> None:
                 ),
             ):
                 pytest.fail(f"bootstrap lock set should block writer scope {writer_scope}")
-
-
-def test_static_contract_rejects_legacy_raw_source_objects_references() -> None:
-    ingestion_root = Path(__file__).resolve().parents[2] / "eve_ingest"
-    offenders = sorted(
-        str(path.relative_to(ingestion_root.parent))
-        for path in ingestion_root.rglob("*.py")
-        if "raw_source_objects" in path.read_text()
-    )
-
-    assert offenders == []

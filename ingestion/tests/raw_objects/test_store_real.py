@@ -1,3 +1,5 @@
+"""Integration tests for RawObjectStore with real filesystem operations."""
+
 from __future__ import annotations
 
 from dataclasses import replace
@@ -40,7 +42,6 @@ def _make_ledger(monkeypatch) -> RawObjectLedger:
     )
     monkeypatch.setattr(ledger_runtime, "normalize_ledger_url", lambda u: u)
     ledger = RawObjectLedger(ledger_url="sqlite:///:memory:")
-    ledger._bootstrap()
     return ledger
 
 

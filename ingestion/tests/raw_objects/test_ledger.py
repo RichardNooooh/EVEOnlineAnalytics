@@ -1,3 +1,5 @@
+"""Tests for raw-object ledger operations and versioning."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -66,7 +68,6 @@ def test_ledger_lifecycle(monkeypatch) -> None:
     monkeypatch.setattr(RawObjectLedger, "_bootstrap", _bootstrap)
 
     with ledger.transaction() as tx:
-        assert ledger._engine is engine
         assert isinstance(tx, LedgerTx)
         assert isinstance(tx.reader, RawObjectReader)
         assert isinstance(tx.writer, RawObjectWriter)
@@ -131,7 +132,7 @@ def _insert_version(
 
 def test_rotate_version_rolls_back_on_insert_failure(monkeypatch) -> None:
     ledger = _make_ledger(monkeypatch)
-    with ledger._engine.begin() as con:
+    with ledger.engine.begin() as con:
         _seed_raw_object(con, raw_object_id="obj-1", fetched_at=datetime(2026, 1, 1, tzinfo=UTC))
         _insert_version(
             con,
@@ -166,7 +167,7 @@ def test_rotate_version_rolls_back_on_insert_failure(monkeypatch) -> None:
             storage_encoding="csv",
         )
 
-    with ledger._engine.begin() as con:
+    with ledger.engine.begin() as con:
         rows = ledger_db._fetchall(
             con, select(raw_object_versions).where(raw_object_versions.c.raw_object_id == "obj-1")
         )

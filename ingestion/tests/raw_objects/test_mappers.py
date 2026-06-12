@@ -1,5 +1,8 @@
+"""Tests for raw-object ledger row mappers."""
+
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -170,7 +173,7 @@ class TestEntityToRow:
         assert result["published_at"] == ctx.published_at
         assert result["publication_scope"] == "scope-1"
         assert result["publisher_run_id"] == "run-1"
-        assert isinstance(result["id"], str)
+        assert uuid.UUID(result["id"])
 
     def test_entity_to_row_with_overrides(self) -> None:
         entry = _entry()

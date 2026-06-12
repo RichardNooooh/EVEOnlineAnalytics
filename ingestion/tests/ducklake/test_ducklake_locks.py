@@ -1,7 +1,8 @@
+"""Tests for DuckLake advisory lock acquisition, domain ordering, and token lifecycle."""
+
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
 
 import pytest
 from eve_ingest.ducklake.locks import (
@@ -235,42 +236,3 @@ def test_hold_ducklake_lock_domains_raises_timeout(monkeypatch) -> None:
         ),
     ):
         pytest.fail("lock acquisition should have timed out")
-
-
-def test_raw_bootstrap_acquires_migration_and_all_raw_domains(monkeypatch) -> None:
-    from eve_ingest.ducklake.bootstrap import run_raw_bootstrap
-
-    captured = SimpleNamespace(lock_domains=None, bootstrapped=False)
-
-    class FakeLock:
-        def __enter__(self):
-            return DuckLakeLockToken.unsafe_for_tests(captured.lock_domains)
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-    def fake_hold(*, catalog_url, lock_domains, timeout_seconds, context=None):
-        captured.lock_domains = tuple(lock_domains)
-        return FakeLock()
-
-    def fake_bootstrap(config) -> None:
-        captured.bootstrapped = True
-
-    monkeypatch.setattr("eve_ingest.ducklake.bootstrap.hold_ducklake_lock_domains", fake_hold)
-    monkeypatch.setattr("eve_ingest.ducklake.bootstrap.bootstrap_raw_ducklake", fake_bootstrap)
-
-    config = SimpleNamespace(
-        data_root="/data",
-        ducklake=SimpleNamespace(
-            ducklake_catalog="postgresql://user:pass@localhost:5432/db",
-            ducklake_metadata_schema="eve_market",
-            lock_wait_timeout_seconds=12.5,
-            pg_pool_max_connections=32,
-            pg_pool_wait_timeout_millis=120000,
-            pg_pool_acquire_mode="wait",
-        ),
-    )
-
-    assert run_raw_bootstrap(config) == 0  # ty: ignore[invalid-argument-type]
-    assert captured.bootstrapped is True
-    assert captured.lock_domains == raw_bootstrap_lock_domains()

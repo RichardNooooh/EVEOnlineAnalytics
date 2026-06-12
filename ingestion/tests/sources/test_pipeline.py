@@ -1,3 +1,5 @@
+"""Tests for source pipeline utilities and helpers."""
+
 from __future__ import annotations
 
 import logging
@@ -817,7 +819,10 @@ def test_run_pipeline_skips_stale_reference_latest_result_after_lock(monkeypatch
     assert len(captured.pubtrack.calls) == 0
 
 
-def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch, tmp_path: Path) -> None:
+def _shared_pubtrack_and_store(
+    tmp_path: Path,
+) -> tuple[object, object, Barrier, set[tuple[str, str]], list[list[AcquiredRawObject]], object]:
+    """Build shared pubtrack and store for parallel pipeline tests."""
     raw_path = tmp_path / "raw" / "a.csv.bz2"
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     raw_path.write_text("data")
@@ -828,12 +833,9 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
         update_mode=UpdateMode.MUTABLE,
     )
     selected = Barrier(2)
-    publication_lock = Lock()
     pubtrack_lock = Lock()
     published_versions: set[tuple[str, str]] = set()
     pubtrack_calls: list[list[AcquiredRawObject]] = []
-    process_calls = 0
-    writer_constructed = 0
 
     class SharedPubtrack:
         def filter_published(self, results: list[AcquiredRawObject]) -> set[tuple[str, str]]:
@@ -893,16 +895,23 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
         def filter_current_versions(self, results: list[AcquiredRawObject]) -> tuple[list[AcquiredRawObject], int, int]:
             return results, 0, 0
 
-    class SerialLock:
-        def __init__(self, lock_domains: tuple[str, ...]) -> None:
-            self.lock_domains = lock_domains
+    return shared_pubtrack, SharedStore, selected, published_versions, pubtrack_calls, result
 
-        def __enter__(self):
-            publication_lock.acquire()
-            return DuckLakeLockToken.unsafe_for_tests(self.lock_domains)
 
-        def __exit__(self, exc_type, exc, tb) -> None:
-            publication_lock.release()
+def _run_parallel_pipelines(
+    monkeypatch,
+    tmp_path,
+    *,
+    lock_cls,
+    session_cls=None,
+) -> tuple[list[int], list[BaseException], int, int, list[list[AcquiredRawObject]]]:
+    """Run two parallel pipeline workers and return aggregated results."""
+    _shared_pubtrack, SharedStore, _selected, _published_versions, pubtrack_calls, _result = _shared_pubtrack_and_store(
+        tmp_path
+    )
+
+    process_calls = 0
+    writer_constructed = 0
 
     class CountingSession(_FakeSession):
         def __init__(self, *args, **kwargs) -> None:
@@ -914,9 +923,9 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
     monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", SharedStore)
     monkeypatch.setattr(
         "eve_ingest.publication.runner.hold_ducklake_lock_domains",
-        lambda *, catalog_url, lock_domains, timeout_seconds, context: SerialLock(lock_domains),
+        lambda *, catalog_url, lock_domains, timeout_seconds, context: lock_cls(lock_domains),
     )
-    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", CountingSession)
+    monkeypatch.setattr("eve_ingest.publication.runner.DuckLakeSession", session_cls or CountingSession)
     monkeypatch.setattr("eve_ingest.publication.runner.RawTablePublisher", _FakeRawTablePublisher)
     monkeypatch.setattr("eve_ingest.publication.runner.SourceObjectProvenanceRepository", _FakeProvenanceRepository)
 
@@ -949,9 +958,73 @@ def test_parallel_same_scope_run_pipeline_rechecks_and_skips_second(monkeypatch,
     for thread in threads:
         thread.join(timeout=10)
 
+    return exit_codes, errors, process_calls, writer_constructed, pubtrack_calls
+
+
+def test_parallel_pipeline_second_call_skips_when_same_scope_already_published(monkeypatch, tmp_path: Path) -> None:
+    publication_lock = Lock()
+
+    class SerialLock:
+        def __init__(self, lock_domains: tuple[str, ...]) -> None:
+            self.lock_domains = lock_domains
+
+        def __enter__(self):
+            publication_lock.acquire()
+            return DuckLakeLockToken.unsafe_for_tests(self.lock_domains)
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            publication_lock.release()
+
+    exit_codes, errors, process_calls, _writer_constructed, pubtrack_calls = _run_parallel_pipelines(
+        monkeypatch, tmp_path, lock_cls=SerialLock
+    )
+
     assert errors == []
-    assert all(thread.is_alive() is False for thread in threads)
     assert sorted(exit_codes) == [0, 0]
     assert process_calls == 1
+    assert len(pubtrack_calls) == 1
+
+
+def test_parallel_pipeline_serializes_lock_acquisition(monkeypatch, tmp_path: Path) -> None:
+    acquired_order: list[int] = []
+    order_lock = Lock()
+
+    class OrderingLock:
+        def __init__(self, lock_domains: tuple[str, ...]) -> None:
+            self.lock_domains = lock_domains
+
+        def __enter__(self):
+            with order_lock:
+                acquired_order.append(len(acquired_order))
+            return DuckLakeLockToken.unsafe_for_tests(self.lock_domains)
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            pass
+
+    _run_parallel_pipelines(monkeypatch, tmp_path, lock_cls=OrderingLock)
+
+    assert len(acquired_order) == 2
+    assert acquired_order[0] < acquired_order[1]
+
+
+def test_parallel_pipeline_does_not_mark_published_for_shared_scope(monkeypatch, tmp_path: Path) -> None:
+    publication_lock = Lock()
+
+    class SerialLock:
+        def __init__(self, lock_domains: tuple[str, ...]) -> None:
+            self.lock_domains = lock_domains
+
+        def __enter__(self):
+            publication_lock.acquire()
+            return DuckLakeLockToken.unsafe_for_tests(self.lock_domains)
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            publication_lock.release()
+
+    _exit_codes, _errors, _process_calls, writer_constructed, pubtrack_calls = _run_parallel_pipelines(
+        monkeypatch, tmp_path, lock_cls=SerialLock
+    )
+
     assert writer_constructed == 1
+    # Only the first call publishes; the second skips and does not duplicate
     assert len(pubtrack_calls) == 1

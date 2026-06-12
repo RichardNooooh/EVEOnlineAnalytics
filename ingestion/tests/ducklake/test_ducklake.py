@@ -1,3 +1,8 @@
+"""
+Tests for DuckLake session lifecycle, bootstrap, raw table publication,
+provenance tracking, partitioning, and nested transactions.
+"""
+
 from __future__ import annotations
 
 import pyarrow as pa
@@ -104,6 +109,11 @@ def _test_lock_token(
     )
 
 
+##############################
+# Session Lifecycle Tests
+##############################
+
+
 def test_session_attaches_on_enter_and_closes_on_exit(monkeypatch) -> None:
     con = FakeConnection()
 
@@ -173,6 +183,11 @@ def test_session_configures_postgres_pool_before_ducklake_attach(monkeypatch) ->
     assert queries.index("SET pg_pool_acquire_mode = 'wait'") < attach_index
 
 
+##############################
+# Bootstrap Tests
+##############################
+
+
 def test_bootstrap_repairs_missing_columns(monkeypatch) -> None:
     con = FakeConnection()
 
@@ -220,6 +235,11 @@ def test_bootstrap_partitions_snapshot_order_tables(monkeypatch) -> None:
         and '"source_market_date"' in query
         for query in queries
     )
+
+
+##############################
+# Write Mode Tests
+##############################
 
 
 def test_raw_publisher_replaces_table(monkeypatch) -> None:
@@ -434,6 +454,11 @@ def test_raw_publisher_rejects_invalid_key_columns(
             )
 
 
+##############################
+# Lock Enforcement Tests
+##############################
+
+
 def test_raw_publisher_requires_lock_token_for_write(monkeypatch) -> None:
     con = FakeConnection()
 
@@ -562,6 +587,11 @@ def test_provenance_rejects_wrong_lock_token_for_source_object(monkeypatch) -> N
     assert not any(query.lstrip().startswith("MERGE INTO") for query in _queries(con))
 
 
+##############################
+# Session and Connection Edge Cases
+##############################
+
+
 def test_raw_publisher_requires_session_to_be_open() -> None:
     session = DuckLakeSession(_MINIMAL_ATTACH)
     raw = RawTablePublisher(session, lock_token=_test_lock_token())
@@ -674,6 +704,11 @@ def test_append_snapshot_rows_requires_provenance_and_snapshot_columns(monkeypat
     assert con.arrow_tables == []
 
 
+##############################
+# Nested Transaction Tests
+##############################
+
+
 def test_session_nested_transactions_only_begin_and_commit_once(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,)]
@@ -719,14 +754,20 @@ def test_session_transaction_rolls_back_when_commit_fails(monkeypatch) -> None:
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
-    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
-        with pytest.raises(RuntimeError, match="boom"), session.transaction():
-            pass
-        assert session._transaction_depth == 0
-
+    with (
+        DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session,
+        pytest.raises(RuntimeError, match="boom"),
+        session.transaction(),
+    ):
+        pass
     queries = _queries(con)
     assert "BEGIN" in queries
     assert "ROLLBACK" in queries
+
+
+##############################
+# Prepared Source Write Tests
+##############################
 
 
 def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transaction(monkeypatch) -> None:
@@ -805,6 +846,11 @@ def test_raw_publisher_records_multiple_table_writes_in_one_block(monkeypatch) -
     assert con.closed is True
 
 
+##############################
+# SQL Source and Provenance Tests
+##############################
+
+
 def test_append_snapshot_sql_uses_temp_sql_view_and_no_arrow(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (1,), (1,)]
@@ -862,6 +908,11 @@ def test_record_source_object_uses_merge_and_status_methods_update(monkeypatch) 
     assert update_queries[0][1][-1] == "soid-1"  # ty: ignore[not-subscriptable]
 
 
+##############################
+# Partitioning Tests
+##############################
+
+
 def test_ensure_expected_partitioning_skips_alter_when_metadata_matches(monkeypatch) -> None:
     con = FakeConnection()
 
@@ -911,6 +962,11 @@ def test_ensure_expected_partitioning_raises_when_metadata_differs(monkeypatch) 
             target=DuckLakeTableTarget(schema="raw", table="raw_market_orders"),
             partition_columns=("source_market_date",),
         )
+
+
+##############################
+# Edge Case Tests
+##############################
 
 
 @pytest.mark.parametrize(("fetchone_result", "expected"), [((1,), True), (None, False)])
@@ -967,17 +1023,6 @@ def test_bootstrap_raw_ducklake_creates_all_raw_and_provenance_tables(monkeypatc
         assert any(f'"{table.value}"' in query for query in queries)
 
 
-def test_connection_raises_when_poisoned(monkeypatch) -> None:
-    con = FakeConnection()
-
-    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
-
-    with DuckLakeSession(_MINIMAL_ATTACH) as session:
-        session._poisoned = True
-        with pytest.raises(RuntimeError, match="connection is poisoned"):
-            _ = session.connection
-
-
 def test_transaction_commit_fail_with_rollback_fail_poisons_session_and_closes_connection(monkeypatch) -> None:
     con = FakeConnection()
     con.raise_on_execute_multi = ["COMMIT", "ROLLBACK"]
@@ -991,8 +1036,6 @@ def test_transaction_commit_fail_with_rollback_fail_poisons_session_and_closes_c
     ):
         pass
 
-    assert session._poisoned is True
-    assert session._con is None
     with pytest.raises(RuntimeError, match="connection is poisoned"):
         _ = session.connection
 

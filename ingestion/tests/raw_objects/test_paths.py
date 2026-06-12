@@ -1,3 +1,5 @@
+"""Tests for raw-object filesystem path construction."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

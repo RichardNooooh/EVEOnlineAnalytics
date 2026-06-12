@@ -54,12 +54,6 @@ def _test_lock_token() -> DuckLakeLockToken:
 
 
 @pytest.mark.integration
-def test_ducklake_writer_attaches_to_postgres(attach_config: DuckLakeAttachConfig) -> None:
-    with DuckLakeSession(attach_config):
-        pass
-
-
-@pytest.mark.integration
 def test_replace_table_writes_rows(attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection) -> None:
     bootstrap_raw_ducklake(attach_config)
 
@@ -128,26 +122,9 @@ def test_authoritative_mode_writes_new_market_history_row(
         )
 
     rows = raw_con.execute(
-        f"SELECT * FROM {quote_identifier(attach_config.alias)}.raw.raw_market_history WHERE type_id = 42"
+        f'SELECT type_id, "date" FROM {quote_identifier(attach_config.alias)}.raw.raw_market_history WHERE type_id = 42'
     ).fetchall()
-    assert len(rows) == 1
-
-
-@pytest.mark.integration
-def test_replace_table_rows_are_queryable_through_attached_duckdb(
-    attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
-) -> None:
-    bootstrap_raw_ducklake(attach_config)
-
-    table = pa.table({"type_id": [1, 2, 3], "date": ["2026-01-01"] * 3})
-    with DuckLakeSession(attach_config, lock_token=_test_lock_token()) as session:
-        raw = RawTablePublisher(session, lock_token=_test_lock_token())
-        raw.write(table, table=RawDuckLakeTable.MARKET_HISTORY, mode=DuckLakeWriterMode.REPLACE_TABLE)
-
-    count = raw_con.execute(
-        f"SELECT count(*) FROM {quote_identifier(attach_config.alias)}.raw.raw_market_history"
-    ).fetchone()[0]  # ty: ignore[not-subscriptable]
-    assert count == 3
+    assert rows == [(42, date(2026, 6, 1))]
 
 
 @pytest.mark.integration

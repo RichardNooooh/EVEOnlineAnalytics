@@ -1,3 +1,5 @@
+"""Tests for raw table schema definitions, provenance table mapping, and partitioning."""
+
 from __future__ import annotations
 
 import pytest

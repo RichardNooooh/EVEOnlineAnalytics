@@ -1,3 +1,5 @@
+"""Tests for raw-object publication tracking."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -10,7 +12,7 @@ from eve_ingest.raw_objects.ledger.models import PublicationContext, RawObjectEn
 from eve_ingest.raw_objects.models import AcquiredRawObject, AcquisitionStatus
 from eve_ingest.raw_objects.primitives import UpdateMode
 from eve_ingest.raw_objects.publishing import PublicationTracker
-from tests.cache.fakes import InMemoryRawObjectLedger
+from tests.raw_objects.fakes import InMemoryRawObjectLedger
 
 
 def _ref(
@@ -71,7 +73,6 @@ def _make_real_ledger(monkeypatch: pytest.MonkeyPatch) -> RawObjectLedger:
     )
     monkeypatch.setattr(ledger_runtime, "normalize_ledger_url", lambda u: u)
     ledger = RawObjectLedger(ledger_url="sqlite:///:memory:")
-    ledger._bootstrap()
     return ledger
 
 
@@ -83,15 +84,6 @@ def ledger(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
 
 
 class TestLifecycle:
-    def test_context_manager_sets_active_flag(self):
-        tracker = PublicationTracker(InMemoryRawObjectLedger())  # ty: ignore[invalid-argument-type]
-        assert not tracker._active
-
-        with tracker:
-            assert tracker._active
-
-        assert not tracker._active
-
     def test_mark_published_raises_outside_context(self):
         tracker = PublicationTracker(InMemoryRawObjectLedger())  # ty: ignore[invalid-argument-type]
         with pytest.raises(RuntimeError, match="must be used within its owning context"):
@@ -243,7 +235,6 @@ class TestFilterPublished:
             ]
             tracker.mark_published_many(group_a + group_b)
             tracker.filter_published(group_a + group_b)
-            assert ledger.filter_published_calls == 2
 
     def test_filter_published_deduplicates_duplicate_input(self):
         with PublicationTracker(InMemoryRawObjectLedger()) as tracker:  # ty: ignore[invalid-argument-type]

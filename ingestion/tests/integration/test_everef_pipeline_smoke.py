@@ -4,18 +4,99 @@ import bz2
 import gzip
 import json
 import tarfile
+from contextlib import contextmanager
 from datetime import date
 from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
 
+import pytest
 from eve_ingest.cli.config import EverefCliConfig, EverefReferencesCliConfig
-from eve_ingest.raw_objects import RawObjectRequest
+from eve_ingest.ducklake.locks import DuckLakeLockToken
+from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable, compute_source_ref_id
+from eve_ingest.raw_objects import AcquiredRawObject, RawObjectRequest
+from eve_ingest.raw_objects.ledger.models import CurrentRawObjectState
+from eve_ingest.raw_objects.models import AcquisitionMode
 from eve_ingest.sources.everef import fuzzwork_orders, market_history, market_orders, reference_data
-from tests.sources.everef.conftest import install_pipeline_fakes, make_cache_result, make_everef_pipeline_config
+from tests.sources.everef.conftest import make_cache_result, make_everef_pipeline_config
+
+from .conftest import ATTACH
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import pytest
+    import duckdb
+
+
+def _install_pipeline_infrastructure(
+    monkeypatch: pytest.MonkeyPatch,
+    results: list[AcquiredRawObject],
+    *,
+    assert_mode: AcquisitionMode = AcquisitionMode.CHANGED,
+) -> MagicMock:
+    mock_pubtrack = MagicMock()
+    mock_pubtrack.filter_published.return_value = set()
+    mock_pubtrack.filter_unpublished.side_effect = lambda results: results
+
+    @contextmanager
+    def fake_hold_ducklake_lock_domains(
+        *,
+        catalog_url: str = "",
+        lock_domains: tuple[str, ...] = (),
+        timeout_seconds: float = 60.0,
+        context: object = None,
+    ):
+        yield DuckLakeLockToken.unsafe_for_tests(lock_domains)
+
+    class FakeRawObjectStore:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeRawObjectStore:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        @property
+        def ledger(self) -> MagicMock:
+            return MagicMock()
+
+        @property
+        def pubtrack(self) -> MagicMock:
+            return mock_pubtrack
+
+        def get_many(self, objects: object, *, mode: object = None) -> list[AcquiredRawObject]:
+            assert mode is assert_mode
+            return results
+
+        def acquire_many(self, objects: object) -> list[AcquiredRawObject]:
+            return results
+
+        def load_current_states_for_results(
+            self, selected: list[AcquiredRawObject]
+        ) -> dict[str, CurrentRawObjectState | None]:
+            return {
+                result.raw_object.ref.identity_hash: CurrentRawObjectState(
+                    raw_object=result.raw_object,
+                    current_version=result.version,
+                )
+                for result in selected
+            }
+
+        def filter_current_versions(self, results: list[AcquiredRawObject]) -> tuple[list[AcquiredRawObject], int, int]:
+            return results, 0, 0
+
+    monkeypatch.setattr("eve_ingest.raw_objects.store.RawObjectStore", FakeRawObjectStore)
+    monkeypatch.setattr("eve_ingest.publication.runner.RawObjectStore", FakeRawObjectStore)
+    monkeypatch.setattr(
+        "eve_ingest.publication.runner.hold_ducklake_lock_domains",
+        fake_hold_ducklake_lock_domains,
+    )
+    monkeypatch.setattr(
+        "eve_ingest.publication.runner.build_ducklake_attach_config_from_url",
+        lambda *args, **kwargs: ATTACH,
+    )
+    return mock_pubtrack
 
 
 def _write_history_file(path: Path) -> None:
@@ -58,7 +139,10 @@ def _write_reference_archive(path: Path) -> None:
         archive.add(staging / "market_groups.json", arcname="market_groups.json")
 
 
-def test_market_history_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+@pytest.mark.real_duckdb
+def test_market_history_pipeline_smoke(
+    monkeypatch: pytest.MonkeyPatch, shared_con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
     file_path = tmp_path / "market-history-2026-01-01.csv.bz2"
     _write_history_file(file_path)
 
@@ -68,7 +152,7 @@ def test_market_history_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path
         last_modified="2026-01-02T11:01:55Z",
         source_url="https://data.everef.net/market-history/2026/market-history-2026-01-01.csv.bz2",
     )
-    con, mock_pubtrack = install_pipeline_fakes(monkeypatch, [fake_result])
+    mock_pubtrack = _install_pipeline_infrastructure(monkeypatch, [fake_result])
     monkeypatch.setattr(
         market_history,
         "discover_objects",
@@ -89,10 +173,24 @@ def test_market_history_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path
 
     assert market_history.run_pipeline(config) == 0
     mock_pubtrack.mark_published_many.assert_called_once()
-    assert con.closed is True
+
+    expected_source_ref_id = compute_source_ref_id("everef", "market_history", fake_result.version.source_url)
+    prov_rows = shared_con.execute(
+        f'SELECT source_ref_id, status FROM "memory"."raw"."{RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS.value}"'
+    ).fetchall()
+    assert prov_rows == [(expected_source_ref_id, "ingested")]
+
+    data_rows = shared_con.execute(
+        f'SELECT COUNT(*) FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}"'
+    ).fetchone()
+    assert data_rows is not None
+    assert data_rows[0] == 1
 
 
-def test_market_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+@pytest.mark.real_duckdb
+def test_market_orders_pipeline_smoke(
+    monkeypatch: pytest.MonkeyPatch, shared_con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
     file_path = tmp_path / "market-orders-2026-01-01_00-00-00.v3.csv.bz2"
     _write_orders_file(file_path)
 
@@ -102,7 +200,7 @@ def test_market_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path:
         identity_key={"source_date": "2026-01-01", "snapshot_time": "2026-01-01_00-00-00"},
         source_url="https://data.everef.net/market-orders/history/2026/2026-01-01/market-orders-2026-01-01_00-00-00.v3.csv.bz2",
     )
-    con, mock_pubtrack = install_pipeline_fakes(monkeypatch, [fake_result])
+    mock_pubtrack = _install_pipeline_infrastructure(monkeypatch, [fake_result])
     monkeypatch.setattr(
         market_orders,
         "discover_objects",
@@ -123,10 +221,24 @@ def test_market_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
     assert market_orders.run_pipeline(config) == 0
     mock_pubtrack.mark_published_many.assert_called_once()
-    assert con.closed is True
+
+    expected_source_ref_id = compute_source_ref_id("everef", "market_orders", fake_result.version.source_url)
+    prov_rows = shared_con.execute(
+        f'SELECT source_ref_id, status FROM "memory"."raw"."{RawDuckLakeProvenanceTable.MARKET_ORDERS_OBJECTS.value}"'
+    ).fetchall()
+    assert prov_rows == [(expected_source_ref_id, "ingested")]
+
+    data_rows = shared_con.execute(
+        f'SELECT COUNT(*) FROM "memory"."raw"."{RawDuckLakeTable.MARKET_ORDERS.value}"'
+    ).fetchone()
+    assert data_rows is not None
+    assert data_rows[0] == 1
 
 
-def test_fuzzwork_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+@pytest.mark.real_duckdb
+def test_fuzzwork_orders_pipeline_smoke(
+    monkeypatch: pytest.MonkeyPatch, shared_con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
     file_path = tmp_path / "fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz"
     _write_fuzzwork_file(file_path)
 
@@ -136,7 +248,7 @@ def test_fuzzwork_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_pat
         identity_key={"source_date": "2026-01-01", "order_set_id": "161676", "snapshot_time": "2026-01-01_12-06-49"},
         source_url="https://data.everef.net/fuzzwork/ordersets/2026/2026-01-01/fuzzwork-orderset-161676-2026-01-01_12-06-49.csv.gz",
     )
-    con, mock_pubtrack = install_pipeline_fakes(monkeypatch, [fake_result])
+    mock_pubtrack = _install_pipeline_infrastructure(monkeypatch, [fake_result])
     monkeypatch.setattr(
         fuzzwork_orders,
         "discover_objects",
@@ -161,10 +273,24 @@ def test_fuzzwork_orders_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
     assert fuzzwork_orders.run_pipeline(config) == 0
     mock_pubtrack.mark_published_many.assert_called_once()
-    assert con.closed is True
+
+    expected_source_ref_id = compute_source_ref_id("fuzzwork", "fuzzwork_orders", fake_result.version.source_url)
+    prov_rows = shared_con.execute(
+        f'SELECT source_ref_id, status FROM "memory"."raw"."{RawDuckLakeProvenanceTable.FUZZWORK_ORDERS_OBJECTS.value}"'
+    ).fetchall()
+    assert prov_rows == [(expected_source_ref_id, "ingested")]
+
+    data_rows = shared_con.execute(
+        f'SELECT COUNT(*) FROM "memory"."raw"."{RawDuckLakeTable.FUZZWORK_ORDERS.value}"'
+    ).fetchone()
+    assert data_rows is not None
+    assert data_rows[0] == 1
 
 
-def test_references_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+@pytest.mark.real_duckdb
+def test_references_pipeline_smoke(
+    monkeypatch: pytest.MonkeyPatch, shared_con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
     archive_path = tmp_path / "reference-data-latest.tar.xz"
     _write_reference_archive(archive_path)
 
@@ -175,7 +301,7 @@ def test_references_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
         dataset_name="reference-data",
         source_url="https://data.everef.net/reference-data/reference-data-latest.tar.xz",
     )
-    con, mock_pubtrack = install_pipeline_fakes(monkeypatch, [fake_result])
+    mock_pubtrack = _install_pipeline_infrastructure(monkeypatch, [fake_result])
     monkeypatch.setattr(
         reference_data,
         "discover_objects",
@@ -191,4 +317,19 @@ def test_references_pipeline_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 
     assert reference_data.run_pipeline(config) == 0
     mock_pubtrack.mark_published_many.assert_called_once()
-    assert con.closed is True
+
+    expected_source_ref_id = compute_source_ref_id("everef", "reference_data", fake_result.version.source_url)
+    prov_rows = shared_con.execute(
+        f'SELECT source_ref_id, status FROM "memory"."raw"."{RawDuckLakeProvenanceTable.REFERENCE_OBJECTS.value}"'
+    ).fetchall()
+    assert prov_rows == [(expected_source_ref_id, "ingested")]
+
+    type_rows = shared_con.execute(
+        f'SELECT type_id, name_en FROM "memory"."raw"."{RawDuckLakeTable.REFERENCE_TYPES.value}" ORDER BY type_id'
+    ).fetchall()
+    assert type_rows == [(1, "foo")]
+
+    mg_rows = shared_con.execute(
+        f'SELECT market_group_id, name_en FROM "memory"."raw"."{RawDuckLakeTable.REFERENCE_MARKET_GROUPS.value}" ORDER BY market_group_id'
+    ).fetchall()
+    assert mg_rows == [(1857, "Minerals")]
