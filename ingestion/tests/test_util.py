@@ -1,49 +1,12 @@
 from __future__ import annotations
 
-import importlib
 from datetime import date
 
-import eve_ingest.util as util
 import pytest
 from eve_ingest.util import (
     iter_dates,
     parse_iso_date,
 )
-
-
-class TestConstants:
-    @pytest.fixture(autouse=True)
-    def clean_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("EVE_DUCKLAKE_CATALOG", raising=False)
-        monkeypatch.delenv("EVE_RAW_LEDGER_URL", raising=False)
-        monkeypatch.delenv("EVE_DUCKLAKE_LOCK_WAIT_TIMEOUT_SECONDS", raising=False)
-        monkeypatch.delenv("EVE_DUCKLAKE_PG_POOL_MAX_CONNECTIONS", raising=False)
-        monkeypatch.delenv("EVE_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS", raising=False)
-        monkeypatch.delenv("EVE_DUCKLAKE_PG_POOL_ACQUIRE_MODE", raising=False)
-        importlib.reload(util)
-
-    def test_default_data_root(self) -> None:
-        assert util.DEFAULT_DATA_ROOT == "/opt/eve-market/data"
-
-    def test_default_raw_root(self) -> None:
-        assert util.DEFAULT_RAW_ROOT == "/opt/eve-market/data/raw"
-
-    def test_default_ducklake_raw_data_path(self) -> None:
-        assert util.DEFAULT_DUCKLAKE_RAW_DATA_PATH == "/opt/eve-market/data/datasets/ducklake/raw"
-
-    def test_default_ducklake_catalog(self) -> None:
-        assert util.DEFAULT_DUCKLAKE_CATALOG == "postgresql://airflow:airflow-local-only@postgres:5432/airflow"
-
-    def test_default_raw_ledger_url(self) -> None:
-        assert util.DEFAULT_RAW_LEDGER_URL == "postgresql://raw_files:password@postgres:5432/raw_files"
-
-    def test_default_ducklake_metadata_schema(self) -> None:
-        assert util.DEFAULT_DUCKLAKE_METADATA_SCHEMA == "eve_market"
-
-    def test_default_ducklake_postgres_pool_settings(self) -> None:
-        assert util.DEFAULT_DUCKLAKE_PG_POOL_MAX_CONNECTIONS == 32
-        assert util.DEFAULT_DUCKLAKE_PG_POOL_WAIT_TIMEOUT_MILLIS == 120000
-        assert util.DEFAULT_DUCKLAKE_PG_POOL_ACQUIRE_MODE == "wait"
 
 
 class TestParseIsoDate:

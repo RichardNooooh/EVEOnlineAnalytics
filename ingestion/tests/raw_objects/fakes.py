@@ -1,3 +1,8 @@
+"""
+In-memory fake implementations of raw-object ledger, reader, writer, and
+publication tracker for use in raw_objects unit tests.
+"""
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -220,6 +225,12 @@ class InMemoryRawObjectLedger:
         self._versions_by_object_id: dict[str, list[RawObjectVersion]] = {}
         self._publications: dict[tuple[str, str, str, str], PublicationContext] = {}
         self.filter_published_calls = 0
+
+    def add_version(self, raw_object_id: str, version: RawObjectVersion) -> None:
+        self._versions_by_object_id.setdefault(raw_object_id, []).append(version)
+
+    def set_versions(self, raw_object_id: str, versions: list[RawObjectVersion]) -> None:
+        self._versions_by_object_id[raw_object_id] = versions
 
     def publication_context(self, ref: RawObjectRef, sha256: str) -> PublicationContext | None:
         return self._publications.get((*ref.group_key, ref.identity_hash, sha256))

@@ -47,7 +47,7 @@ def list_snapshots(
     return filenames
 
 
-def collect_cache_objects(
+def discover_raw_objects(
     start_date: date,
     end_date: date,
     entries_fn: Callable[[date], list[RawObjectRequest]],
@@ -148,4 +148,4 @@ def build_deterministic_objects(
             )
         ]
 
-    return collect_cache_objects(start_date, end_date, entries_fn)
+    return discover_raw_objects(start_date, end_date, entries_fn)

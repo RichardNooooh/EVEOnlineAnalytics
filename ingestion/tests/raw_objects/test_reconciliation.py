@@ -1,10 +1,12 @@
+"""Tests for raw-object state reconciliation."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from eve_ingest.raw_objects.reconciliation import RawFileReconciler
-from tests.cache.fakes import InMemoryRawObjectLedger
+from tests.raw_objects.fakes import InMemoryRawObjectLedger
 
 
 def _make_ledger_with_paths(paths: list[str]) -> InMemoryRawObjectLedger:
@@ -26,7 +28,7 @@ def _make_ledger_with_paths(paths: list[str]) -> InMemoryRawObjectLedger:
             storage_encoding="raw",
             version_number=i,
         )
-        ledger._versions_by_object_id.setdefault("obj-orphan", []).append(version)
+        ledger.add_version("obj-orphan", version)
     return ledger
 
 

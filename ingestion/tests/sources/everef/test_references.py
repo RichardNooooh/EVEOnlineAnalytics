@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import tarfile
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from eve_ingest.ducklake.provenance import SourceObjectProvenanceRepository
 from eve_ingest.ducklake.raw_publish import RawTablePublisher
@@ -269,9 +269,14 @@ def test_process_references_prepares_arrow_sources_before_ducklake_transaction(t
     assert len(outcome.write_metrics) == 1
     assert outcome.write_metrics[0].table is RawDuckLakeTable.REFERENCE_MARKET_GROUPS
 
-    session.prepare_arrow_source.assert_called()
+    session.prepare_arrow_source.assert_called_once()
     session.transaction.assert_called_once()
-    provenance.record_source_object.assert_called_once()
-    provenance.mark_parsed.assert_called_once()
-    provenance.mark_ingested.assert_called_once()
-    raw_tables.write_prepared_source.assert_called_once()
+    provenance.record_source_object.assert_called_once_with(ANY, table=RawDuckLakeProvenanceTable.REFERENCE_OBJECTS)
+    provenance.mark_parsed.assert_called_once_with(ANY, table=RawDuckLakeProvenanceTable.REFERENCE_OBJECTS)
+    provenance.mark_ingested.assert_called_once_with(ANY, table=RawDuckLakeProvenanceTable.REFERENCE_OBJECTS)
+    raw_tables.write_prepared_source.assert_called_once_with(
+        ANY,
+        source_name="src_market_groups",
+        table=RawDuckLakeTable.REFERENCE_MARKET_GROUPS,
+        mode=DuckLakeWriterMode.REPLACE_TABLE,
+    )

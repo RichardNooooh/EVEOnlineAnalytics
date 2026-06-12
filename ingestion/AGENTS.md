@@ -73,8 +73,8 @@ or ingestion tests.
 - Choose writer behavior from dataset semantics, not from a generic key list alone.
 - Current ingestion semantics:
   - `market_orders` and `fuzzwork_orders` are snapshot-oriented and append rows per
-    new `source_object_id`; replay idempotency comes from raw publication/provenance
-    state keyed by `source_object_id`, while `source_date` is the publication and lock
+    new `source_ref_id`; replay idempotency comes from raw publication/provenance
+    state keyed by `source_ref_id`, while `source_date` is the publication and lock
     batch scope.
   - `market_history` is source-date-authoritative and validates the covered source-date
     scope before publication.

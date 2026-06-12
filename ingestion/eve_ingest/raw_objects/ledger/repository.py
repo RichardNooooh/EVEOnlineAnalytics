@@ -68,6 +68,11 @@ class RawObjectLedger:
     ) -> None:
         self.close()
 
+    @property
+    def engine(self):
+        """The underlying SQLAlchemy engine. Only used by pytest."""
+        return self._engine
+
     def close(self) -> None:
         """Dispose the SQLAlchemy engine and release connections."""
         self._engine.dispose()

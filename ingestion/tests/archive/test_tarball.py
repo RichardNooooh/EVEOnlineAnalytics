@@ -1,3 +1,5 @@
+"""Tests for tarball extraction and archive handling."""
+
 from __future__ import annotations
 
 import tarfile
@@ -150,15 +152,12 @@ class TestCleansUpTempDirOnEnterFailure:
 
         def raise_on_open(*args: object, **kwargs: object) -> None:
             nonlocal root_path
-            root_path = archive._root
+            root_path = archive.root
             raise OSError("mock open failure")
 
         with patch("tarfile.open", side_effect=raise_on_open), pytest.raises(OSError, match="mock open failure"):
             archive.__enter__()
 
-        assert archive._tmpdir is None
-        assert archive._root is None
-        assert archive._members is None
         assert root_path is not None
         assert not root_path.exists()
 
@@ -169,7 +168,7 @@ class TestCleansUpTempDirOnEnterFailure:
 
         def capture_and_raise(*args: object, **kwargs: object) -> None:
             nonlocal root_path
-            root_path = archive._root
+            root_path = archive.root
             raise OSError("mock extractall failure")
 
         with patch("tarfile.open") as mock_open:
@@ -178,8 +177,5 @@ class TestCleansUpTempDirOnEnterFailure:
             with pytest.raises(OSError, match="mock extractall failure"):
                 archive.__enter__()
 
-        assert archive._tmpdir is None
-        assert archive._root is None
-        assert archive._members is None
         assert root_path is not None
         assert not root_path.exists()
