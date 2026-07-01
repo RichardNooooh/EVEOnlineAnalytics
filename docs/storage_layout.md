@@ -104,9 +104,10 @@ Current planned rules:
 - market order snapshot tables, including Fuzzwork order snapshots, partition by
   `source_market_date`
 - curated tables partition by the smallest stable unit that supports rebuild and
-  efficient downstream reads, typically `date` and optionally `region_id`
-- current curated BI marts `curated_daily_prices` and `curated_trade_volume` use `date`
-  as the primary replacement scope and retain `region_id` and `type_id` at row grain
+  efficient downstream reads, typically `market_date` and optionally `region_id`
+- current curated BI marts `curated_daily_prices` and `curated_trade_volume` use
+  `market_date` as the primary replacement scope and retain `region_id` and `type_id`
+  at row grain
 
 ## Write Semantics and Replacement Scope
 

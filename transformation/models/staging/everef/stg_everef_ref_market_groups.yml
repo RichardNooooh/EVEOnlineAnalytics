@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: stg_everef_ref_market_groups
+    description: Typed Everef market-group reference staging model.
+    columns:
+      - name: market_group_id
+        description: Unique market group identifier.
+        tests:
+          - not_null
+          - unique
+      - name: name_en
+        description: English market group name.
+        tests:
+          - not_null
+      - name: description_en
+        description: English market group description.
+      - name: parent_group_id
+        description: Parent market group identifier.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('stg_everef_ref_market_groups')
+                field: market_group_id
+      - name: has_types
+        description: Whether the market group contains types directly.
+      - name: icon_id
+        description: Icon identifier.

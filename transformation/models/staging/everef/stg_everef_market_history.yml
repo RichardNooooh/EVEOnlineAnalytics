@@ -20,3 +20,19 @@ models:
         description: Volume-weighted average price from ESI market history.
         tests:
           - not_null
+      - name: highest
+        description: Highest observed price.
+        tests:
+          - not_null
+      - name: lowest
+        description: Lowest observed price.
+        tests:
+          - not_null
+      - name: order_count
+        description: Count of market orders.
+        tests:
+          - not_null
+      - name: volume
+        description: Traded volume.
+        tests:
+          - not_null

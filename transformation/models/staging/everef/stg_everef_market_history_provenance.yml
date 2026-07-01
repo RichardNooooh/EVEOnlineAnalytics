@@ -4,7 +4,7 @@ models:
   - name: stg_everef_market_history_provenance
     description: Typed Everef market-history provenance staging model for lineage and debugging.
     columns:
-      - name: date
+      - name: market_date
         description: Source market date stored on the published row.
         tests:
           - not_null
@@ -17,15 +17,23 @@ models:
         tests:
           - not_null
       - name: source_market_date
-        description: Source file date captured during ingestion for lineage validation.
+        description: Source file date from the source-object provenance row.
+        tests:
+          - not_null
+      - name: row_source_market_date
+        description: Source file date stored on the published market-history row.
+        tests:
+          - not_null
+      - name: source_ref_id
+        description: Deterministic object ID for source-file lineage.
         tests:
           - not_null
       - name: source_url
         description: Source URL used to identify the published file.
         tests:
           - not_null
-      - name: source_local_path
-        description: Local cache path used during ingestion when available.
+      - name: storage_uri
+        description: Raw-object storage URI when available.
       - name: source_sha256
         description: SHA-256 of the cached source file when available.
       - name: source_content_length
@@ -36,5 +44,11 @@ models:
         description: Download timestamp for cached source files when available.
       - name: ingested_at
         description: Ingestion timestamp recorded when the file was loaded.
+        tests:
+          - not_null
+      - name: parsed_at
+        description: Parse timestamp recorded when the file was parsed.
+      - name: status
+        description: Source-object ingestion status.
         tests:
           - not_null

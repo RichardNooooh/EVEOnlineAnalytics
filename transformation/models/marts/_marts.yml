@@ -4,7 +4,7 @@ models:
   - name: mart_curated_daily_prices
     description: BI-facing daily price mart derived from canonical market-history facts.
     columns:
-      - name: date
+      - name: market_date
         description: Market observation date.
         tests:
           - not_null
@@ -23,7 +23,7 @@ models:
   - name: mart_curated_trade_volume
     description: BI-facing daily trade volume mart derived from canonical market-history facts.
     columns:
-      - name: date
+      - name: market_date
         description: Market observation date.
         tests:
           - not_null

@@ -23,10 +23,10 @@ dbt data tests finish because dbt tests run after model materialization.
 
 ## Grain And Keys
 
-- grain: one row per `(date, region_id, type_id)`
-- uniqueness expectation: no duplicate rows for `(date, region_id, type_id)`
-- primary replacement scope: `date`
-- common reader filters: `date`, `region_id`, `type_id`
+- grain: one row per `(market_date, region_id, type_id)`
+- uniqueness expectation: no duplicate rows for `(market_date, region_id, type_id)`
+- primary replacement scope: `market_date`
+- common reader filters: `market_date`, `region_id`, `type_id`
 
 ## Upstream Inputs
 
@@ -39,12 +39,12 @@ dbt data tests finish because dbt tests run after model materialization.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `date` | date | Observation date for market history row. |
+| `market_date` | date | Observation date for market history row. |
 | `region_id` | bigint | Market region identifier. |
 | `type_id` | bigint | Item type identifier. |
 | `vwap_price` | double | Daily volume-weighted average price. |
-| `lowest` | double | Lowest observed price for `date`. |
-| `highest` | double | Highest observed price for `date`. |
+| `lowest` | double | Lowest observed price for `market_date`. |
+| `highest` | double | Highest observed price for `market_date`. |
 | `intraday_price_spread` | double | Derived as `highest - lowest`. |
 | `intraday_volatility_ratio` | double | Derived as `(highest - lowest) / vwap_price` when `vwap_price > 0`. |
 | `total_isk_traded` | double | Derived total ISK traded for market date. |

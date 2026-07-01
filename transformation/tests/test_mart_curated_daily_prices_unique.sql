@@ -1,11 +1,11 @@
 with duplicates as (
     select
-        date,
+        market_date,
         region_id,
         type_id,
         count(*) as row_count
     from {{ ref("mart_curated_daily_prices") }}
-    group by date, region_id, type_id
+    group by market_date, region_id, type_id
     having row_count > 1
 )
 

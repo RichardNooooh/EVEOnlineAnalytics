@@ -1,0 +1,48 @@
+version: 2
+
+models:
+  - name: stg_everef_ref_types
+    description: Typed Everef item-type reference staging model.
+    columns:
+      - name: type_id
+        description: Unique item type identifier.
+        tests:
+          - not_null
+          - unique
+      - name: name_en
+        description: English item name.
+        tests:
+          - not_null
+      - name: published
+        description: Whether the type is published in-game.
+        tests:
+          - not_null
+      - name: group_id
+        description: Item group identifier.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('stg_everef_ref_groups')
+                field: group_id
+      - name: category_id
+        description: Item category identifier.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('stg_everef_ref_categories')
+                field: category_id
+      - name: market_group_id
+        description: Market group identifier.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('stg_everef_ref_market_groups')
+                field: market_group_id
+      - name: description_en
+        description: English item description.
+      - name: volume
+        description: Item volume in cubic meters.
+      - name: icon_id
+        description: Icon identifier.
+      - name: meta_group_id
+        description: Meta group identifier.

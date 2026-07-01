@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: stg_everef_fuzzwork_orders_provenance
+    description: Typed Everef fuzzwork orders provenance staging model for lineage and debugging.
+    columns:
+      - name: order_id
+        description: Unique order identifier.
+        tests:
+          - not_null
+      - name: type_id
+        description: Item type identifier.
+        tests:
+          - not_null
+      - name: region_id
+        description: Market region identifier.
+        tests:
+          - not_null
+      - name: source_ref_id
+        description: Deterministic object ID for source-file lineage.
+        tests:
+          - not_null
+      - name: source_market_date
+        description: Source file market date captured during ingestion.
+        tests:
+          - not_null
+      - name: snapshot_ts
+        description: Snapshot timestamp captured during ingestion.
+        tests:
+          - not_null
