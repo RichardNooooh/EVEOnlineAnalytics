@@ -59,7 +59,7 @@ directly to that PostgreSQL-backed DuckLake catalog.
 - `DBT_POSTGRES_HOST`: Postgres host used by the default local attach string. Defaults to `127.0.0.1`.
 - `DBT_DUCKLAKE_ALIAS`: attached DuckLake alias used by sources. Defaults to `raw_lake`.
 - `DBT_DUCKLAKE_ATTACH_PATH`: DuckLake attach path. Local default targets Compose PostgreSQL on `127.0.0.1:5432` for supported host-dbt workflow using `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_HOST_PORT` defaults.
-- `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `../.local/data/datasets/ducklake/raw/raw_market_history`.
+- `DBT_DUCKLAKE_DATA_PATH`: DuckLake data path passed during attach. Local default is `../.local/data/datasets/ducklake/raw`.
 - `DBT_DUCKLAKE_METADATA_SCHEMA`: DuckLake metadata schema inside the catalog database. Defaults to `eve_market`.
 - `DBT_DUCKLAKE_OVERRIDE_DATA_PATH`: Override the catalog's stored data path for the current connection. Use `0` or `1`. Defaults to `1` because the local catalog stores the container path.
 - `CURATED_DUCKLAKE_ATTACH_PATH`: Writable curated DuckLake attach path used by final published mart models. Defaults to local Compose PostgreSQL on `127.0.0.1:5432` for supported host-dbt workflow.
@@ -73,7 +73,7 @@ Mounted/PostgreSQL-backed example:
 
 ```bash
 export DBT_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=eve_market_ducklake host=postgres.example user=user password=password"
-export DBT_DUCKLAKE_DATA_PATH="/opt/eve-market/data/datasets/ducklake/raw/raw_market_history"
+export DBT_DUCKLAKE_DATA_PATH="/opt/eve-market/data/datasets/ducklake/raw"
 export CURATED_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=eve_market_ducklake host=postgres.example user=user password=password"
 export CURATED_DUCKLAKE_DATA_PATH="/opt/eve-market/data/datasets/ducklake"
 uv run dbt debug --profiles-dir .

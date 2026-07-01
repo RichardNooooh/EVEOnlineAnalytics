@@ -119,7 +119,7 @@ Current implemented curated price mart for BI publication.
 
 Contract highlights:
 
-- grain is one row per `(date, region_id, type_id)`
+- grain is one row per `(market_date, region_id, type_id)`
 - `vwap_price` carries forward ESI `average` semantics as VWAP
 - `intraday_price_spread` is derived as `highest - lowest`
 - `intraday_volatility_ratio` is derived as `(highest - lowest) / vwap_price` when
@@ -132,7 +132,7 @@ Current implemented curated trade-volume mart for BI publication.
 
 Contract highlights:
 
-- grain is one row per `(date, region_id, type_id)`
+- grain is one row per `(market_date, region_id, type_id)`
 - `traded_units` carries forward staged daily volume
 - `total_isk_traded` is derived as `volume * average` in upstream `fact_market_history`
 - `average_isk_per_order` is derived as `total_isk_traded / order_count` when

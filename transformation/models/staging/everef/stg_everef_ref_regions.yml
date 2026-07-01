@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: stg_everef_ref_regions
+    description: Typed Everef region reference staging model.
+    columns:
+      - name: region_id
+        description: Unique region identifier.
+        tests:
+          - not_null
+          - unique
+      - name: name_en
+        description: English region name.
+        tests:
+          - not_null
+      - name: description_en
+        description: English region description.
+      - name: universe_id
+        description: Universe identifier.
+      - name: faction_id
+        description: Faction identifier.
+      - name: wormhole_class_id
+        description: Wormhole class identifier.
