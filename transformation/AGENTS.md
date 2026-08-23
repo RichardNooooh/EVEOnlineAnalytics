@@ -23,8 +23,7 @@ or ML feature transforms.
 
 ## Model Layers
 
-- `models/staging/everef/`: source-shaped everef cleanup and typing.
-- `models/staging/esi/`: source-shaped ESI cleanup and typing.
+- `models/staging/`: source-shaped cleanup and typing.
 - `models/intermediate/`: reusable joins and derived entities.
 - `models/marts/`: BI-facing analytical models, including `fact_`, `dim_`, and denormalized `mart_` outputs.
 - `models/ml_features/`: ML-facing feature contracts.
