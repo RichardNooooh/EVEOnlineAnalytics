@@ -15,6 +15,56 @@ duckdb = "latest"
 # Python linting/formatting
 pre-commit = "latest"
 
+[tasks."duckdb:connect"]
+description = "Open an in-memory DuckDB shell with local DuckLake publications attached read-only"
+env = { _.file = "infra/local/.env" }
+raw = true
+run = '''
+repo_root=$(git rev-parse --show-toplevel) || {
+  printf '%s\n' "Unable to locate the repository root." >&2
+  exit 1
+}
+
+postgres_db=${POSTGRES_DB:-airflow}
+postgres_user=${POSTGRES_USER:-airflow}
+postgres_host=${DBT_POSTGRES_HOST:-127.0.0.1}
+postgres_port=${POSTGRES_HOST_PORT:-5432}
+
+if [ -z "${POSTGRES_PASSWORD:-}" ]; then
+  printf '%s\n' "POSTGRES_PASSWORD must be set in infra/local/.env." >&2
+  exit 1
+fi
+postgres_password=$POSTGRES_PASSWORD
+
+case "$postgres_port" in
+  ''|*[!0-9]*)
+    printf '%s\n' "POSTGRES_HOST_PORT must be a numeric port." >&2
+    exit 1
+    ;;
+esac
+
+sql_escape() {
+  printf '%s' "$1" | sed "s/'/''/g"
+}
+
+umask 077
+init_file=$(mktemp) || exit 1
+trap 'rm -f "$init_file"' EXIT HUP INT TERM
+
+{
+  printf '%s\n' 'install postgres;' 'load postgres;' 'install ducklake;' 'load ducklake;'
+  printf "create secret ducklake_catalog (type postgres, host '%s', port %s, database '%s', user '%s', password '%s');\n" \
+    "$(sql_escape "$postgres_host")" "$postgres_port" "$(sql_escape "$postgres_db")" \
+    "$(sql_escape "$postgres_user")" "$(sql_escape "$postgres_password")"
+  printf "attach 'ducklake:postgres:' as raw_lake (data_path '%s', metadata_schema 'eve_market', override_data_path true, meta_secret ducklake_catalog, read_only);\n" \
+    "$(sql_escape "$repo_root/.local/data/datasets/ducklake/raw")"
+  printf "attach 'ducklake:postgres:' as curated_lake (data_path '%s', metadata_schema 'eve_market', override_data_path true, meta_secret ducklake_catalog, read_only);\n" \
+    "$(sql_escape "$repo_root/.local/data/datasets/ducklake")"
+} >"$init_file"
+
+duckdb -bail -init "$init_file" :memory:
+'''
+
 [tasks."ingestion:image"]
 description = "Build the local ingestion image"
 env = { _.file = "infra/local/.env" }

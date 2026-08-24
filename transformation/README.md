@@ -20,8 +20,7 @@ Default local profile writes DuckDB work state to scratch path
 `/tmp/eve_market_transform.duckdb`.
 
 The Python `duckdb` package used by `dbt-duckdb` does not provide the standalone
-DuckDB CLI binary. Install the DuckDB CLI separately if you want an interactive
-shell for inspecting the dbt scratch database.
+DuckDB CLI binary. Mise manages the CLI for this project.
 
 The same profile attaches the local Compose-published raw DuckLake under repo-root
 `.local/data` through PostgreSQL-backed DuckLake catalog metadata so dbt reads the
@@ -102,25 +101,29 @@ uv run dbt compile --profiles-dir .
 uv run dbt build --profiles-dir .
 ```
 
-To inspect the dbt scratch database in DuckDB CLI against that same Compose-backed
-local publication, source the same env file and open the scratch database directly:
+## DuckDB Inspection
+
+Use the recommended in-memory inspection shell from any project directory:
 
 ```bash
-source ./dbt-airflow-local.env.example.sh
-duckdb -readonly "${DBT_DUCKDB_PATH}"
+mise run duckdb:connect
 ```
 
-Useful first queries:
+It loads `infra/local/.env` and attaches the local PostgreSQL-backed publications
+read-only as `raw_lake` and `curated_lake`. The task exits clearly if the local
+catalog is unavailable. `curated_lake` contains curated tables only after
+`mise run transform:build` completes. Useful first queries:
 
 ```sql
 show databases;
-show tables;
-select * from main.stg_everef_market_history limit 5;
+show all tables;
+select count(*) from raw_lake.raw.raw_market_history;
+select * from curated_lake.curated.curated_daily_prices limit 5;
 ```
 
-If you want to query `raw_lake` or `curated_lake` from DuckDB CLI, attach them manually
-with the same `DBT_DUCKLAKE_*` and `CURATED_DUCKLAKE_*` values that dbt uses before
-running publication queries.
+`/tmp/eve_market_transform.duckdb` remains dbt's local scratch state, not the
+recommended publication-inspection database. Open it directly only when inspecting
+dbt's transient staging, intermediate, or fact relations.
 
 If `5432` is already in use on your host, set `POSTGRES_HOST_PORT` in
 `infra/local/.env` and export matching `POSTGRES_HOST_PORT` or `DBT_DUCKLAKE_ATTACH_PATH`
