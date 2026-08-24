@@ -66,11 +66,11 @@ Production mapping:
 Basic commands:
 
 ```bash
-make local-airflow-up
-make local-bi-up
-make local-airflow-down
-make local-airflow-reset
-make local-pipeline-smoke
+mise run airflow:up
+mise run bi:up
+mise run bi:down
+mise run airflow:down
+mise run airflow:reset
 ```
 
 Expected development loop:
