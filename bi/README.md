@@ -22,9 +22,8 @@ Current curated pages read:
 ## Local Setup
 
 ```bash
-make local-airflow-up
-make local-bi-up
-make local-bi-smoke
+mise run airflow:up
+mise run bi:up
 ```
 
 Open local app at `http://localhost:3000` in host browser. Compose serves Evidence
@@ -33,7 +32,7 @@ from container; browser entrypoint stays local.
 Stop local BI service:
 
 ```bash
-make local-bi-down
+mise run bi:down
 ```
 
 ## Data Source Notes
@@ -43,4 +42,4 @@ make local-bi-down
 - local source queries reuse `CURATED_DUCKLAKE_*` naming from `transformation/` through
   Evidence `EVIDENCE_VAR__*` environment mapping in Compose
 - Compose service mounts repo-root `.local/data` read-only at `/data`
-- if curated publication is missing from local DuckLake catalog, `make local-bi-smoke` and `make local-bi-up` fail by design
+- if curated publication is missing from the local DuckLake catalog, `mise run bi:up` fails by design

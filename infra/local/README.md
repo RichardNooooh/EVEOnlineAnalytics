@@ -60,7 +60,7 @@ DuckLake catalog while keeping its scratch DuckDB on host-local storage.
 
 ```bash
 cp infra/local/.env.example infra/local/.env
-make local-airflow-up
+mise run airflow:up
 ```
 
 Open Airflow at <http://localhost:8080>. Default local login is `admin` / `admin` unless changed in `infra/local/.env`.
@@ -74,7 +74,7 @@ If that port is already in use, set `POSTGRES_HOST_PORT` in `infra/local/.env`.
 Start local Evidence BI through Compose profile `bi`:
 
 ```bash
-make local-bi-up
+mise run bi:up
 ```
 
 Open local BI at <http://localhost:3000> in host browser. Compose serves Evidence
@@ -83,7 +83,7 @@ from container; browser entrypoint stays local.
 Build the ingestion task image used by local `DockerOperator` DAGs:
 
 ```bash
-make ingestion-image
+mise run ingestion:image
 ```
 
 Local DAGs default to `eve-market-ingestion:local`. Set
@@ -119,7 +119,7 @@ the host Docker group ID from `getent group docker | cut -d: -f3`.
 ## Stop
 
 ```bash
-make local-airflow-down
+mise run airflow:down
 ```
 
 ## Reset
@@ -128,33 +128,19 @@ This deletes local Airflow metadata volume, local Evidence named volumes, plus
 `.local/data` and `.local/logs`.
 
 ```bash
-make local-airflow-reset CONFIRM=yes
+mise run airflow:reset
 ```
 
-## Smoke Check
-
-```bash
-make local-pipeline-smoke
-```
-
-Smoke check verifies Airflow metadata DB connectivity, expected mount roots, and
-that Airflow can parse the checked-in `backfill_market_history` DAG with stock
-providers.
-
-Smoke check the local DockerOperator path:
-
-```bash
-make local-airflow-docker-smoke
-```
+Mise asks for confirmation before deleting local state.
 
 ## Development Loop
 
 1. edit ingestion and dlt code
-2. `make ingestion-image`
+2. `mise run ingestion:image`
 3. run raw backfill through local Airflow
 4. run host dbt from `transformation/` against local Compose PostgreSQL
-5. run `make local-data-permissions-fix` if needed, then host `dbt build` so final curated marts materialize into repo-root `.local/data`
-6. run local Evidence through Compose profile `bi`
+5. run `mise run transform:build` to prepare data permissions and build curated marts into repo-root `.local/data`
+6. run `mise run bi:up` to generate Evidence sources and start local BI
 7. commit
 8. validate in CI and publish GHCR image tags from trusted `master` builds
 9. deploy through `homelab-data-platform`
@@ -167,7 +153,7 @@ make local-airflow-docker-smoke
   container `dlt` runtime state should remain ephemeral.
 - The `raw_files` ledger DB/user is created by Postgres init scripts only when the
   `postgres-data` volume is first initialized. If you already started the stack before
-  adding it, run `make local-airflow-reset CONFIRM=yes` or create the DB/user manually.
+  adding it, run `mise run airflow:reset` or create the DB/user manually.
 - DuckDB files created by local experiments must stay local or scratch-only.
 - The Docker socket mount gives Airflow local control over the host Docker daemon. Keep
   this local-only; do not use this pattern in k3s.

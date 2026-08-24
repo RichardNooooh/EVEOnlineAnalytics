@@ -35,15 +35,15 @@ This means curated tables become visible when model materialization finishes. db
 tests still run after those table writes, so this workflow does not provide a
 pre-visibility validation barrier.
 
-For the local Compose harness, run `make -C .. local-data-permissions-fix` before host
-`dbt build` if mounted `.local/data` still reflects container-only write permissions.
+For the local Compose harness, `mise run transform:build` prepares mounted data
+permissions before running the supported host `dbt build`.
 
 Populate reviewer-style local data through Docker Compose + Airflow path:
 
 ```bash
 cp ../infra/local/.env.example ../infra/local/.env
-make -C .. local-airflow-up
-make -C .. ingestion-image
+mise run airflow:up
+mise run ingestion:image
 ```
 
 Then trigger the `backfill_market_history` DAG in Airflow so published DuckLake data
@@ -91,8 +91,8 @@ For copy-pasteable supported host-dbt local Compose example, see
 `dbt-airflow-local.env.example.sh`.
 That helper also creates the local curated DuckLake schema directory before first write.
 If local Compose created `.local/data` with container-owned permissions, run
-`make -C .. local-data-permissions-fix` before host dbt writes.
-From `transformation/` you can run:
+`mise run transform:build` from the repository root. From `transformation/` you can
+also run individual dbt commands:
 
 ```bash
 source ./dbt-airflow-local.env.example.sh
@@ -125,13 +125,6 @@ running publication queries.
 If `5432` is already in use on your host, set `POSTGRES_HOST_PORT` in
 `infra/local/.env` and export matching `POSTGRES_HOST_PORT` or `DBT_DUCKLAKE_ATTACH_PATH`
 before running dbt.
-
-Local Compose-backed smoke example after `make -C .. local-airflow-up`:
-
-```bash
-uv run dbt debug --profiles-dir .
-uv run dbt build --profiles-dir .
-```
 
 Current first-pass curated outputs:
 

@@ -127,11 +127,13 @@ in DuckLake data files and PostgreSQL-backed services, not container-local runti
 Local Compose commands:
 
 ```bash
-make local-airflow-up
-make local-airflow-down
-make local-airflow-reset
-make local-pipeline-smoke
+mise run airflow:up
+mise run airflow:down
+mise run airflow:reset
 ```
+
+`mise run airflow:reset` uses Mise's native confirmation prompt before removing
+local Compose volumes, `.local/data`, and `.local/logs`.
 
 See `infra/local/README.md` for current local harness details. Production-style
 runtime implementation and platform operations belong in
