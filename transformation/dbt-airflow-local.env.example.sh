@@ -10,12 +10,18 @@
 export DBT_DUCKDB_PATH="/tmp/eve_market_transform.duckdb"
 export DBT_THREADS="4"
 export DBT_DUCKLAKE_ALIAS="raw_lake"
-export DBT_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=airflow host=127.0.0.1 port=5432 user=airflow password=airflow-local-only"
+if [ "${DBT_DUCKLAKE_ATTACH_PATH+x}" != "x" ]; then
+    DBT_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=${POSTGRES_DB:-airflow} host=${DBT_POSTGRES_HOST:-127.0.0.1} port=${POSTGRES_HOST_PORT:-5432} user=${POSTGRES_USER:-airflow} password=${POSTGRES_PASSWORD:-airflow-local-only}"
+fi
+export DBT_DUCKLAKE_ATTACH_PATH
 export DBT_DUCKLAKE_DATA_PATH="../.local/data/datasets/ducklake/raw"
 export DBT_DUCKLAKE_METADATA_SCHEMA="eve_market"
 export DBT_DUCKLAKE_OVERRIDE_DATA_PATH="1"
 
-export CURATED_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=airflow host=127.0.0.1 port=5432 user=airflow password=airflow-local-only"
+if [ "${CURATED_DUCKLAKE_ATTACH_PATH+x}" != "x" ]; then
+    CURATED_DUCKLAKE_ATTACH_PATH="ducklake:postgres:dbname=${POSTGRES_DB:-airflow} host=${DBT_POSTGRES_HOST:-127.0.0.1} port=${POSTGRES_HOST_PORT:-5432} user=${POSTGRES_USER:-airflow} password=${POSTGRES_PASSWORD:-airflow-local-only}"
+fi
+export CURATED_DUCKLAKE_ATTACH_PATH
 export CURATED_DUCKLAKE_DATA_PATH="../.local/data/datasets/ducklake"
 export CURATED_DUCKLAKE_ALIAS="curated_lake"
 export CURATED_DUCKLAKE_SCHEMA="curated"
