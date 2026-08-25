@@ -111,3 +111,13 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, PowerBI, and Tableau.
 - Reusable platform infrastructure lives in [`homelab-data-platform`](https://github.com/RichardNooooh/HomeLabDataPlatform).
 - In this repo, `infra/local/` remains the supported local analytics reviewer/demo
   harness.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Domain documentation uses a single-context layout. See `docs/agents/domain.md`.
