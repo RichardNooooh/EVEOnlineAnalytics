@@ -106,6 +106,7 @@ uv run dbt run-operation cleanup_untracked_relations --profiles-dir . --args '{a
 [tasks."ingestion:image"]
 description = "Build the local ingestion image"
 env = { _.file = "infra/local/.env" }
+raw = true
 run = '''
 sudo docker rmi "${EVE_MARKET_INGESTION_IMAGE:-eve-market-ingestion:local}" 2>/dev/null || true
 sudo docker build --pull --no-cache -f ingestion/Dockerfile -t "${EVE_MARKET_INGESTION_IMAGE:-eve-market-ingestion:local}" ingestion
@@ -114,6 +115,7 @@ sudo docker build --pull --no-cache -f ingestion/Dockerfile -t "${EVE_MARKET_ING
 [tasks."airflow:up"]
 description = "Start the local Airflow and Postgres stack"
 env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
 run = '''
 mkdir -p .local/data .local/logs
 sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml up -d
@@ -122,12 +124,14 @@ sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.
 [tasks."airflow:down"]
 description = "Stop the local Airflow and Postgres stack"
 env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
 run = "sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml down --remove-orphans"
 
 [tasks."airflow:reset"]
 description = "Delete local Airflow stack state"
 confirm = { message = "Delete local Airflow volumes, data, and logs?", default = "no" }
 env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
 run = '''
 sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml down --volumes --remove-orphans
 rm -rf .local/data .local/logs
@@ -136,6 +140,7 @@ rm -rf .local/data .local/logs
 [tasks."transform:build"]
 description = "Prepare local data permissions and build dbt models"
 env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
 run = '''
 set -e
 repo_root=$(git rev-parse --show-toplevel) || {
@@ -156,6 +161,7 @@ uv run dbt build --profiles-dir .
 [tasks."bi:up"]
 description = "Generate Evidence sources and start local BI"
 env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
 run = '''
 mkdir -p .local/data .local/logs
 sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml --profile bi run --rm evidence /bin/sh -lc "if [ ! -x node_modules/.bin/evidence ]; then npm ci; fi && npm run sources"
@@ -165,4 +171,5 @@ sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.
 [tasks."bi:down"]
 description = "Stop local Evidence BI"
 env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
 run = "sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml --profile bi stop evidence"
