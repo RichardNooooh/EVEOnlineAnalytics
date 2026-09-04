@@ -3,6 +3,18 @@
 Standalone dbt project for curated analytics models. Commands below assume you are
 already in `transformation/`.
 
+## SQL Linting
+
+Use `.sqlfluff` for fast local Jinja linting and formatting. `.sqlfluff.dbt` is
+the authoritative dbt-templated configuration used by CI. Run from
+`transformation/`:
+
+```bash
+uv run sqlfluff fix . --ignore-local-config --config .sqlfluff
+uv run sqlfluff lint . --ignore-local-config --config .sqlfluff
+uv run sqlfluff lint . --ignore-local-config --config .sqlfluff.dbt
+```
+
 ## Local CLI
 
 Supported local exception: run dbt on host while it attaches to local Compose
