@@ -8,9 +8,168 @@ node = "22.22.3" # Static site and BI tooling
 # Tools
 jq = "latest"
 ripgrep = "latest"
+usage = "latest"
 
 # Data engineering
 duckdb = "latest"
 
 # Python linting/formatting
 pre-commit = "latest"
+
+[tasks."duckdb:connect"]
+description = "Open an in-memory DuckDB shell with local DuckLake publications attached read-only"
+env = { _.file = "infra/local/.env" }
+raw = true
+run = '''
+repo_root=$(git rev-parse --show-toplevel) || {
+  printf '%s\n' "Unable to locate the repository root." >&2
+  exit 1
+}
+
+postgres_db=${POSTGRES_DB:-airflow}
+postgres_user=${POSTGRES_USER:-airflow}
+postgres_host=${DBT_POSTGRES_HOST:-127.0.0.1}
+postgres_port=${POSTGRES_HOST_PORT:-5432}
+
+if [ -z "${POSTGRES_PASSWORD:-}" ]; then
+  printf '%s\n' "POSTGRES_PASSWORD must be set in infra/local/.env." >&2
+  exit 1
+fi
+postgres_password=$POSTGRES_PASSWORD
+
+case "$postgres_port" in
+  ''|*[!0-9]*)
+    printf '%s\n' "POSTGRES_HOST_PORT must be a numeric port." >&2
+    exit 1
+    ;;
+esac
+
+sql_escape() {
+  printf '%s' "$1" | sed "s/'/''/g"
+}
+
+umask 077
+init_file=$(mktemp) || exit 1
+trap 'rm -f "$init_file"' EXIT HUP INT TERM
+
+{
+  if [ -r "${HOME}/.duckdbrc" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '%s\n' "$line"
+    done <"${HOME}/.duckdbrc"
+    printf '%s\n' ';'
+  fi
+  printf '%s\n' 'install postgres;' 'load postgres;' 'install ducklake;' 'load ducklake;'
+  printf "create secret ducklake_catalog (type postgres, host '%s', port %s, database '%s', user '%s', password '%s');\n" \
+    "$(sql_escape "$postgres_host")" "$postgres_port" "$(sql_escape "$postgres_db")" \
+    "$(sql_escape "$postgres_user")" "$(sql_escape "$postgres_password")"
+  printf "attach 'ducklake:postgres:' as raw_lake (data_path '%s', metadata_schema 'eve_market', override_data_path true, meta_secret ducklake_catalog, read_only);\n" \
+    "$(sql_escape "$repo_root/.local/data/datasets/ducklake/raw")"
+  printf "attach 'ducklake:postgres:' as curated_lake (data_path '%s', metadata_schema 'eve_market', override_data_path true, meta_secret ducklake_catalog, read_only);\n" \
+    "$(sql_escape "$repo_root/.local/data/datasets/ducklake")"
+} >"$init_file"
+
+duckdb -bail -init "$init_file" :memory:
+'''
+
+[tasks."duckdb:cleanup"]
+description = "Preview and optionally remove untracked dbt scratch and curated relations"
+env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
+run = '''
+set -e
+repo_root=$(git rev-parse --show-toplevel) || {
+  printf '%s\n' "Unable to locate the repository root." >&2
+  exit 1
+}
+mkdir -p "$repo_root/.local/data" "$repo_root/.local/logs"
+sudo -v
+lock_file="$repo_root/.local/curated-writer.lock"
+exec 9>"$lock_file" || exit 1
+flock -x 9 || exit 1
+sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml run --rm --user 0:0 --entrypoint /bin/sh airflow-cli -lc "mkdir -p /opt/eve-market/data/datasets/ducklake/curated && chmod -R a+rwX /opt/eve-market/data"
+cd transformation
+. ./dbt-airflow-local.env.example.sh
+
+uv run dbt run-operation cleanup_untracked_relations --profiles-dir . --args '{apply: false, max_drop_count: 20}'
+
+printf '%s' "Apply this cleanup? Type apply to continue: "
+IFS= read -r confirmation || confirmation=
+if [ "$confirmation" != "apply" ]; then
+  printf '%s\n' "Cleanup cancelled."
+  exit 0
+fi
+
+uv run dbt run-operation cleanup_untracked_relations --profiles-dir . --args '{apply: true, curated_writer_lock_held: true, max_drop_count: 20}'
+'''
+
+[tasks."ingestion:image"]
+description = "Build the local ingestion image"
+env = { _.file = "infra/local/.env" }
+raw = true
+run = '''
+sudo docker rmi "${EVE_MARKET_INGESTION_IMAGE:-eve-market-ingestion:local}" 2>/dev/null || true
+sudo docker build --pull --no-cache -f ingestion/Dockerfile -t "${EVE_MARKET_INGESTION_IMAGE:-eve-market-ingestion:local}" ingestion
+'''
+
+[tasks."airflow:up"]
+description = "Start the local Airflow and Postgres stack"
+env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
+run = '''
+mkdir -p .local/data .local/logs
+sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml up -d
+'''
+
+[tasks."airflow:down"]
+description = "Stop the local Airflow and Postgres stack"
+env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
+run = "sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml down --remove-orphans"
+
+[tasks."airflow:reset"]
+description = "Delete local Airflow stack state"
+confirm = { message = "Delete local Airflow volumes, data, and logs?", default = "no" }
+env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
+run = '''
+sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml down --volumes --remove-orphans
+rm -rf .local/data .local/logs
+'''
+
+[tasks."transform:build"]
+description = "Prepare local data permissions and build dbt models"
+env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
+run = '''
+set -e
+repo_root=$(git rev-parse --show-toplevel) || {
+  printf '%s\n' "Unable to locate the repository root." >&2
+  exit 1
+}
+mkdir -p "$repo_root/.local/data" "$repo_root/.local/logs"
+sudo -v
+lock_file="$repo_root/.local/curated-writer.lock"
+exec 9>"$lock_file" || exit 1
+flock -x 9 || exit 1
+sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml run --rm --user 0:0 --entrypoint /bin/sh airflow-cli -lc "mkdir -p /opt/eve-market/data/datasets/ducklake/curated && chmod -R a+rwX /opt/eve-market/data"
+cd transformation
+. ./dbt-airflow-local.env.example.sh
+uv run dbt build --profiles-dir .
+'''
+
+[tasks."bi:up"]
+description = "Generate Evidence sources and start local BI"
+env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
+run = '''
+mkdir -p .local/data .local/logs
+sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml --profile bi run --rm evidence /bin/sh -lc "if [ ! -x node_modules/.bin/evidence ]; then npm ci; fi && npm run sources"
+sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml --profile bi up -d evidence
+'''
+
+[tasks."bi:down"]
+description = "Stop local Evidence BI"
+env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }
+raw = true
+run = "sudo docker compose --env-file infra/local/.env --env-file infra/local/versions.txt -f infra/local/compose.yml --profile bi stop evidence"

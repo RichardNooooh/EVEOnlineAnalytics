@@ -37,7 +37,7 @@ class FakeRelation:
 
 class FakeConnection:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, list[str] | None]] = []
+        self.calls: list[tuple[str, list[object] | None]] = []
         self.events: list[tuple[str, str | None]] = []
         self.relation = FakeRelation()
         self.arrow_tables: list[pa.Table] = []
@@ -47,7 +47,7 @@ class FakeConnection:
         self.fetchall_result: list[tuple[object, ...]] = []
         self.fetchone_results: list[tuple[object, ...] | None] = []
 
-    def execute(self, query: str, params: list[str] | None = None) -> FakeConnection:
+    def execute(self, query: str, params: list[object] | None = None) -> FakeConnection:
         if self.raise_on_execute is not None and self.raise_on_execute in query:
             raise RuntimeError("boom")
         if any(trigger in query for trigger in self.raise_on_execute_multi):
@@ -92,7 +92,7 @@ def _queries(con: FakeConnection) -> list[str]:
     return [query for query, _ in con.calls]
 
 
-def _attach_call(con: FakeConnection) -> tuple[str, list[str] | None]:
+def _attach_call(con: FakeConnection) -> tuple[str, list[object] | None]:
     for call in con.calls:
         if "ATTACH " in call[0]:
             return call
@@ -271,10 +271,10 @@ def test_raw_publisher_replaces_table(monkeypatch) -> None:
     assert con.closed is True
 
 
-def test_raw_publisher_authoritative_mode_merges_with_keys(monkeypatch) -> None:
+def test_raw_publisher_authoritative_mode_replaces_partition(monkeypatch) -> None:
     con = FakeConnection()
     con.fetchone_results = [(1,), (0,), (2,)]
-    arrow_table = pa.table({"id": [1, 2], "value": [10, 20]})
+    arrow_table = pa.table({"id": [1, 2], "value": [10, 20], "source_market_date": ["2026-01-01"] * 2})
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
@@ -283,17 +283,42 @@ def test_raw_publisher_authoritative_mode_merges_with_keys(monkeypatch) -> None:
         raw.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
     queries = _queries(con)
-    merge_queries = [query for query in queries if "MERGE INTO" in query]
+    assert any(query.lstrip().startswith("DELETE FROM ") for query in queries)
+    assert any(query.lstrip().startswith("INSERT INTO ") and "BY NAME" in query for query in queries)
+    assert not any("MERGE INTO" in query for query in queries)
 
-    assert len(merge_queries) == 1
-    assert merge_queries[0].lstrip().startswith("MERGE INTO ")
-    assert "USING (" in merge_queries[0]
-    assert "WHEN NOT MATCHED THEN INSERT BY NAME" in merge_queries[0]
+
+def test_raw_publisher_partition_replacement_rolls_back_when_insert_fails(monkeypatch) -> None:
+    con = FakeConnection()
+    con.fetchone_results = [(1,), (0,), (2,)]
+    con.raise_on_execute = "INSERT INTO"
+    arrow_table = pa.table({"id": [1], "value": [10], "source_market_date": ["2026-01-01"]})
+
+    monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
+
+    with DuckLakeSession(_MINIMAL_ATTACH, lock_token=_test_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=_test_lock_token())
+        with pytest.raises(RuntimeError, match="boom"):
+            raw.write(
+                arrow_table,
+                table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.REPLACE_PARTITION,
+                key_columns=["id"],
+                partition_column="source_market_date",
+                partition_value="2026-01-01",
+            )
+
+    queries = _queries(con)
+    assert "BEGIN" in queries
+    assert "ROLLBACK" in queries
+    assert "COMMIT" not in queries
 
 
 def test_raw_publisher_append_snapshot_rows_inserts_by_name_without_merge_or_counts(monkeypatch) -> None:
@@ -336,7 +361,7 @@ def test_raw_publisher_append_snapshot_rows_inserts_by_name_without_merge_or_cou
 @pytest.mark.parametrize(
     "mode",
     [
-        DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+        DuckLakeWriterMode.REPLACE_PARTITION,
         DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS,
     ],
 )
@@ -365,6 +390,8 @@ def test_raw_publisher_insert_modes_require_bootstrapped_table(monkeypatch, mode
                 else RawDuckLakeTable.MARKET_HISTORY,
                 mode=mode,
                 key_columns=[] if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS else ["id"],
+                partition_column=None if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS else "source_market_date",
+                partition_value=None if mode is DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS else "2026-01-01",
             )
 
     assert not any("CREATE TABLE IF NOT EXISTS" in query for query in _queries(con))
@@ -372,8 +399,8 @@ def test_raw_publisher_insert_modes_require_bootstrapped_table(monkeypatch, mode
 
 def test_raw_publisher_returns_write_metrics(monkeypatch) -> None:
     con = FakeConnection()
-    con.fetchone_results = [(1,), (1,), (1,)]
-    arrow_table = pa.table({"id": [1, 2], "value": [10, 20]})
+    con.fetchone_results = [(1,), (0,), (1,)]
+    arrow_table = pa.table({"id": [1, 2], "value": [10, 20], "source_market_date": ["2026-01-01"] * 2})
 
     monkeypatch.setattr("eve_ingest.ducklake.session.duckdb.connect", lambda: con)
 
@@ -382,14 +409,16 @@ def test_raw_publisher_returns_write_metrics(monkeypatch) -> None:
         metrics = raw.write(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
     assert metrics.attempted_rows == 2
-    assert metrics.inserted_rows == 1
-    assert metrics.matched_rows == 1
-    assert metrics.replaced_rows == 0
+    assert metrics.inserted_rows == 2
+    assert metrics.matched_rows == 0
+    assert metrics.replaced_rows == 1
 
 
 def test_replace_table_returns_replaced_row_metrics(monkeypatch) -> None:
@@ -418,17 +447,17 @@ def test_replace_table_returns_replaced_row_metrics(monkeypatch) -> None:
     [
         (
             [],
-            pa.table({"id": [1], "value": [10]}),
+            pa.table({"id": [1], "value": [10], "source_market_date": ["2026-01-01"]}),
             "key_columns must not be empty when writer mode requires keys",
         ),
         (
             ["item id"],
-            pa.table({"item id": [1], "value": [10]}),
+            pa.table({"item id": [1], "value": [10], "source_market_date": ["2026-01-01"]}),
             "SQL identifiers must be non-empty strings without spaces or dashes",
         ),
         (
             ["id"],
-            pa.table({"value": [10]}),
+            pa.table({"value": [10], "source_market_date": ["2026-01-01"]}),
             "key_columns must exist in arrow_table columns",
         ),
     ],
@@ -449,8 +478,10 @@ def test_raw_publisher_rejects_invalid_key_columns(
             raw.write(
                 arrow_table,
                 table=RawDuckLakeTable.MARKET_HISTORY,
-                mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+                mode=DuckLakeWriterMode.REPLACE_PARTITION,
                 key_columns=key_columns,
+                partition_column="source_market_date",
+                partition_value="2026-01-01",
             )
 
 
@@ -485,7 +516,7 @@ def test_raw_publisher_rejects_declared_mode_mismatch_before_arrow_view_or_mutat
         raw = RawTablePublisher(
             session,
             lock_token=_test_lock_token(),
-            declared_policy=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            declared_policy=DuckLakeWriterMode.REPLACE_PARTITION,
             dataset_name="market-orders",
         )
         with pytest.raises(
@@ -493,7 +524,7 @@ def test_raw_publisher_rejects_declared_mode_mismatch_before_arrow_view_or_mutat
             match=(
                 "DuckLake writer mode does not match publisher declaration "
                 "dataset=market-orders table=raw_market_orders "
-                "declared_mode=assert_partition_coverage_insert_missing_keys requested_mode=replace_table"
+                "declared_mode=replace_partition requested_mode=replace_table"
             ),
         ):
             raw.write(
@@ -783,8 +814,10 @@ def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transacti
         raw.validate_write_request(
             arrow_table,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
         with session.prepare_arrow_source(arrow_table) as source_name, session.transaction():
             provenance.mark_parsed("soid-1", table=RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS)
@@ -792,21 +825,26 @@ def test_prepared_source_write_does_not_create_arrow_view_inside_outer_transacti
                 arrow_table,
                 source_name=source_name,
                 table=RawDuckLakeTable.MARKET_HISTORY,
-                mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+                mode=DuckLakeWriterMode.REPLACE_PARTITION,
                 key_columns=["type_id"],
+                partition_column="source_market_date",
+                partition_value="2026-01-01",
             )
 
     event_names = [event[0] for event in con.events]
     begin_index = next(i for i, event in enumerate(con.events) if event == ("execute", "BEGIN"))
-    raw_merge_index = next(
+    raw_insert_index = next(
         i
         for i, event in enumerate(con.events)
-        if event[0] == "execute" and "MERGE INTO" in event[1] and RawDuckLakeTable.MARKET_HISTORY.value in event[1]  # ty: ignore[unsupported-operator]
+        if event[0] == "execute"
+        and event[1] is not None
+        and "INSERT INTO" in event[1]
+        and RawDuckLakeTable.MARKET_HISTORY.value in event[1]
     )
 
     assert event_names.count("from_arrow") == 1
     assert event_names.index("from_arrow") < begin_index
-    assert not any(event[0] == "from_arrow" for event in con.events[begin_index:raw_merge_index])
+    assert not any(event[0] == "from_arrow" for event in con.events[begin_index:raw_insert_index])
 
 
 def test_raw_publisher_records_multiple_table_writes_in_one_block(monkeypatch) -> None:

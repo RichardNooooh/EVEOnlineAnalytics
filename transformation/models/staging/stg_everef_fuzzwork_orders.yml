@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: stg_everef_fuzzwork_orders
+    description: Typed Everef fuzzwork orders staging model for snapshot-oriented order-set data.
+    columns:
+      - name: order_id
+        description: Unique order identifier.
+        tests:
+          - not_null
+      - name: type_id
+        description: Item type identifier.
+        tests:
+          - not_null
+      - name: region_id
+        description: Market region identifier.
+        tests:
+          - not_null
+      - name: price
+        description: Order unit price in ISK.
+        tests:
+          - not_null
+      - name: is_buy_order
+        description: True for buy orders, false for sell orders.
+        tests:
+          - not_null
+      - name: source_market_date
+        description: Source file market date captured during ingestion.
+        tests:
+          - not_null
+      - name: source_ref_id
+        description: Deterministic object ID for source-file lineage.
+        tests:
+          - not_null
+      - name: snapshot_ts
+        description: Snapshot timestamp of this order batch.
+        tests:
+          - not_null
+      - name: order_set_id
+        description: Fuzzwork order-set identifier.
+        tests:
+          - not_null
+      - name: issued
+        description: Timestamp when the order was issued.
+        tests:
+          - not_null
+      - name: volume_remain
+        description: Remaining volume.
+        tests:
+          - not_null
+      - name: volume_total
+        description: Total initial volume.
+        tests:
+          - not_null
+      - name: min_volume
+        description: Minimum volume for the order.
+        tests:
+          - not_null
+      - name: location_id
+        description: Location identifier.
+      - name: order_range
+        description: Order range.
+        tests:
+          - not_null
+      - name: duration
+        description: Order duration in days.
+        tests:
+          - not_null

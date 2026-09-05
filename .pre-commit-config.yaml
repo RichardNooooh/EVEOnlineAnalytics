@@ -32,7 +32,7 @@ repos:
 
       - id: sqlfluff-fix
         name: sqlfluff fix (jinja)
-        entry: bash -c 'cd transformation && uv run sqlfluff fix --force --ignore-local-config --config .sqlfluff'
+        entry: bash -c 'cd transformation && uv run sqlfluff fix --ignore-local-config --config .sqlfluff'
         language: system
         pass_filenames: false
         files: ^transformation/.*\.sql$

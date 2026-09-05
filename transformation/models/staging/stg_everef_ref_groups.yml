@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: stg_everef_ref_groups
+    description: Typed Everef item-group reference staging model.
+    columns:
+      - name: group_id
+        description: Unique group identifier.
+        tests:
+          - not_null
+          - unique
+      - name: name_en
+        description: English group name.
+        tests:
+          - not_null
+      - name: category_id
+        description: Category identifier.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_everef_ref_categories')
+                field: category_id
+      - name: published
+        description: Whether the group is published in-game.
+      - name: icon_id
+        description: Icon identifier.

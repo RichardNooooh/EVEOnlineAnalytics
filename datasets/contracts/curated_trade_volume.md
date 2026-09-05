@@ -23,10 +23,10 @@ dbt data tests finish because dbt tests run after model materialization.
 
 ## Grain And Keys
 
-- grain: one row per `(date, region_id, type_id)`
-- uniqueness expectation: no duplicate rows for `(date, region_id, type_id)`
-- primary replacement scope: `date`
-- common reader filters: `date`, `region_id`, `type_id`
+- grain: one row per `(market_date, region_id, type_id)`
+- uniqueness expectation: no duplicate rows for `(market_date, region_id, type_id)`
+- primary replacement scope: `market_date`
+- common reader filters: `market_date`, `region_id`, `type_id`
 
 ## Upstream Inputs
 
@@ -39,11 +39,11 @@ dbt data tests finish because dbt tests run after model materialization.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `date` | date | Observation date for market history row. |
+| `market_date` | date | Observation date for market history row. |
 | `region_id` | bigint | Market region identifier. |
 | `type_id` | bigint | Item type identifier. |
 | `traded_units` | bigint | Daily traded unit volume. |
-| `order_count` | bigint | Count of market orders for `date`. |
+| `order_count` | bigint | Count of market orders for `market_date`. |
 | `total_isk_traded` | double | Derived total ISK traded for market date. |
 | `average_isk_per_order` | double | Derived average ISK traded per order. |
 

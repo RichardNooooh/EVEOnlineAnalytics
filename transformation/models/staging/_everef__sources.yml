@@ -1,0 +1,183 @@
+version: 2
+
+sources:
+  - name: everef
+    description: Raw Everef publication contracts staged for dbt cleanup.
+    database: "{{ env_var('DBT_DUCKLAKE_ALIAS', 'raw_lake') }}"
+    schema: raw
+    tables:
+      - name: raw_market_history
+        description: Daily market-history rows published from Everef archives.
+        columns:
+          - name: date
+          - name: region_id
+          - name: type_id
+          - name: average
+          - name: highest
+          - name: lowest
+          - name: order_count
+          - name: volume
+          - name: http_last_modified
+          - name: source_ref_id
+          - name: source_market_date
+      - name: raw_market_orders
+        description: Market-order snapshots published from Everef archives.
+        columns:
+          - name: order_id
+          - name: type_id
+          - name: region_id
+          - name: location_id
+          - name: system_id
+          - name: range
+          - name: price
+          - name: volume_remain
+          - name: volume_total
+          - name: min_volume
+          - name: issued
+          - name: expires
+          - name: duration
+          - name: is_buy_order
+          - name: reported_by
+          - name: http_last_modified
+          - name: station_id
+          - name: constellation_id
+          - name: source_ref_id
+          - name: source_market_date
+          - name: snapshot_ts
+      - name: raw_fuzzwork_orders
+        description: Fuzzwork order-set snapshots published from Everef archives.
+        columns:
+          - name: order_id
+          - name: type_id
+          - name: issued
+          - name: is_buy_order
+          - name: volume_remain
+          - name: volume_total
+          - name: min_volume
+          - name: price
+          - name: location_id
+          - name: range
+          - name: duration
+          - name: region_id
+          - name: order_set_id
+          - name: source_ref_id
+          - name: source_market_date
+          - name: snapshot_ts
+      - name: raw_reference_types
+        description: Latest-extract item type reference data.
+        columns:
+          - name: type_id
+          - name: name_en
+          - name: description_en
+          - name: group_id
+          - name: category_id
+          - name: market_group_id
+          - name: published
+          - name: volume
+          - name: icon_id
+          - name: meta_group_id
+      - name: raw_reference_regions
+        description: Latest-extract region reference data.
+        columns:
+          - name: region_id
+          - name: name_en
+          - name: description_en
+          - name: universe_id
+          - name: faction_id
+          - name: wormhole_class_id
+      - name: raw_reference_groups
+        description: Latest-extract item group reference data.
+        columns:
+          - name: group_id
+          - name: name_en
+          - name: category_id
+          - name: published
+          - name: icon_id
+      - name: raw_reference_categories
+        description: Latest-extract category reference data.
+        columns:
+          - name: category_id
+          - name: name_en
+          - name: published
+          - name: icon_id
+      - name: raw_reference_market_groups
+        description: Latest-extract market group reference data.
+        columns:
+          - name: market_group_id
+          - name: name_en
+          - name: description_en
+          - name: parent_group_id
+          - name: has_types
+          - name: icon_id
+      - name: raw_market_history_objects
+        description: Dataset-scoped provenance rows for Everef market-history source objects.
+        columns:
+          - name: source_ref_id
+          - name: source_system
+          - name: endpoint
+          - name: source_url
+          - name: storage_uri
+          - name: source_market_date
+          - name: snapshot_ts
+          - name: last_modified
+          - name: content_length
+          - name: sha256
+          - name: downloaded_at
+          - name: parsed_at
+          - name: ingested_at
+          - name: status
+          - name: status_reason
+      - name: raw_market_orders_objects
+        description: Dataset-scoped provenance rows for Everef market-order snapshot source objects.
+        columns:
+          - name: source_ref_id
+          - name: source_system
+          - name: endpoint
+          - name: source_url
+          - name: storage_uri
+          - name: source_market_date
+          - name: snapshot_ts
+          - name: last_modified
+          - name: content_length
+          - name: sha256
+          - name: downloaded_at
+          - name: parsed_at
+          - name: ingested_at
+          - name: status
+          - name: status_reason
+      - name: raw_fuzzwork_orders_objects
+        description: Dataset-scoped provenance rows for Fuzzwork order-set source objects.
+        columns:
+          - name: source_ref_id
+          - name: source_system
+          - name: endpoint
+          - name: source_url
+          - name: storage_uri
+          - name: source_market_date
+          - name: snapshot_ts
+          - name: last_modified
+          - name: content_length
+          - name: sha256
+          - name: downloaded_at
+          - name: parsed_at
+          - name: ingested_at
+          - name: status
+          - name: status_reason
+      - name: raw_reference_objects
+        description: Dataset-scoped provenance rows for latest reference-data source objects.
+        columns:
+          - name: source_ref_id
+          - name: source_system
+          - name: endpoint
+          - name: source_url
+          - name: storage_uri
+          - name: source_market_date
+          - name: snapshot_ts
+          - name: last_modified
+          - name: content_length
+          - name: sha256
+          - name: downloaded_at
+          - name: parsed_at
+          - name: ingested_at
+          - name: status
+          - name: status_reason

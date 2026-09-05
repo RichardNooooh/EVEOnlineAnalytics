@@ -48,7 +48,7 @@ class RawDuckLakeTable(StrEnum):
 
 class DuckLakeWriterMode(StrEnum):
     APPEND_SNAPSHOT_ROWS = "append_snapshot_rows"
-    ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS = "assert_partition_coverage_insert_missing_keys"
+    REPLACE_PARTITION = "replace_partition"
     REPLACE_TABLE = "replace_table"
 
 

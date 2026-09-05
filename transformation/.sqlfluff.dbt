@@ -2,6 +2,11 @@
 dialect = duckdb
 templater = dbt
 max_line_length = 120
+encoding = utf-8
+
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 2
 
 [sqlfluff:templater:dbt]
 project_dir = .

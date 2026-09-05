@@ -4,7 +4,7 @@ title: Curated Market Overview
 
 ```sql price_summary
 select
-  max(date) as latest_date,
+  max(market_date) as latest_date,
   count(*) as row_count,
   count(distinct region_id) as region_count,
   count(distinct type_id) as item_count
@@ -13,7 +13,7 @@ from curated_ducklake.curated_daily_prices
 
 ```sql volume_summary
 select
-  max(date) as latest_date,
+  max(market_date) as latest_date,
   count(*) as row_count,
   sum(traded_units) as traded_units,
   sum(total_isk_traded) as total_isk_traded
@@ -22,7 +22,7 @@ from curated_ducklake.curated_trade_volume
 
 ```sql latest_price_trends
 select
-  date,
+  market_date,
   avg(vwap_price) as avg_vwap_price,
   avg(intraday_volatility_ratio) as avg_intraday_volatility_ratio
 from curated_ducklake.curated_daily_prices
@@ -33,7 +33,7 @@ limit 30
 
 ```sql latest_volume_trends
 select
-  date,
+  market_date,
   sum(traded_units) as traded_units,
   sum(total_isk_traded) as total_isk_traded
 from curated_ducklake.curated_trade_volume
@@ -54,11 +54,11 @@ Read-only Evidence app over published curated DuckLake state.
 
 ## Recent Price Trend
 
-<LineChart data={latest_price_trends} x=date y=avg_vwap_price yAxisTitle="Average VWAP" xFmt="yyyy-mm-dd" />
+<LineChart data={latest_price_trends} x=market_date y=avg_vwap_price yAxisTitle="Average VWAP" xFmt="yyyy-mm-dd" />
 
 ## Recent Volume Trend
 
-<BarChart data={latest_volume_trends} x=date y=traded_units yAxisTitle="Traded Units" xFmt="yyyy-mm-dd" />
+<BarChart data={latest_volume_trends} x=market_date y=traded_units yAxisTitle="Traded Units" xFmt="yyyy-mm-dd" />
 
 ## Pages
 

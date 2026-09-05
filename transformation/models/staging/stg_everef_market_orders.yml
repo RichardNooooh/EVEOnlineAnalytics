@@ -1,0 +1,76 @@
+version: 2
+
+models:
+  - name: stg_everef_market_orders
+    description: Typed Everef market-orders staging model for snapshot-oriented order data.
+    columns:
+      - name: order_id
+        description: Unique order identifier.
+        tests:
+          - not_null
+      - name: type_id
+        description: Item type identifier.
+        tests:
+          - not_null
+      - name: region_id
+        description: Market region identifier.
+        tests:
+          - not_null
+      - name: price
+        description: Order unit price in ISK.
+        tests:
+          - not_null
+      - name: is_buy_order
+        description: True for buy orders, false for sell orders.
+        tests:
+          - not_null
+      - name: source_market_date
+        description: Source file market date captured during ingestion.
+        tests:
+          - not_null
+      - name: source_ref_id
+        description: Deterministic object ID for source-file lineage.
+        tests:
+          - not_null
+      - name: snapshot_ts
+        description: Snapshot timestamp of this order batch.
+        tests:
+          - not_null
+      - name: location_id
+        description: Location identifier for the order.
+      - name: system_id
+        description: Solar system identifier.
+      - name: order_range
+        description: Order range.
+        tests:
+          - not_null
+      - name: volume_remain
+        description: Remaining volume.
+        tests:
+          - not_null
+      - name: volume_total
+        description: Total initial volume.
+        tests:
+          - not_null
+      - name: min_volume
+        description: Minimum volume for the order.
+        tests:
+          - not_null
+      - name: issued
+        description: Timestamp when the order was issued.
+        tests:
+          - not_null
+      - name: expires
+        description: Timestamp when the order expires.
+      - name: duration
+        description: Order duration in days.
+        tests:
+          - not_null
+      - name: reported_by
+        description: Character ID that reported the order.
+      - name: http_last_modified
+        description: HTTP last-modified header from the source.
+      - name: station_id
+        description: Station identifier.
+      - name: constellation_id
+        description: Constellation identifier.

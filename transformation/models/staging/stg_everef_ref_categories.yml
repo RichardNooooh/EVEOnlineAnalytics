@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: stg_everef_ref_categories
+    description: Typed Everef category reference staging model.
+    columns:
+      - name: category_id
+        description: Unique category identifier.
+        tests:
+          - not_null
+          - unique
+      - name: name_en
+        description: English category name.
+        tests:
+          - not_null
+      - name: published
+        description: Whether the category is published in-game.
+      - name: icon_id
+        description: Icon identifier.

@@ -67,8 +67,8 @@ Expected contract elements:
 - publication metadata recorded through DuckLake catalog state, contracts, and
   supplemental manifests where useful
 - dataset class is source-date-authoritative
-- current publication behavior uses assert-partition-coverage plus insert-missing
-  semantics for each source market date
+- publication atomically replaces each validated source market date so source revisions
+  update changed rows and remove rows no longer present
 
 ### `raw_market_orders`
 
@@ -109,6 +109,41 @@ Expected contract elements:
 - latest-extract-authoritative semantics
 - publication behavior uses full-table replacement semantics per reference table
 
+#### Type and inventory-group publication findings
+
+A local profile of the latest reference extract available on 2026-09-04 found
+52,865 item types with these type and inventory-group publication states:
+
+| Type published | Inventory group published | Type count |
+|---|---|---:|
+| true | true | 26,823 |
+| true | false | 158 |
+| false | true | 9,758 |
+| false | false | 16,126 |
+
+The 158 published types assigned to unpublished inventory groups were primarily
+mission, environmental, obsolete, NPC, tutorial, or other special-purpose game
+objects. Only five had a non-null market-group assignment:
+
+| Type ID | Type | Inventory group |
+|---:|---|---|
+| 35912 | Standup Cynosural Field Generator I | Structure FLEX Service Module |
+| 35913 | Standup Conduit Generator I | Structure FLEX Service Module |
+| 35914 | Standup Cynosural System Jammer I | Structure FLEX Service Module |
+| 36949 | Coalesced Element Blueprint | Unknown Blueprint |
+| 60771 | Nephrite | AIR Ore Asteroid Resources |
+
+These five are tutorial, unused, or extremely rarely traded items without useful
+coverage for the planned market analysis. The market-analysis reference population
+therefore requires both the item type and its inventory group to have
+`published = true`.
+
+Inventory groups and market groups remain separate classification namespaces:
+inventory groups classify what an item is, while the recursive market-group tree
+classifies where it appears in the market browser. Supporting relationship and
+namespace evidence is recorded in
+[`experiments/everef-endpoint-exploration.ipynb`](../experiments/everef-endpoint-exploration.ipynb).
+
 ## Curated Dataset Contracts
 
 Curated datasets standardize naming, grain, and derivations for analytics and ML.
@@ -119,7 +154,7 @@ Current implemented curated price mart for BI publication.
 
 Contract highlights:
 
-- grain is one row per `(date, region_id, type_id)`
+- grain is one row per `(market_date, region_id, type_id)`
 - `vwap_price` carries forward ESI `average` semantics as VWAP
 - `intraday_price_spread` is derived as `highest - lowest`
 - `intraday_volatility_ratio` is derived as `(highest - lowest) / vwap_price` when
@@ -132,7 +167,7 @@ Current implemented curated trade-volume mart for BI publication.
 
 Contract highlights:
 
-- grain is one row per `(date, region_id, type_id)`
+- grain is one row per `(market_date, region_id, type_id)`
 - `traded_units` carries forward staged daily volume
 - `total_isk_traded` is derived as `volume * average` in upstream `fact_market_history`
 - `average_isk_per_order` is derived as `total_isk_traded / order_count` when

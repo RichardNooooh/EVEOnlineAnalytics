@@ -50,8 +50,8 @@ def test_append_snapshot_rows_appends_duplicate_snapshot_rows(shared_con):
 
 
 @pytest.mark.real_duckdb
-def test_merge_inserts_new_rows_and_skips_existing(shared_con):
-    """Verify MERGE inserts new key rows and skips existing key rows.
+def test_partition_replacement_updates_one_partition(shared_con):
+    """Verify replacement updates one partition without affecting another.
 
     Uses a real in-memory DuckDB to validate SQL correctness.
     """
@@ -61,18 +61,22 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
         raw.write(
             table_a,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
-    table_b = pa.table({"type_id": [1, 2, 3], "average": [10.0, 20.0, 30.0], "source_market_date": ["2026-01-01"] * 3})
+    table_b = pa.table({"type_id": [2, 3], "average": [22.0, 30.0], "source_market_date": ["2026-01-01"] * 2})
     with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
         raw = RawTablePublisher(session, lock_token=create_lock_token())
         raw.write(
             table_b,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
     result = shared_con.execute(
@@ -80,10 +84,9 @@ def test_merge_inserts_new_rows_and_skips_existing(shared_con):
     ).fetchall()
 
     assert result == [
-        (1, 10.0),
-        (2, 20.0),
+        (2, 22.0),
         (3, 30.0),
-    ], f"Expected 3 rows with correct values, got {result}"
+    ], f"Expected replacement rows with correct values, got {result}"
 
 
 @pytest.mark.real_duckdb
@@ -95,8 +98,10 @@ def test_merge_column_order_independent(shared_con):
         raw.write(
             table_a,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
     table_b = pa.table({"average": [20.0], "type_id": [2], "source_market_date": ["2026-01-02"]})
@@ -105,8 +110,10 @@ def test_merge_column_order_independent(shared_con):
         raw.write(
             table_b,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-02",
         )
 
     result = shared_con.execute(
@@ -147,32 +154,35 @@ def test_replace_table_overwrites_existing_rows(shared_con):
 
 
 @pytest.mark.real_duckdb
-def test_merge_raises_for_matching_key_with_different_values(shared_con):
+def test_partition_replacement_accepts_matching_key_with_different_values(shared_con):
     first = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
     with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
         raw = RawTablePublisher(session, lock_token=create_lock_token())
         raw.write(
             first,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
     second = pa.table({"type_id": [1], "average": [99.0], "source_market_date": ["2026-01-01"]})
     with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
         raw = RawTablePublisher(session, lock_token=create_lock_token())
-        with pytest.raises(ValueError, match="differing values"):
-            raw.write(
-                second,
-                table=RawDuckLakeTable.MARKET_HISTORY,
-                mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-                key_columns=["type_id"],
-            )
+        raw.write(
+            second,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
+            key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
+        )
 
     rows = shared_con.execute(
         f'SELECT type_id, average FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}" ORDER BY type_id'
     ).fetchall()
-    assert rows == [(1, 10.0)]
+    assert rows == [(1, 99.0)]
 
 
 @pytest.mark.real_duckdb
@@ -184,8 +194,10 @@ def test_authoritative_mode_is_idempotent_for_identical_source_date(shared_con):
         raw.write(
             rows,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
     with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
@@ -193,8 +205,10 @@ def test_authoritative_mode_is_idempotent_for_identical_source_date(shared_con):
         raw.write(
             rows,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
     result = shared_con.execute(
@@ -204,32 +218,126 @@ def test_authoritative_mode_is_idempotent_for_identical_source_date(shared_con):
 
 
 @pytest.mark.real_duckdb
-def test_authoritative_mode_raises_when_target_has_source_date_rows_missing_from_source(shared_con):
+def test_authoritative_mode_replaces_rows_missing_from_new_source(shared_con):
     first = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
     with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
         raw = RawTablePublisher(session, lock_token=create_lock_token())
         raw.write(
             first,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
     second = pa.table({"type_id": [2], "average": [20.0], "source_market_date": ["2026-01-01"]})
     with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
         raw = RawTablePublisher(session, lock_token=create_lock_token())
-        with pytest.raises(ValueError, match="source_date"):
-            raw.write(
-                second,
-                table=RawDuckLakeTable.MARKET_HISTORY,
-                mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
-                key_columns=["type_id"],
-            )
+        raw.write(
+            second,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
+            key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
+        )
 
     rows = shared_con.execute(
         f'SELECT type_id, average, "source_market_date" FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}" ORDER BY type_id'
     ).fetchall()
-    assert rows == [(1, 10.0, date(2026, 1, 1))]
+    assert rows == [(2, 20.0, date(2026, 1, 1))]
+
+
+@pytest.mark.real_duckdb
+def test_partition_replacement_rejects_rows_outside_expected_partition(shared_con):
+    rows = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-02"]})
+
+    with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=create_lock_token())
+        with pytest.raises(ValueError, match="outside the expected partition"):
+            raw.write(
+                rows,
+                table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.REPLACE_PARTITION,
+                key_columns=["type_id"],
+                partition_column="source_market_date",
+                partition_value="2026-01-01",
+            )
+
+    count = shared_con.execute(
+        f'SELECT COUNT(*) FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}"'
+    ).fetchone()
+    assert count == (0,)
+
+
+@pytest.mark.real_duckdb
+def test_partition_replacement_rejects_duplicate_keys(shared_con):
+    rows = pa.table(
+        {
+            "type_id": [1, 1],
+            "average": [10.0, 11.0],
+            "source_market_date": ["2026-01-01", "2026-01-01"],
+        }
+    )
+
+    with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=create_lock_token())
+        with pytest.raises(ValueError, match="duplicate keys: type_id=1"):
+            raw.write(
+                rows,
+                table=RawDuckLakeTable.MARKET_HISTORY,
+                mode=DuckLakeWriterMode.REPLACE_PARTITION,
+                key_columns=["type_id"],
+                partition_column="source_market_date",
+                partition_value="2026-01-01",
+            )
+
+    count = shared_con.execute(
+        f'SELECT COUNT(*) FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}"'
+    ).fetchone()
+    assert count == (0,)
+
+
+@pytest.mark.real_duckdb
+def test_empty_authoritative_partition_removes_existing_rows(shared_con):
+    initial = pa.table({"type_id": [1], "average": [10.0], "source_market_date": ["2026-01-01"]})
+    empty = pa.table(
+        {
+            "type_id": pa.array([], type=pa.int64()),
+            "average": pa.array([], type=pa.float64()),
+            "source_market_date": pa.array([], type=pa.string()),
+        }
+    )
+
+    with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=create_lock_token())
+        raw.write(
+            initial,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
+            key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
+        )
+
+    with DuckLakeSession(ATTACH, lock_token=create_lock_token()) as session:
+        raw = RawTablePublisher(session, lock_token=create_lock_token())
+        metrics = raw.write(
+            empty,
+            table=RawDuckLakeTable.MARKET_HISTORY,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
+            key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
+        )
+
+    count = shared_con.execute(
+        f'SELECT COUNT(*) FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}"'
+    ).fetchone()
+    assert count == (0,)
+    assert metrics.inserted_rows == 0
+    assert metrics.replaced_rows == 1
 
 
 @pytest.mark.real_duckdb

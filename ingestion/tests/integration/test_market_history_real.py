@@ -12,7 +12,7 @@ from eve_ingest.ducklake.session import DuckLakeSession
 from eve_ingest.publication.context import PublishContext
 from eve_ingest.publication.service import PublicationService
 from eve_ingest.publication.source_prep import SourcePreparationContext
-from eve_ingest.publication.specs import DatasetPublisherSpec, InsertMissingKeysAuthoritativePartition, SourceDateScope
+from eve_ingest.publication.specs import DatasetPublisherSpec, ReplaceAuthoritativePartition, SourceDateScope
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.market_history import publish_one
 from tests.sources.everef.conftest import make_cache_result
@@ -33,7 +33,7 @@ def _write_history_file(path: Path) -> None:
 
 
 @pytest.mark.real_duckdb
-def test_process_result_writes_and_merges_history_rows(shared_con, tmp_path: Path) -> None:
+def test_process_result_writes_and_replaces_history_partition(shared_con, tmp_path: Path) -> None:
     file_path = tmp_path / "market-history-2026-01-01.csv.bz2"
     _write_history_file(file_path)
 
@@ -50,7 +50,9 @@ def test_process_result_writes_and_merges_history_rows(shared_con, tmp_path: Pat
         data_tables=(RawDuckLakeTable.MARKET_HISTORY,),
         provenance_tables=(RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,),
         publication_scope=SourceDateScope("market_history"),
-        write_policy=InsertMissingKeysAuthoritativePartition(key_columns=("date", "region_id", "type_id")),
+        write_policy=ReplaceAuthoritativePartition(
+            partition_column="date", key_columns=("date", "region_id", "type_id")
+        ),
     )
 
     lock_token = create_lock_token()
@@ -102,8 +104,9 @@ def test_process_result_writes_and_merges_history_rows(shared_con, tmp_path: Pat
         second_outcome = publish_one(result, ctx)
         assert second_outcome.success is True
         assert len(second_outcome.write_metrics) == 1
-        assert second_outcome.write_metrics[0].inserted_rows == 0
-        assert second_outcome.write_metrics[0].matched_rows == 1
+        assert second_outcome.write_metrics[0].inserted_rows == 1
+        assert second_outcome.write_metrics[0].matched_rows == 0
+        assert second_outcome.write_metrics[0].replaced_rows == 1
 
     rows = shared_con.execute(
         f'SELECT average, "date", region_id, type_id FROM "memory"."raw"."{RawDuckLakeTable.MARKET_HISTORY.value}"'
