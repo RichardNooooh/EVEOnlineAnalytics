@@ -2,16 +2,39 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
+from typing import Any
 
 from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.sdk import Param, dag
 from docker.types import Mount
+
+from eve_market_airflow.container_logs import ContainerLogLevelRouter
 
 DATA_ROOT = "/opt/eve-market/data"
 DLT_SCRATCH_ROOT = "/scratch"
 DEFAULT_LOCAL_DATA_HOST_PATH = "/tmp/eve-market-local-data"
 POSTGRES_HOST = os.environ.get("EVE_MARKET_LOCAL_POSTGRES_HOST", "postgres")
 INGESTION_IMAGE = os.environ.get("EVE_MARKET_INGESTION_IMAGE", "eve-market-ingestion:local")
+
+
+class SeverityAwareDockerOperator(DockerOperator):
+    """Preserve severity prefixes from container logs as Airflow log levels."""
+
+    @property
+    def log(self) -> Any:
+        delegate = super().log
+        router = getattr(self, "_container_log_router", None)
+        if router is None or not router.wraps(delegate):
+            router = ContainerLogLevelRouter(delegate)
+            self._container_log_router = router
+        return router
+
+    def _run_image(self) -> list[str] | str | None:
+        self.log.reset()
+        try:
+            return super()._run_image()
+        finally:
+            self.log.reset()
 
 
 def local_data_host_path() -> str:
@@ -83,7 +106,7 @@ def shared_ingestion_command_args() -> list[str]:
 
 
 def build_ingestion_task(*, task_id: str, command: list[str]) -> DockerOperator:
-    return DockerOperator(
+    return SeverityAwareDockerOperator(
         task_id=task_id,
         image=INGESTION_IMAGE,
         command=command,
