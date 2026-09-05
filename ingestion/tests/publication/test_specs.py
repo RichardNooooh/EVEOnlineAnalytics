@@ -13,7 +13,7 @@ from eve_ingest.ducklake.raw_tables import (
 from eve_ingest.publication.specs import (
     AppendSnapshotRows,
     DatasetPublisherSpec,
-    InsertMissingKeysAuthoritativePartition,
+    ReplaceAuthoritativePartition,
     ReplaceReferenceTables,
     SourceDateScope,
     StaticScope,
@@ -95,8 +95,8 @@ class TestDatasetPublisherSpec:
         [
             (AppendSnapshotRows(), DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS),
             (
-                InsertMissingKeysAuthoritativePartition(key_columns=("date", "type_id")),
-                DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+                ReplaceAuthoritativePartition(partition_column="date", key_columns=("date", "type_id")),
+                DuckLakeWriterMode.REPLACE_PARTITION,
             ),
             (ReplaceReferenceTables(), DuckLakeWriterMode.REPLACE_TABLE),
         ],

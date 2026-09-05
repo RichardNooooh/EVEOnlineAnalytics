@@ -71,7 +71,7 @@ def test_replace_table_writes_rows(attach_config: DuckLakeAttachConfig, raw_con:
 
 
 @pytest.mark.integration
-def test_write_with_key_columns_does_insert_if_not_exists(
+def test_replace_partition_is_idempotent(
     attach_config: DuckLakeAttachConfig, raw_con: duckdb.DuckDBPyConnection
 ) -> None:
     bootstrap_raw_ducklake(attach_config)
@@ -82,19 +82,23 @@ def test_write_with_key_columns_does_insert_if_not_exists(
         raw.write(
             table,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
-    # Insert same order_ids again with identical prices — should be no-ops
+    # Replacing with identical rows preserves the same visible state.
     duplicate = pa.table({"type_id": [1, 2], "average": [100.0, 200.0], "source_market_date": ["2026-01-01"] * 2})
     with DuckLakeSession(attach_config, lock_token=_test_lock_token()) as session:
         raw = RawTablePublisher(session, lock_token=_test_lock_token())
         raw.write(
             duplicate,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="source_market_date",
+            partition_value="2026-01-01",
         )
 
     rows = raw_con.execute(
@@ -117,8 +121,10 @@ def test_authoritative_mode_writes_new_market_history_row(
         raw.write(
             table,
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=["type_id"],
+            partition_column="date",
+            partition_value="2026-06-01",
         )
 
     rows = raw_con.execute(

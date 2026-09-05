@@ -66,16 +66,16 @@ class PublishContext:
         return self.service.append_snapshot(prepared, ctx=self.prep_ctx, source_ref_id=source_ref_id)
 
     ##############################
-    # Insert Missing Keys Publication
+    # Authoritative Partition Replacement
     ##############################
 
-    def insert_missing_keys_arrow(
+    def replace_partition_arrow(
         self,
         prepared: PreparedAuthoritativeArrowSource,
         *,
         source_ref_id: str | None = None,
     ) -> PublishResult:
-        return self.service.insert_missing_keys(prepared, ctx=self.prep_ctx, source_ref_id=source_ref_id)
+        return self.service.replace_partition(prepared, ctx=self.prep_ctx, source_ref_id=source_ref_id)
 
     ##############################
     # Reference Table Replacement

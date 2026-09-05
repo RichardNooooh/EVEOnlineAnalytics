@@ -56,7 +56,8 @@ class AppendSnapshotRows(WritePolicy):
 
 
 @dataclass(frozen=True)
-class InsertMissingKeysAuthoritativePartition(WritePolicy):
+class ReplaceAuthoritativePartition(WritePolicy):
+    partition_column: str
     key_columns: tuple[str, ...]
 
 
@@ -109,8 +110,8 @@ class DatasetPublisherSpec:
     def writer_mode(self) -> DuckLakeWriterMode:
         if isinstance(self.write_policy, AppendSnapshotRows):
             return DuckLakeWriterMode.APPEND_SNAPSHOT_ROWS
-        if isinstance(self.write_policy, InsertMissingKeysAuthoritativePartition):
-            return DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS
+        if isinstance(self.write_policy, ReplaceAuthoritativePartition):
+            return DuckLakeWriterMode.REPLACE_PARTITION
         if isinstance(self.write_policy, ReplaceReferenceTables):
             return DuckLakeWriterMode.REPLACE_TABLE
         raise ValueError(f"Unknown write policy: {type(self.write_policy).__name__}")

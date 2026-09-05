@@ -7,10 +7,10 @@ from eve_ingest.publication.specs import (
     DatasetPublisherSpec as DatasetPublisherSpec,
 )
 from eve_ingest.publication.specs import (
-    InsertMissingKeysAuthoritativePartition as InsertMissingKeysAuthoritativePartition,
+    PublicationScope as PublicationScope,
 )
 from eve_ingest.publication.specs import (
-    PublicationScope as PublicationScope,
+    ReplaceAuthoritativePartition as ReplaceAuthoritativePartition,
 )
 from eve_ingest.publication.specs import (
     ReplaceReferenceTables as ReplaceReferenceTables,
