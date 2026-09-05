@@ -8,6 +8,7 @@ tags:
   - dlt
 amended:
   - 2026-05-27
+  - 2026-09-05
 ---
 
 # ADR-008 - DuckLake as the Canonical Lakehouse Table Format
@@ -46,10 +47,10 @@ The refined storage contract is:
 - DuckLake tables are the canonical analytical table storage contract.
 - Parquet remains the physical data file format underneath the table format.
 - Plain filesystem Parquet alone is not the long-term canonical table storage format.
-- dlt loads Everef market-history data into DuckLake using insert-new-by-key
-  semantics.
-- Existing CSV `date`, `region_id`, and `type_id` are the key columns for
-  insert-new-by-key.
+- dlt loads Everef market-history data into DuckLake using atomic source-date partition
+  replacement.
+- Existing CSV `date`, `region_id`, and `type_id` are validated as the unique row key
+  before partition replacement.
 - Market-history loads use a composite primary key of `date`, `region_id`, and
   `type_id` where applicable.
 - Iceberg remains a possible future cloud or resume extension, not the initial
@@ -87,6 +88,18 @@ this was unnecessary:
 - The current implementation uses insert-new-by-key semantics instead of
   delete-insert, which avoids unnecessary table churn while correctly handling the
   rare case where Everef publishes a revised file for the same key.
+
+## Amendment (2026-09-05)
+
+A production backfill encountered an in-place Everef archive revision where existing
+`(date, region_id, type_id)` keys had changed non-key values. This disproved the earlier
+assumption that archive revisions only add previously undiscovered keys.
+
+Market-history publication now validates that every candidate row belongs to the
+requested source date and that row keys are unique, then atomically deletes and inserts
+that date partition. This handles added, changed, and removed rows while preserving the
+explicit source-date replacement boundary. The 2026-05-27 insert-new-by-key amendment is
+superseded for market history.
 
 ## Consequences
 

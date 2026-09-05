@@ -15,7 +15,7 @@ from eve_ingest.publication.results import PublishResult
 from eve_ingest.publication.specs import (
     AppendSnapshotRows,
     DatasetPublisherSpec,
-    InsertMissingKeysAuthoritativePartition,
+    ReplaceAuthoritativePartition,
     ReplaceReferenceTables,
 )
 
@@ -151,10 +151,10 @@ class PublicationService:
         )
 
     ##############################
-    # Insert Missing Keys Publication
+    # Authoritative Partition Replacement
     ##############################
 
-    def insert_missing_keys(
+    def replace_partition(
         self,
         prepared: PreparedAuthoritativeArrowSource,
         *,
@@ -162,8 +162,8 @@ class PublicationService:
         source_ref_id: str | None = None,
     ) -> PublishResult:
         policy = self.spec.write_policy
-        if not isinstance(policy, InsertMissingKeysAuthoritativePartition):
-            raise TypeError(f"Dataset {self.spec.dataset_name} is not configured for insert-missing-keys publication")
+        if not isinstance(policy, ReplaceAuthoritativePartition):
+            raise TypeError(f"Dataset {self.spec.dataset_name} is not configured for partition replacement")
 
         source_date = str(prepared.raw_object.identity_key.get("source_date", "unknown"))
         soid = source_ref_id or ctx.source_ref_id(
@@ -190,8 +190,10 @@ class PublicationService:
                 prepared.arrow_table,
                 source_name=source_name,
                 table=prepared.table,
-                mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+                mode=DuckLakeWriterMode.REPLACE_PARTITION,
                 key_columns=policy.key_columns,
+                partition_column=policy.partition_column,
+                partition_value=prepared.source_market_date,
             )
 
             self.mark_ingested(soid, table=provenance_table)

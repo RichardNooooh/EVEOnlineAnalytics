@@ -10,7 +10,7 @@ import pyarrow as pa
 import pytest
 from eve_ingest.ducklake.raw_tables import RawDuckLakeProvenanceTable, RawDuckLakeTable
 from eve_ingest.publication.results import PublishResult
-from eve_ingest.publication.specs import DatasetPublisherSpec, InsertMissingKeysAuthoritativePartition
+from eve_ingest.publication.specs import DatasetPublisherSpec, ReplaceAuthoritativePartition
 from eve_ingest.raw_objects import UpdateMode
 from eve_ingest.sources.everef.csv_io import parse_csv_to_arrow
 from eve_ingest.sources.everef.market_history import PUBLISHER_SPEC, discover_objects, publish_one
@@ -40,7 +40,8 @@ def test_publisher_spec_declares_market_history_mutations() -> None:
     assert PUBLISHER_SPEC.data_tables == (RawDuckLakeTable.MARKET_HISTORY,)
     assert PUBLISHER_SPEC.provenance_tables == (RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,)
     assert isinstance(PUBLISHER_SPEC, DatasetPublisherSpec)
-    assert isinstance(PUBLISHER_SPEC.write_policy, InsertMissingKeysAuthoritativePartition)
+    assert isinstance(PUBLISHER_SPEC.write_policy, ReplaceAuthoritativePartition)
+    assert PUBLISHER_SPEC.write_policy.partition_column == "date"
     assert PUBLISHER_SPEC.write_policy.key_columns == ("date", "region_id", "type_id")
     assert PUBLISHER_SPEC.scope_for({"source_date": "2026-01-01"}) == ("raw:market_history:source_date=2026-01-01")
 
@@ -140,7 +141,7 @@ class TestParseCsvToArrow:
         assert "average" in table.column_names
 
 
-def test_publish_one_calls_insert_missing_keys_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_publish_one_calls_replace_partition_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
     result = make_cache_result(
         "/tmp/market-history-2026-01-01.csv.bz2",
         dataset_name="market-history",
@@ -149,7 +150,7 @@ def test_publish_one_calls_insert_missing_keys_arrow(monkeypatch: pytest.MonkeyP
     )
     ctx = MagicMock()
     ctx.source_ref_id.return_value = "fake_soid"
-    ctx.insert_missing_keys_arrow.return_value = PublishResult(
+    ctx.replace_partition_arrow.return_value = PublishResult(
         success=True,
         source_date="2026-01-01",
         write_metrics=(MagicMock(attempted_rows=1, inserted_rows=1, matched_rows=0),),
@@ -163,8 +164,8 @@ def test_publish_one_calls_insert_missing_keys_arrow(monkeypatch: pytest.MonkeyP
     assert outcome.success is True
     assert outcome.source_date == "2026-01-01"
     assert len(outcome.write_metrics) == 1
-    ctx.insert_missing_keys_arrow.assert_called_once()
-    call_args = ctx.insert_missing_keys_arrow.call_args
+    ctx.replace_partition_arrow.assert_called_once()
+    call_args = ctx.replace_partition_arrow.call_args
     prepared: PreparedAuthoritativeArrowSource = call_args[0][0]
     assert prepared.table is RawDuckLakeTable.MARKET_HISTORY
     assert "source_ref_id" in prepared.arrow_table.column_names

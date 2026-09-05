@@ -11,12 +11,7 @@ from eve_ingest.ducklake.raw_tables import (
     RawDuckLakeTable,
     _target_for,
 )
-from eve_ingest.ducklake.sql import (
-    count_source_rows_with_matches,
-    count_source_rows_without_matches,
-    quote_identifier,
-    table_sql,
-)
+from eve_ingest.ducklake.sql import quote_identifier, table_sql
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -142,80 +137,6 @@ def ensure_expected_partitioning(
         logger.debug("Skipping DuckLake partition DDL for non-DuckLake table=%s", target.table)
 
 
-def assert_matched_key_rows_identical(
-    con: duckdb.DuckDBPyConnection,
-    arrow_table: pa.Table,
-    *,
-    quoted_target: str,
-    quoted_source: str,
-    key_columns: Sequence[str],
-) -> None:
-    non_key_cols = [col for col in arrow_table.column_names if col not in key_columns and not col.startswith("_")]
-    if not non_key_cols:
-        return
-    key_join = " AND ".join(f"s.{quote_identifier(k)} = t.{quote_identifier(k)}" for k in key_columns)
-    key_list = ", ".join(f"s.{quote_identifier(k)}" for k in key_columns)
-    where_clause = " OR ".join(
-        f"s.{quote_identifier(c)} IS DISTINCT FROM t.{quote_identifier(c)}" for c in non_key_cols
-    )
-    query = f"""
-        SELECT {key_list}
-        FROM {quoted_source} s
-        JOIN {quoted_target} t ON {key_join}
-        WHERE {where_clause}
-    """
-    try:
-        differing = con.execute(query).fetchall()
-    except Exception:
-        raise ValueError("Could not query target for key validation") from None
-    if differing:
-        examples = ", ".join(
-            ", ".join(f"{key}={value!r}" for key, value in zip(key_columns, row, strict=False))
-            for row in differing[:10]
-        )
-        raise ValueError(f"Matched key rows have differing values: {examples}")
-
-
-def assert_target_rows_missing_from_source(
-    con: duckdb.DuckDBPyConnection,
-    arrow_table: pa.Table,
-    *,
-    quoted_target: str,
-    quoted_source: str,
-    key_columns: Sequence[str],
-) -> None:
-    source_date_col = "source_market_date"
-    if source_date_col not in arrow_table.column_names:
-        return
-    key_join = " AND ".join(f"s.{quote_identifier(k)} = t.{quote_identifier(k)}" for k in key_columns)
-    key_list = ", ".join(f"t.{quote_identifier(k)}" for k in key_columns)
-    query = f"""
-        WITH source_dates AS (
-            SELECT DISTINCT {quoted_source}.{quote_identifier(source_date_col)} AS source_date
-            FROM {quoted_source}
-        )
-        SELECT t.{quote_identifier(source_date_col)} AS source_date, {key_list}
-        FROM {quoted_target} t
-        JOIN source_dates sd
-            ON t.{quote_identifier(source_date_col)} = sd.source_date
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM {quoted_source} s
-            WHERE s.{quote_identifier(source_date_col)} = t.{quote_identifier(source_date_col)}
-                AND {key_join}
-        )
-    """
-    try:
-        missing = con.execute(query).fetchall()
-    except Exception as exc:
-        raise ValueError("Could not query target for source-date coverage check") from exc
-    if missing:
-        examples = ", ".join(
-            f"source_date={row[0]!r}, keys={dict(zip(key_columns, row[1:], strict=False))!r}" for row in missing[:10]
-        )
-        raise ValueError(f"Target has rows for source_date(s) absent from the newly downloaded source file: {examples}")
-
-
 class RawTablePublisher:
     def __init__(
         self,
@@ -242,8 +163,17 @@ class RawTablePublisher:
         table: RawDuckLakeTable,
         mode: DuckLakeWriterMode,
         key_columns: Sequence[str] = (),
+        partition_column: str | None = None,
+        partition_value: object | None = None,
     ) -> DuckLakeWriteMetrics:
-        self.validate_write_request(arrow_table, table=table, mode=mode, key_columns=key_columns)
+        self.validate_write_request(
+            arrow_table,
+            table=table,
+            mode=mode,
+            key_columns=key_columns,
+            partition_column=partition_column,
+            partition_value=partition_value,
+        )
         with self._session.prepare_arrow_source(arrow_table) as source_name:
             return self.write_prepared_source(
                 arrow_table,
@@ -251,6 +181,8 @@ class RawTablePublisher:
                 table=table,
                 mode=mode,
                 key_columns=key_columns,
+                partition_column=partition_column,
+                partition_value=partition_value,
             )
 
     def validate_write_request(
@@ -260,6 +192,8 @@ class RawTablePublisher:
         table: RawDuckLakeTable,
         mode: DuckLakeWriterMode,
         key_columns: Sequence[str] = (),
+        partition_column: str | None = None,
+        partition_value: object | None = None,
     ) -> None:
         self._require_data_table_lock(table)
         if self._declared_policy is not None and mode != self._declared_policy:
@@ -283,7 +217,12 @@ class RawTablePublisher:
             if missing_columns:
                 raise ValueError("APPEND_SNAPSHOT_ROWS requires arrow_table columns: " + ", ".join(missing_columns))
             return
-        if mode is DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS:
+        if mode is DuckLakeWriterMode.REPLACE_PARTITION:
+            if partition_column is None or partition_value is None:
+                raise ValueError("REPLACE_PARTITION requires partition_column and partition_value")
+            quote_identifier(partition_column)
+            if partition_column not in arrow_table.column_names:
+                raise ValueError(f"partition_column must exist in arrow_table columns: {partition_column}")
             validate_key_columns(arrow_table, key_columns)
             return
         if mode is not DuckLakeWriterMode.REPLACE_TABLE:
@@ -297,8 +236,17 @@ class RawTablePublisher:
         table: RawDuckLakeTable,
         mode: DuckLakeWriterMode,
         key_columns: Sequence[str] = (),
+        partition_column: str | None = None,
+        partition_value: object | None = None,
     ) -> DuckLakeWriteMetrics:
-        self.validate_write_request(arrow_table, table=table, mode=mode, key_columns=key_columns)
+        self.validate_write_request(
+            arrow_table,
+            table=table,
+            mode=mode,
+            key_columns=key_columns,
+            partition_column=partition_column,
+            partition_value=partition_value,
+        )
 
         con = self._session.connection
         alias = self._session.alias
@@ -351,53 +299,52 @@ class RawTablePublisher:
             return metrics
 
         require_table(con, alias=alias, target=target)
-        assert_matched_key_rows_identical(
-            con,
-            arrow_table,
-            quoted_target=quoted_target,
-            quoted_source=quoted_source,
-            key_columns=key_columns,
-        )
-        if mode is DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS:
-            assert_target_rows_missing_from_source(
-                con,
-                arrow_table,
-                quoted_target=quoted_target,
-                quoted_source=quoted_source,
-                key_columns=key_columns,
+        if mode is DuckLakeWriterMode.REPLACE_PARTITION:
+            assert partition_column is not None
+            assert partition_value is not None
+            quoted_partition = quote_identifier(partition_column)
+            invalid_partition_rows = con.execute(
+                f"SELECT COUNT(*) FROM {quoted_source} WHERE {quoted_partition} IS DISTINCT FROM ?",
+                [partition_value],
+            ).fetchone()
+            assert invalid_partition_rows is not None
+            if invalid_partition_rows[0]:
+                raise ValueError(
+                    "Authoritative partition source contains rows outside the expected partition "
+                    f"{partition_column}={partition_value!r}"
+                )
+
+            key_list = ", ".join(quote_identifier(key) for key in key_columns)
+            duplicate_keys = con.execute(
+                f"SELECT {key_list} FROM {quoted_source} GROUP BY {key_list} HAVING COUNT(*) > 1 LIMIT 10"
+            ).fetchall()
+            if duplicate_keys:
+                examples = ", ".join(
+                    ", ".join(f"{key}={value!r}" for key, value in zip(key_columns, row, strict=False))
+                    for row in duplicate_keys
+                )
+                raise ValueError(f"Authoritative partition source contains duplicate keys: {examples}")
+
+            replaced = con.execute(
+                f"SELECT COUNT(*) FROM {quoted_target} WHERE {quoted_partition} = ?",
+                [partition_value],
+            ).fetchone()
+            assert replaced is not None
+            with self._session.transaction():
+                con.execute(f"DELETE FROM {quoted_target} WHERE {quoted_partition} = ?", [partition_value])
+                con.execute(f"INSERT INTO {quoted_target} BY NAME SELECT * FROM {quoted_source}")
+            metrics = DuckLakeWriteMetrics(
+                table=table,
+                mode=mode,
+                attempted_rows=len(arrow_table),
+                inserted_rows=len(arrow_table),
+                matched_rows=0,
+                replaced_rows=int(replaced[0]),
             )
+            self._record_write_metrics(metrics, key_columns=key_columns)
+            return metrics
 
-        matched_rows = count_source_rows_with_matches(
-            con,
-            quoted_target=quoted_target,
-            quoted_source=quoted_source,
-            key_columns=list(key_columns),
-        )
-        inserted_rows = count_source_rows_without_matches(
-            con,
-            quoted_target=quoted_target,
-            quoted_source=quoted_source,
-            key_columns=list(key_columns),
-        )
-
-        con.execute(
-            f"""
-            MERGE INTO {quoted_target} AS target
-            USING {quoted_source} AS source
-            USING ({", ".join(quote_identifier(key) for key in key_columns)})
-            WHEN NOT MATCHED THEN INSERT BY NAME
-            """
-        )
-        metrics = DuckLakeWriteMetrics(
-            table=table,
-            mode=mode,
-            attempted_rows=matched_rows + inserted_rows,
-            inserted_rows=inserted_rows,
-            matched_rows=matched_rows,
-            replaced_rows=0,
-        )
-        self._record_write_metrics(metrics, key_columns=key_columns)
-        return metrics
+        raise AssertionError(f"Unhandled DuckLake writer mode: {mode}")
 
     def append_snapshot_prepared_source(
         self,

@@ -330,7 +330,7 @@ def test_run_pipeline_logs_summary_and_day_summary(
             write_metrics=(
                 DuckLakeWriteMetrics(
                     table=RawDuckLakeTable.MARKET_HISTORY,
-                    mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+                    mode=DuckLakeWriterMode.REPLACE_PARTITION,
                     attempted_rows=10,
                     inserted_rows=7,
                     matched_rows=3,

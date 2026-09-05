@@ -11,7 +11,7 @@ from eve_ingest.publication.prepared_source import PreparedAuthoritativeArrowSou
 from eve_ingest.publication.runner import run_dataset_pipeline
 from eve_ingest.publication.specs import (
     DatasetPublisherSpec,
-    InsertMissingKeysAuthoritativePartition,
+    ReplaceAuthoritativePartition,
     SourceDateScope,
 )
 from eve_ingest.raw_objects import AcquiredRawObject, RawObjectRequest, UpdateMode
@@ -32,7 +32,8 @@ PUBLISHER_SPEC = DatasetPublisherSpec(
     update_mode=UpdateMode.MUTABLE,
     data_tables=(RawDuckLakeTable.MARKET_HISTORY,),
     provenance_tables=(RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,),
-    write_policy=InsertMissingKeysAuthoritativePartition(
+    write_policy=ReplaceAuthoritativePartition(
+        partition_column="date",
         key_columns=("date", "region_id", "type_id"),
     ),
     publication_scope=SourceDateScope("market_history"),
@@ -73,7 +74,7 @@ def publish_one(raw_object: AcquiredRawObject, ctx: PublishContext) -> PublishRe
         table=RawDuckLakeTable.MARKET_HISTORY,
         arrow_table=table,
     )
-    return ctx.insert_missing_keys_arrow(prepared, source_ref_id=source_ref_id)
+    return ctx.replace_partition_arrow(prepared, source_ref_id=source_ref_id)
 
 
 def run_pipeline(config: EverefCliConfig) -> int:

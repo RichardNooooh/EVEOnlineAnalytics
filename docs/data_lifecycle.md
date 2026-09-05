@@ -45,8 +45,8 @@ Writer behavior should follow dataset semantics and publication scope.
 
 - snapshot-oriented publication uses idempotent insert-missing-key behavior so repeated
   processing of the same snapshot does not duplicate rows
-- source-partition-authoritative publication validates the covered partition scope and
-  preserves an explicit replacement boundary for that source partition
+- source-partition-authoritative publication validates and atomically replaces the
+  covered source partition
 - full-extract-authoritative publication replaces the visible table contents for the
   relevant published table when a new latest extract is accepted
 
@@ -87,8 +87,8 @@ Current raw publication semantics:
 
 - `market_orders` and `fuzzwork_orders` publish snapshot data with idempotent
   insert-missing-key semantics
-- `market_history` publishes source-date-authoritative data and currently applies
-  assert-partition-coverage plus insert-missing semantics for each source date
+- `market_history` publishes source-date-authoritative data by atomically replacing each
+  validated source-date partition
 - `references` publishes latest full extracts using full-table replacement semantics
 - raw provenance is published into dataset-scoped support tables instead of a shared
   cross-dataset provenance table

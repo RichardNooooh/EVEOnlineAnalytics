@@ -40,7 +40,7 @@ The current contract is:
   rule; scheduler-level limits such as Airflow `max_active_runs=1` are outer guards
   rather than the source of truth.
 - Writers publish through DuckLake table commits or merge/delete-insert semantics (refined
-  by ADR-008 amendment: insert-new-by-key is the current practice) rather
+  by ADR-008 amendments: market-history uses source-date partition replacement) rather
   than mutating shared DuckDB database state in place.
 - DuckDB is allowed only as **local or transient compute** for development and
   single-writer batch jobs.

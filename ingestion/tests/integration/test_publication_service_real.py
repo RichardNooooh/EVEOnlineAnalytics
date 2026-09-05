@@ -22,7 +22,7 @@ from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.specs import (
     AppendSnapshotRows,
     DatasetPublisherSpec,
-    InsertMissingKeysAuthoritativePartition,
+    ReplaceAuthoritativePartition,
     ReplaceReferenceTables,
     SourceDateScope,
 )
@@ -281,14 +281,15 @@ def test_append_snapshot_immutable_violation(shared_con) -> None:
 
 
 @pytest.mark.real_duckdb
-def test_insert_missing_keys_success(shared_con) -> None:
+def test_replace_authoritative_partition_success(shared_con) -> None:
     spec = DatasetPublisherSpec(
         dataset_name="market-history",
         update_mode=UpdateMode.MUTABLE,
         data_tables=(RawDuckLakeTable.MARKET_HISTORY,),
         provenance_tables=(RawDuckLakeProvenanceTable.MARKET_HISTORY_OBJECTS,),
         publication_scope=SourceDateScope("market_history"),
-        write_policy=InsertMissingKeysAuthoritativePartition(
+        write_policy=ReplaceAuthoritativePartition(
+            partition_column="date",
             key_columns=("date", "region_id", "type_id"),
         ),
     )
@@ -334,7 +335,7 @@ def test_insert_missing_keys_success(shared_con) -> None:
         prep_ctx = SourcePreparationContext(session=session)
         service = PublicationService(raw_tables=raw_tables, provenance=provenance, session=session, spec=spec)
 
-        first = service.insert_missing_keys(first_prepared, ctx=prep_ctx, source_ref_id="soid-auth")
+        first = service.replace_partition(first_prepared, ctx=prep_ctx, source_ref_id="soid-auth")
 
     assert first.success is True
     assert first.source_date == "2026-01-01"
@@ -342,7 +343,7 @@ def test_insert_missing_keys_success(shared_con) -> None:
     assert first.write_metrics[0].inserted_rows == 2
     assert first.write_metrics[0].matched_rows == 0
 
-    second_table = _build_table([1, 2, 3], [10.0, 20.0, 30.0])
+    second_table = _build_table([2, 3], [22.0, 30.0])
     second_prepared = PreparedAuthoritativeArrowSource(
         raw_object=raw_object,
         source_system="everef",
@@ -361,21 +362,22 @@ def test_insert_missing_keys_success(shared_con) -> None:
         prep_ctx = SourcePreparationContext(session=session)
         service = PublicationService(raw_tables=raw_tables, provenance=provenance, session=session, spec=spec)
 
-        second = service.insert_missing_keys(second_prepared, ctx=prep_ctx, source_ref_id="soid-auth")
+        second = service.replace_partition(second_prepared, ctx=prep_ctx, source_ref_id="soid-auth")
 
     assert second.success is True
     assert len(second.write_metrics) == 1
-    assert second.write_metrics[0].inserted_rows == 1
-    assert second.write_metrics[0].matched_rows == 2
+    assert second.write_metrics[0].inserted_rows == 2
+    assert second.write_metrics[0].matched_rows == 0
+    assert second.write_metrics[0].replaced_rows == 2
 
     rows = shared_con.execute(
         'SELECT type_id, average FROM "memory"."raw"."raw_market_history" ORDER BY type_id'
     ).fetchall()
-    assert rows == [(1, 10.0), (2, 20.0), (3, 30.0)]
+    assert rows == [(2, 22.0), (3, 30.0)]
 
 
 @pytest.mark.real_duckdb
-def test_insert_missing_keys_wrong_policy(shared_con) -> None:
+def test_replace_partition_wrong_policy(shared_con) -> None:
     spec = DatasetPublisherSpec(
         dataset_name="market-orders",
         update_mode=UpdateMode.SNAPSHOT,
@@ -411,8 +413,8 @@ def test_insert_missing_keys_wrong_policy(shared_con) -> None:
         prep_ctx = SourcePreparationContext(session=session)
         service = PublicationService(raw_tables=raw_tables, provenance=provenance, session=session, spec=spec)
 
-        with pytest.raises(TypeError, match="not configured for insert-missing-keys"):
-            service.insert_missing_keys(prepared, ctx=prep_ctx)
+        with pytest.raises(TypeError, match="not configured for partition replacement"):
+            service.replace_partition(prepared, ctx=prep_ctx)
 
 
 @pytest.mark.real_duckdb

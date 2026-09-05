@@ -26,7 +26,7 @@ from eve_ingest.publication.source_prep import SourcePreparationContext
 from eve_ingest.publication.specs import (
     AppendSnapshotRows,
     DatasetPublisherSpec,
-    InsertMissingKeysAuthoritativePartition,
+    ReplaceAuthoritativePartition,
     ReplaceReferenceTables,
 )
 from eve_ingest.raw_objects.models import AcquiredRawObject
@@ -81,9 +81,9 @@ def append_snapshot_spec() -> DatasetPublisherSpec:
 
 
 @pytest.fixture
-def insert_missing_keys_spec() -> DatasetPublisherSpec:
+def replace_partition_spec() -> DatasetPublisherSpec:
     spec = create_autospec(DatasetPublisherSpec, instance=True)
-    spec.write_policy = InsertMissingKeysAuthoritativePartition(key_columns=("type_id", "region_id"))
+    spec.write_policy = ReplaceAuthoritativePartition(partition_column="date", key_columns=("type_id", "region_id"))
     spec.dataset_name = "market_history"
     return spec
 
@@ -269,16 +269,16 @@ class TestPublicationServiceAppendSnapshot:
             service.append_snapshot(prepared, ctx=mock_prep_ctx)
 
 
-class TestPublicationServiceInsertMissingKeys:
+class TestPublicationServiceReplacePartition:
     # ------------------------------------------------------------------
     # Success path
     # ------------------------------------------------------------------
 
-    def test_insert_missing_keys_success(
+    def test_replace_partition_success(
         self,
         mock_raw_tables: MagicMock,
         mock_session: MagicMock,
-        insert_missing_keys_spec: DatasetPublisherSpec,
+        replace_partition_spec: DatasetPublisherSpec,
     ) -> None:
         provenance = FakeSourceObjectProvenanceRepository()
         mock_prep_ctx = create_autospec(SourcePreparationContext, instance=True)
@@ -286,7 +286,7 @@ class TestPublicationServiceInsertMissingKeys:
             raw_tables=mock_raw_tables,
             provenance=provenance,
             session=mock_session,
-            spec=insert_missing_keys_spec,
+            spec=replace_partition_spec,
         )
 
         raw_object = _make_mock_raw_object()
@@ -303,7 +303,7 @@ class TestPublicationServiceInsertMissingKeys:
         mock_prep_ctx.source_ref_id.return_value = "soid-1"
         metrics = DuckLakeWriteMetrics(
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             attempted_rows=1,
             inserted_rows=1,
             matched_rows=0,
@@ -313,7 +313,7 @@ class TestPublicationServiceInsertMissingKeys:
         mock_prep_ctx.prepare_arrow_source.return_value.__enter__.return_value = "_arrow_view"
         mock_session.transaction.return_value.__enter__.return_value = None
 
-        result = service.insert_missing_keys(prepared, ctx=mock_prep_ctx, source_ref_id="soid-1")
+        result = service.replace_partition(prepared, ctx=mock_prep_ctx, source_ref_id="soid-1")
 
         assert result.success is True
         assert result.source_date == "2026-01-01"
@@ -329,15 +329,17 @@ class TestPublicationServiceInsertMissingKeys:
             arrow_table,
             source_name="_arrow_view",
             table=RawDuckLakeTable.MARKET_HISTORY,
-            mode=DuckLakeWriterMode.ASSERT_PARTITION_COVERAGE_INSERT_MISSING_KEYS,
+            mode=DuckLakeWriterMode.REPLACE_PARTITION,
             key_columns=("type_id", "region_id"),
+            partition_column="date",
+            partition_value=date(2026, 1, 1),
         )
 
     # ------------------------------------------------------------------
     # Wrong policy type
     # ------------------------------------------------------------------
 
-    def test_insert_missing_keys_wrong_policy_raises_type_error(
+    def test_replace_partition_wrong_policy_raises_type_error(
         self,
         mock_raw_tables: MagicMock,
         mock_provenance: MagicMock,
@@ -354,8 +356,8 @@ class TestPublicationServiceInsertMissingKeys:
         )
         prepared = create_autospec(PreparedAuthoritativeArrowSource, instance=True)
 
-        with pytest.raises(TypeError, match="not configured for insert-missing-keys publication"):
-            service.insert_missing_keys(prepared, ctx=mock_prep_ctx)
+        with pytest.raises(TypeError, match="not configured for partition replacement"):
+            service.replace_partition(prepared, ctx=mock_prep_ctx)
 
 
 class TestPublicationServiceReplaceTables:

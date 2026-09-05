@@ -76,8 +76,8 @@ or ingestion tests.
     new `source_ref_id`; replay idempotency comes from raw publication/provenance
     state keyed by `source_ref_id`, while `source_date` is the publication and lock
     batch scope.
-  - `market_history` is source-date-authoritative and validates the covered source-date
-    scope before publication.
+  - `market_history` is source-date-authoritative and atomically replaces the covered
+    source-date partition after validating its date and key uniqueness.
   - `references` ingests the latest full extracts and uses full-table replacement
     semantics per published reference table.
   - Raw-file provenance is dataset-scoped via `raw_market_history_objects`,
