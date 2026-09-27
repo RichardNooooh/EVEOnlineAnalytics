@@ -2,19 +2,25 @@ version: 2
 
 models:
   - name: stg_everef_ref_groups
-    description: Typed Everef item-group reference staging model.
+    description: >-
+      Typed scratch view of the latest full inventory-group extract, one row per
+      group_id. Includes published and unpublished groups. Inventory groups classify
+      item types under categories and are distinct from market-browser groups.
     columns:
       - name: group_id
-        description: Unique group identifier.
+        data_type: bigint
+        description: Stable inventory group identifier.
         tests:
           - not_null
           - unique
       - name: name_en
-        description: English group name.
+        data_type: varchar
+        description: English inventory group name.
         tests:
           - not_null
       - name: category_id
-        description: Category identifier.
+        data_type: bigint
+        description: Parent inventory category identifier linking to stg_everef_ref_categories.
         tests:
           - not_null
           - relationships:
@@ -22,6 +28,10 @@ models:
                 to: ref('stg_everef_ref_categories')
                 field: category_id
       - name: published
-        description: Whether the group is published in-game.
+        data_type: boolean
+        description: Source publication flag for the inventory group, independent of member type flags.
+        test:
+          - not_null
       - name: icon_id
+        data_type: bigint
         description: Icon identifier.

@@ -2,182 +2,494 @@ version: 2
 
 sources:
   - name: everef
-    description: Raw Everef publication contracts staged for dbt cleanup.
+    description: >-
+      Canonical raw DuckLake tables published from Everef bulk archives, including
+      archived Fuzzwork snapshots. History is replaced per source market date;
+      snapshots are appended idempotently per source object; reference tables are
+      replaced from the latest full extract. Object tables record dataset-scoped lineage.
     database: "{{ env_var('DBT_DUCKLAKE_ALIAS', 'raw_lake') }}"
     schema: raw
     tables:
       - name: raw_market_history
-        description: Daily market-history rows published from Everef archives.
+        description: >-
+          Daily regional market history at (date, region_id, type_id) grain.
+          Each accepted source file atomically replaces its market date, including
+          corrections and removals. Prices are in ISK per unit; average means VWAP.
         columns:
           - name: date
+            data_type: date
+            description: Market observation date represented by the daily archive.
           - name: region_id
+            data_type: bigint
+            description: Market region identifier; 10000002 identifies The Forge.
           - name: type_id
+            data_type: bigint
+            description: Item type identifier linking to raw_reference_types.
           - name: average
+            data_type: double
+            description: Daily volume-weighted average price (VWAP) in ISK per unit, not median price.
           - name: highest
+            data_type: double
+            description: Highest observed unit price in ISK for this region, item, and date.
           - name: lowest
+            data_type: double
+            description: Lowest observed unit price in ISK for this region, item, and date.
           - name: order_count
+            data_type: bigint
+            description: Daily market order count reported by the source for this region and item.
           - name: volume
+            data_type: bigint
+            description: Number of item units traded in this region on the observation date.
           - name: http_last_modified
+            data_type: timestamp
+            description: Source-provided HTTP last-modified timestamp carried in the archive row.
           - name: source_ref_id
+            data_type: varchar
+            description: Deterministic hash of source system, endpoint, and URL linking to raw_market_history_objects.
           - name: source_market_date
+            data_type: date
+            description: Archive market date used as the authoritative replacement scope; must match date.
       - name: raw_market_orders
-        description: Market-order snapshots published from Everef archives.
+        description: >-
+          Market-order book snapshots, with one order observation per source object
+          and order_id. Replaying an ingested source object does not append its rows
+          again. Orders may recur across snapshots; later absence does not delete history.
         columns:
           - name: order_id
+            data_type: bigint
+            description: Market order identifier; the same order may appear in multiple snapshots.
           - name: type_id
+            data_type: bigint
+            description: Item type offered or requested by the order.
           - name: region_id
+            data_type: bigint
+            description: Market region containing the order.
           - name: location_id
+            data_type: bigint
+            description: Station or structure location identifier for the order.
           - name: system_id
+            data_type: bigint
+            description: Solar system identifier for the order location.
           - name: range
+            data_type: varchar
+            description: Source order range, expressed as a jump count or a named scope such as station or region.
           - name: price
+            data_type: double
+            description: Order price in ISK per item unit.
           - name: volume_remain
+            data_type: bigint
+            description: Number of item units remaining on the order at snapshot time.
           - name: volume_total
+            data_type: bigint
+            description: Number of item units initially placed on the order.
           - name: min_volume
+            data_type: bigint
+            description: Minimum item-unit quantity specified for fulfillment of the order.
           - name: issued
+            data_type: timestamp
+            description: Source order issue timestamp parsed from UTC, stored without a timezone.
           - name: expires
+            data_type: timestamp
+            description: Reserved order expiry timestamp; the current Everef publisher writes null.
           - name: duration
+            data_type: bigint
+            description: Order duration in days as reported by the source.
           - name: is_buy_order
+            data_type: boolean
+            description: True for a buy order and false for a sell order.
           - name: reported_by
+            data_type: bigint
+            description: Reserved reporting-character identifier; the current Everef publisher writes null.
           - name: http_last_modified
+            data_type: timestamp
+            description: Source-provided HTTP last-modified timestamp carried in the archive row.
           - name: station_id
+            data_type: bigint
+            description: Source-provided station identifier, when available.
           - name: constellation_id
+            data_type: bigint
+            description: Source-provided constellation identifier for the order location.
           - name: source_ref_id
+            data_type: varchar
+            description: Deterministic source-object hash linking to raw_market_orders_objects.
           - name: source_market_date
+            data_type: date
+            description: Archive source date used for partitioning and publication batches.
           - name: snapshot_ts
+            data_type: timestamp with time zone
+            description: UTC snapshot instant derived from the archive identity, not the order issue time.
       - name: raw_fuzzwork_orders
-        description: Fuzzwork order-set snapshots published from Everef archives.
+        description: >-
+          Fuzzwork order-set snapshots archived by Everef, with one order observation
+          per source object and order_id. Publication appends each source object
+          idempotently and retains observations from earlier snapshots.
         columns:
           - name: order_id
+            data_type: bigint
+            description: Market order identifier; the same order may appear in multiple snapshots.
           - name: type_id
+            data_type: bigint
+            description: Item type offered or requested by the order.
           - name: issued
+            data_type: timestamp
+            description: Order issue timestamp reported by the source.
           - name: is_buy_order
+            data_type: boolean
+            description: True for a buy order and false for a sell order.
           - name: volume_remain
+            data_type: bigint
+            description: Number of item units remaining on the order at snapshot time.
           - name: volume_total
+            data_type: bigint
+            description: Number of item units initially placed on the order.
           - name: min_volume
+            data_type: bigint
+            description: Minimum item-unit quantity specified for fulfillment of the order.
           - name: price
+            data_type: double
+            description: Order price in ISK per item unit.
           - name: location_id
+            data_type: bigint
+            description: Station or structure location identifier for the order.
           - name: range
+            data_type: varchar
+            description: Source order range preserved as text from the Fuzzwork snapshot.
           - name: duration
+            data_type: bigint
+            description: Order duration in days as reported by the source.
           - name: region_id
+            data_type: bigint
+            description: Market region containing the order.
           - name: order_set_id
+            data_type: bigint
+            description: Fuzzwork identifier of the order set containing this observation.
           - name: source_ref_id
+            data_type: varchar
+            description: Deterministic source-object hash linking to raw_fuzzwork_orders_objects.
           - name: source_market_date
+            data_type: date
+            description: Archive source date used for partitioning and publication batches.
           - name: snapshot_ts
+            data_type: timestamp with time zone
+            description: UTC snapshot instant derived from the archive identity, not the order issue time.
       - name: raw_reference_types
-        description: Latest-extract item type reference data.
+        description: >-
+          Latest full item-type reference extract, one row per type_id. Full-table
+          replacement retains the current reference state rather than historical versions.
+          Includes both published and unpublished types.
         columns:
           - name: type_id
+            data_type: bigint
+            description: Stable item type identifier.
           - name: name_en
+            data_type: varchar
+            description: English item type name.
           - name: description_en
+            data_type: varchar
+            description: English item description as supplied by the reference extract.
           - name: group_id
+            data_type: bigint
+            description: Inventory group identifier linking to raw_reference_groups; distinct from market_group_id.
           - name: category_id
+            data_type: bigint
+            description: Inventory category identifier carried on the type record.
           - name: market_group_id
+            data_type: bigint
+            description: Market-browser group assignment, when present; links to raw_reference_market_groups.
           - name: published
+            data_type: boolean
+            description: Source publication flag for the type; does not by itself establish active trading or group publication.
           - name: volume
+            data_type: double
+            description: Item volume in cubic meters, not traded unit volume.
           - name: icon_id
+            data_type: bigint
+            description: Reference icon identifier for the item type.
           - name: meta_group_id
+            data_type: bigint
+            description: Item meta-group classification identifier from the reference extract.
       - name: raw_reference_regions
-        description: Latest-extract region reference data.
+        description: Latest full region reference extract, one row per region_id; replaced in full on publication.
         columns:
           - name: region_id
+            data_type: bigint
+            description: Stable region identifier; 10000002 identifies The Forge.
           - name: name_en
+            data_type: varchar
+            description: English region name.
           - name: description_en
+            data_type: varchar
+            description: English region description as supplied by the reference extract.
           - name: universe_id
+            data_type: varchar
+            description: Source universe identifier preserved as text.
           - name: faction_id
+            data_type: bigint
+            description: Associated faction identifier, when supplied.
           - name: wormhole_class_id
+            data_type: bigint
+            description: Wormhole-space class identifier, when supplied.
       - name: raw_reference_groups
-        description: Latest-extract item group reference data.
+        description: >-
+          Latest full inventory-group reference extract, one row per group_id;
+          replaced in full on publication. Inventory groups classify item types
+          under categories and are distinct from the market-browser group tree.
         columns:
           - name: group_id
+            data_type: bigint
+            description: Stable inventory group identifier.
           - name: name_en
+            data_type: varchar
+            description: English inventory group name.
           - name: category_id
+            data_type: bigint
+            description: Parent inventory category identifier linking to raw_reference_categories.
           - name: published
+            data_type: boolean
+            description: Source publication flag for the inventory group, independent of member type flags.
           - name: icon_id
+            data_type: bigint
+            description: Reference icon identifier for the inventory group.
       - name: raw_reference_categories
-        description: Latest-extract category reference data.
+        description: Latest full inventory-category reference extract, one row per category_id; replaced in full on publication.
         columns:
           - name: category_id
+            data_type: bigint
+            description: Stable inventory category identifier.
           - name: name_en
+            data_type: varchar
+            description: English inventory category name.
           - name: published
+            data_type: boolean
+            description: Source publication flag for the inventory category.
           - name: icon_id
+            data_type: bigint
+            description: Reference icon identifier for the inventory category.
       - name: raw_reference_market_groups
-        description: Latest-extract market group reference data.
+        description: >-
+          Latest full market-browser group tree, one row per market_group_id;
+          replaced in full on publication. This recursive hierarchy is separate
+          from inventory groups and categories.
         columns:
           - name: market_group_id
+            data_type: bigint
+            description: Stable market-browser group identifier.
           - name: name_en
+            data_type: varchar
+            description: English market-browser group name.
           - name: description_en
+            data_type: varchar
+            description: English market-browser group description from the reference extract.
           - name: parent_group_id
+            data_type: bigint
+            description: Parent market_group_id in the recursive market-browser hierarchy, when present.
           - name: has_types
+            data_type: boolean
+            description: Source flag indicating whether item types are assigned directly to this market group.
           - name: icon_id
+            data_type: bigint
+            description: Reference icon identifier for the market-browser group.
       - name: raw_market_history_objects
-        description: Dataset-scoped provenance rows for Everef market-history source objects.
+        description: >-
+          Dataset-scoped provenance for market-history archives, one row per
+          source_ref_id. Identifies source URLs rather than immutable file versions;
+          source corrections can update the recorded object metadata.
         columns:
           - name: source_ref_id
+            data_type: varchar
+            description: SHA-256 of source_system, endpoint, and source_url joined by pipe separators; excludes file content.
           - name: source_system
+            data_type: varchar
+            description: Source-system label used in object identity.
           - name: endpoint
+            data_type: varchar
+            description: Dataset endpoint label used in object identity.
           - name: source_url
+            data_type: varchar
+            description: Download URL identifying the source archive.
           - name: storage_uri
+            data_type: varchar
+            description: Location of the locally cached source object, when recorded.
           - name: source_market_date
+            data_type: date
+            description: Market date represented by the daily archive and replaced on publication.
           - name: snapshot_ts
+            data_type: timestamp
+            description: Optional source snapshot timestamp; daily market-history files use source_market_date.
           - name: last_modified
+            data_type: timestamp
+            description: Source-object last-modified timestamp recorded during acquisition.
           - name: content_length
+            data_type: bigint
+            description: Source-object size in bytes, when available.
           - name: sha256
+            data_type: varchar
+            description: SHA-256 checksum of the cached source file, when available.
           - name: downloaded_at
+            data_type: timestamp
+            description: Timestamp recorded when the source object was downloaded.
           - name: parsed_at
+            data_type: timestamp
+            description: Timestamp recorded when source parsing completed.
           - name: ingested_at
+            data_type: timestamp
+            description: Timestamp recorded when the source object was ingested into raw tables.
           - name: status
+            data_type: varchar
+            description: Operational source-object processing status recorded by the publisher.
           - name: status_reason
+            data_type: varchar
+            description: Optional detail explaining the recorded processing status or failure.
       - name: raw_market_orders_objects
-        description: Dataset-scoped provenance rows for Everef market-order snapshot source objects.
+        description: >-
+          Dataset-scoped provenance for Everef order snapshots, one row per
+          source_ref_id. Records source identity and processing state used for
+          idempotent source-object publication.
         columns:
           - name: source_ref_id
+            data_type: varchar
+            description: SHA-256 of source_system, endpoint, and source_url joined by pipe separators; excludes file content.
           - name: source_system
+            data_type: varchar
+            description: Source-system label used in object identity.
           - name: endpoint
+            data_type: varchar
+            description: Dataset endpoint label used in object identity.
           - name: source_url
+            data_type: varchar
+            description: Download URL identifying the source archive.
           - name: storage_uri
+            data_type: varchar
+            description: Location of the locally cached source object, when recorded.
           - name: source_market_date
+            data_type: date
+            description: Archive date used for source-date publication batches.
           - name: snapshot_ts
+            data_type: timestamp
+            description: Source snapshot timestamp stored without a timezone in the object support table.
           - name: last_modified
+            data_type: timestamp
+            description: Source-object last-modified timestamp recorded during acquisition.
           - name: content_length
+            data_type: bigint
+            description: Source-object size in bytes, when available.
           - name: sha256
+            data_type: varchar
+            description: SHA-256 checksum of the cached source file, when available.
           - name: downloaded_at
+            data_type: timestamp
+            description: Timestamp recorded when the source object was downloaded.
           - name: parsed_at
+            data_type: timestamp
+            description: Timestamp recorded when source parsing completed.
           - name: ingested_at
+            data_type: timestamp
+            description: Timestamp recorded when the source object was ingested into raw tables.
           - name: status
+            data_type: varchar
+            description: Operational source-object processing status recorded by the publisher.
           - name: status_reason
+            data_type: varchar
+            description: Optional detail explaining the recorded processing status or failure.
       - name: raw_fuzzwork_orders_objects
-        description: Dataset-scoped provenance rows for Fuzzwork order-set source objects.
+        description: >-
+          Dataset-scoped provenance for archived Fuzzwork order sets, one row per
+          source_ref_id. Records source identity and processing state used for
+          idempotent source-object publication.
         columns:
           - name: source_ref_id
+            data_type: varchar
+            description: SHA-256 of source_system, endpoint, and source_url joined by pipe separators; excludes file content.
           - name: source_system
+            data_type: varchar
+            description: Source-system label used in object identity.
           - name: endpoint
+            data_type: varchar
+            description: Dataset endpoint label used in object identity.
           - name: source_url
+            data_type: varchar
+            description: Download URL identifying the source archive.
           - name: storage_uri
+            data_type: varchar
+            description: Location of the locally cached source object, when recorded.
           - name: source_market_date
+            data_type: date
+            description: Archive date used for source-date publication batches.
           - name: snapshot_ts
+            data_type: timestamp
+            description: Source snapshot timestamp stored without a timezone in the object support table.
           - name: last_modified
+            data_type: timestamp
+            description: Source-object last-modified timestamp recorded during acquisition.
           - name: content_length
+            data_type: bigint
+            description: Source-object size in bytes, when available.
           - name: sha256
+            data_type: varchar
+            description: SHA-256 checksum of the cached source file, when available.
           - name: downloaded_at
+            data_type: timestamp
+            description: Timestamp recorded when the source object was downloaded.
           - name: parsed_at
+            data_type: timestamp
+            description: Timestamp recorded when source parsing completed.
           - name: ingested_at
+            data_type: timestamp
+            description: Timestamp recorded when the source object was ingested into raw tables.
           - name: status
+            data_type: varchar
+            description: Operational source-object processing status recorded by the publisher.
           - name: status_reason
+            data_type: varchar
+            description: Optional detail explaining the recorded processing status or failure.
       - name: raw_reference_objects
-        description: Dataset-scoped provenance rows for latest reference-data source objects.
+        description: >-
+          Dataset-scoped provenance for reference archives, one row per source_ref_id.
+          Reference payload tables carry no row-level source_ref_id; this table
+          records archive-level provenance for their latest full-extract publication.
         columns:
           - name: source_ref_id
+            data_type: varchar
+            description: SHA-256 of source_system, endpoint, and source_url joined by pipe separators; excludes file content.
           - name: source_system
+            data_type: varchar
+            description: Source-system label used in object identity.
           - name: endpoint
+            data_type: varchar
+            description: Dataset endpoint label used in object identity.
           - name: source_url
+            data_type: varchar
+            description: Download URL identifying the reference archive.
           - name: storage_uri
+            data_type: varchar
+            description: Location of the locally cached source object, when recorded.
           - name: source_market_date
+            data_type: date
+            description: Optional source date; reference publication is latest-extract-authoritative rather than market-date-scoped.
           - name: snapshot_ts
+            data_type: timestamp
+            description: Optional source snapshot timestamp recorded for the reference archive.
           - name: last_modified
+            data_type: timestamp
+            description: Source-object last-modified timestamp recorded during acquisition.
           - name: content_length
+            data_type: bigint
+            description: Source-object size in bytes, when available.
           - name: sha256
+            data_type: varchar
+            description: SHA-256 checksum of the cached source file, when available.
           - name: downloaded_at
+            data_type: timestamp
+            description: Timestamp recorded when the source object was downloaded.
           - name: parsed_at
+            data_type: timestamp
+            description: Timestamp recorded when source parsing completed.
           - name: ingested_at
+            data_type: timestamp
+            description: Timestamp recorded when the source object was ingested into raw tables.
           - name: status
+            data_type: varchar
+            description: Operational source-object processing status recorded by the publisher.
           - name: status_reason
+            data_type: varchar
+            description: Optional detail explaining the recorded processing status or failure.

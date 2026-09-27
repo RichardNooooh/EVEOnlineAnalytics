@@ -41,6 +41,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY README.md ./
 COPY dbt_project.yml ./
 COPY profiles.yml ./
+COPY packages.yml package-lock.yml ./
+RUN uv run --no-sync dbt deps --profiles-dir .
 COPY analyses ./analyses
 COPY macros ./macros
 COPY models ./models

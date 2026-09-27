@@ -2,29 +2,38 @@ version: 2
 
 models:
   - name: stg_everef_market_orders_provenance
-    description: Typed Everef market-orders provenance staging model for lineage and debugging.
+    description: >-
+      Scratch lineage projection of Everef order snapshots at (source_ref_id,
+      order_id) grain. Exposes the raw row's source-object identity and snapshot
+      date/time; additional object metadata is in raw_market_orders_objects.
     columns:
       - name: order_id
-        description: Unique order identifier.
+        data_type: bigint
+        description: Market order identifier; repeats across source snapshots.
         tests:
           - not_null
       - name: type_id
+        data_type: bigint
         description: Item type identifier.
         tests:
           - not_null
       - name: region_id
+        data_type: bigint
         description: Market region identifier.
         tests:
           - not_null
       - name: source_ref_id
-        description: Deterministic object ID for source-file lineage.
+        data_type: varchar
+        description: Deterministic source-object hash linking to raw_market_orders_objects; excludes file content.
         tests:
           - not_null
       - name: source_market_date
+        data_type: date
         description: Source file market date captured during ingestion.
         tests:
           - not_null
       - name: snapshot_ts
-        description: Snapshot timestamp captured during ingestion.
+        data_type: timestamp with time zone
+        description: UTC snapshot instant derived from the archive identity, not the order issue time.
         tests:
           - not_null

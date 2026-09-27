@@ -2,37 +2,48 @@ version: 2
 
 models:
   - name: stg_everef_market_history
-    description: Typed Everef market-history staging model with ESI average preserved as VWAP.
+    description: >-
+      Typed daily regional history at (market_date, region_id, type_id) grain,
+      read from the current source-date-authoritative raw publication. Renames
+      date to market_date and preserves ESI average as VWAP. Built as a scratch view.
     columns:
       - name: market_date
+        data_type: date
         description: Source market date.
         tests:
           - not_null
       - name: region_id
+        data_type: bigint
         description: Market region identifier.
         tests:
           - not_null
       - name: type_id
+        data_type: bigint
         description: Item type identifier.
         tests:
           - not_null
       - name: average
-        description: Volume-weighted average price from ESI market history.
+        data_type: double
+        description: Daily volume-weighted average price (VWAP) in ISK per unit, not median price.
         tests:
           - not_null
       - name: highest
-        description: Highest observed price.
+        data_type: double
+        description: Highest observed unit price in ISK for this region, item, and date.
         tests:
           - not_null
       - name: lowest
-        description: Lowest observed price.
+        data_type: double
+        description: Lowest observed unit price in ISK for this region, item, and date.
         tests:
           - not_null
       - name: order_count
-        description: Count of market orders.
+        data_type: bigint
+        description: Daily market order count reported by the source for this region and item.
         tests:
           - not_null
       - name: volume
-        description: Traded volume.
+        data_type: bigint
+        description: Number of item units traded in this region on the observation date.
         tests:
           - not_null

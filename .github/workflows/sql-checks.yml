@@ -38,8 +38,8 @@ jobs:
       - name: Sync Project
         run: uv sync --group dev --frozen
 
-      # - name: Install dbt packages
-      #   run: uv run dbt deps
+      - name: Install dbt packages
+        run: uv run dbt deps --profiles-dir .
 
       - name: Lint SQL (transformation)
         run: uv run sqlfluff lint . --ignore-local-config --config .sqlfluff.dbt
