@@ -146,6 +146,38 @@ namespace evidence is recorded in
 
 ## Curated Dataset Contracts
 
+### Frozen Forge study panel
+
+`transformation/seeds/forge_study_panel.csv` owns the accepted study membership.
+Its only columns are unique `type_id` and manually assigned `study_category`.
+Categories are presentation labels: Ships, Modules, Rigs, Drones, Ammunition and
+probes, Structures, Deployables, and Minerals. They do not affect selection.
+
+The selection window is 2022-06-01 through 2022-09-30 inclusive in The Forge:
+
+- Include the eight conventional minerals (types 34–40 and 11399).
+- From published types explicitly classified as Tech I (`meta_group_id = 1`) and
+  evidenced as manufacturing products, take the top 50 by summed history order count.
+- Separately require summed history order count to be at least the inclusive number
+  of selection days (122 here), then take the top 50 by summed daily VWAP × volume.
+  This is a total-activity requirement, not a requirement to trade on every day.
+- Union and deduplicate. Rank by each metric alone; cutoff ties need owner review.
+
+The selection notebook retrieves manufacturing evidence from Everef's dated online
+reference extract, pinned to 2026-09-30 (latest listed on 2026-10-01). It assumes reference classifications have not changed significantly
+apart from additions and publication-status changes. It retains ranks/totals as review
+outputs and generates the two-column seed from selected IDs and explicit manual
+category assignments. Its export cell overwrites the seed deterministically. Rebuild
+dbt after changes; historical analysis checks built membership and categories against
+the generated seed before continuing.
+The initial accepted seed has 103 types; count is an outcome, not a selection target.
+
+`int_study_panel` resolves current authoritative names without filtering selected IDs.
+`int_study_panel_history` exposes observed Forge rows from 2022-06-01 through the
+available cutoff, preserving source values. Both are local scratch analytical models,
+not new durable publications. They add no calendar filling or introduction-date inference.
+The minerals are a declared study component, not the complete Tech I input universe.
+
 Curated datasets standardize naming, grain, and derivations for analytics and ML.
 
 ### `curated_daily_prices`

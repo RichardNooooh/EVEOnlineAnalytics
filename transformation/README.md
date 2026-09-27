@@ -3,6 +3,18 @@
 Standalone dbt project for curated analytics models. Commands below assume you are
 already in `transformation/`.
 
+## Forge Study Panel
+
+`seeds/forge_study_panel.csv` freezes accepted membership with only `type_id` and
+`study_category`. The selection notebook generates it from the selected IDs and
+explicit manual category assignments when its export cell runs. Review generated
+changes and rebuild dbt before analyzing panel history. Selection semantics are in
+[`docs/data_dictionary.md`](../docs/data_dictionary.md#frozen-forge-study-panel).
+
+`int_study_panel` adds authoritative names, and `int_study_panel_history` joins the
+accepted panel to observed Forge history. Run `mise run transform:build` from the
+repository root before executing the notebook's membership/history sections.
+
 ## SQL Linting
 
 Use `.sqlfluff` for fast local Jinja linting and formatting. `.sqlfluff.dbt` is
