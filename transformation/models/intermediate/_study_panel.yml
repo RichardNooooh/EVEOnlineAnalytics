@@ -1,0 +1,50 @@
+version: 2
+
+models:
+  - name: int_study_panel
+    description: >-
+      One row per accepted Forge study type. Membership and manual study category
+      come from the frozen seed; the current authoritative name comes from staged
+      references. Missing names remain visible without removing selected types.
+      Built in local scratch, not a new durable analytical publication.
+    columns:
+      - name: type_id
+        data_type: bigint
+        data_tests: [not_null, unique]
+      - name: type_name
+        data_type: varchar
+      - name: study_category
+        data_type: varchar
+        data_tests: [not_null]
+
+  - name: int_study_panel_history
+    description: >-
+      Observed Forge history for the frozen panel from 2022-06-01 through the
+      available cutoff, at (market_date, region_id, type_id) grain. Source values,
+      including nulls and zeros, are preserved. No calendar filling, introduction-date
+      inference, coverage filters, or scores. average is daily VWAP; estimated_traded_isk
+      is VWAP times volume. Built in local scratch from published raw history.
+    columns:
+      - name: market_date
+        data_type: date
+        data_tests: [not_null]
+      - name: region_id
+        data_type: bigint
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [10000002]
+                quote: false
+      - name: type_id
+        data_type: bigint
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_study_panel')
+                field: type_id
+      - name: type_name
+        data_type: varchar
+      - name: study_category
+        data_type: varchar

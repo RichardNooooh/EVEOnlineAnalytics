@@ -8,6 +8,7 @@ dependencies = [
     "beautifulsoup4>=4.14.3",
     "dlt[duckdb,ducklake,http]>=1.26.0",
     "duckdb>=1.5.2",
+    "eve-market-transformation",
     "ipykernel>=7.2.0",
     "jupyter>=1.1.1",
     "jupyter-client>=8.8.0",
@@ -19,3 +20,6 @@ dependencies = [
     "requests>=2.33.1",
     "tqdm>=4.67.3",
 ]
+
+[tool.uv.sources]
+eve-market-transformation = { path = "../transformation", editable = true }
