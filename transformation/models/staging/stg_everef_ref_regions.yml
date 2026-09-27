@@ -2,22 +2,28 @@ version: 2
 
 models:
   - name: stg_everef_ref_regions
-    description: Typed Everef region reference staging model.
+    description: Typed scratch view of the latest full region reference extract, one row per region_id.
     columns:
       - name: region_id
-        description: Unique region identifier.
+        data_type: bigint
+        description: Stable region identifier; 10000002 identifies The Forge.
         tests:
           - not_null
           - unique
       - name: name_en
+        data_type: varchar
         description: English region name.
         tests:
           - not_null
       - name: description_en
+        data_type: varchar
         description: English region description.
       - name: universe_id
-        description: Universe identifier.
+        data_type: varchar
+        description: Source universe identifier preserved as text.
       - name: faction_id
-        description: Faction identifier.
+        data_type: bigint
+        description: Associated faction identifier, when supplied.
       - name: wormhole_class_id
-        description: Wormhole class identifier.
+        data_type: bigint
+        description: Wormhole-space class identifier, when supplied.

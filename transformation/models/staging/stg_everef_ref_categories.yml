@@ -2,18 +2,24 @@ version: 2
 
 models:
   - name: stg_everef_ref_categories
-    description: Typed Everef category reference staging model.
+    description: >-
+      Typed scratch view of the latest full inventory-category extract, one row
+      per category_id. Includes published and unpublished categories.
     columns:
       - name: category_id
-        description: Unique category identifier.
+        data_type: bigint
+        description: Stable inventory category identifier.
         tests:
           - not_null
           - unique
       - name: name_en
-        description: English category name.
+        data_type: varchar
+        description: English inventory category name.
         tests:
           - not_null
       - name: published
-        description: Whether the category is published in-game.
+        data_type: boolean
+        description: Source publication flag for the inventory category.
       - name: icon_id
+        data_type: bigint
         description: Icon identifier.

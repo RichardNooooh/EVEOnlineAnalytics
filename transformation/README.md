@@ -23,6 +23,7 @@ PostgreSQL-backed DuckLake catalogs.
 Use `uv run` and point dbt at committed project profile:
 
 ```bash
+uv run dbt deps --profiles-dir .
 uv run dbt debug --profiles-dir .
 uv run dbt parse --profiles-dir .
 uv run dbt compile --profiles-dir .
@@ -103,13 +104,73 @@ For copy-pasteable supported host-dbt local Compose example, see
 That helper also creates the local curated DuckLake schema directory before first write.
 All local materializing builds must use `mise run transform:build` from the
 repository root so the shared curated writer lock is held. Direct commands from
-`transformation/` are limited to non-mutating debug, parse, and compile operations:
+`transformation/` are limited to non-materializing operations such as debug, parse,
+compile, and the metadata-only codegen operations documented below:
 
 ```bash
 source ./dbt-airflow-local.env.example.sh
 uv run dbt debug --profiles-dir .
 uv run dbt parse --profiles-dir .
 uv run dbt compile --profiles-dir .
+```
+
+## YAML Scaffolding and Documentation
+
+[`dbt-codegen`](https://github.com/dbt-labs/dbt-codegen) is pinned in
+`packages.yml`; `package-lock.yml` also locks its transitive dependencies. Run
+`uv run dbt deps --profiles-dir .` after checkout or a dependency change. CI and
+the transformation image install these packages as part of their setup.
+
+After loading the local environment as above, generate a source scaffold from
+the attached raw DuckLake catalog:
+
+```bash
+uv run dbt run-operation generate_source --profiles-dir . --args "{
+  \"database_name\": \"${DBT_DUCKLAKE_ALIAS:-raw_lake}\",
+  \"schema_name\": \"raw\",
+  \"name\": \"everef\",
+  \"table_names\": [\"raw_market_history\"],
+  \"generate_columns\": true,
+  \"include_descriptions\": true,
+  \"include_database\": true,
+  \"include_schema\": true
+}"
+```
+
+Generate model properties from an existing materialized relation:
+
+```bash
+uv run dbt run-operation generate_model_yaml --profiles-dir . --args '{
+  "model_names": ["stg_everef_market_history"],
+  "upstream_descriptions": true
+}'
+```
+
+These operations read relation metadata and print YAML; they do not build models
+or maintain documentation automatically. Source tables must exist, and model
+columns reflect the last materialized relation, not unbuilt SQL edits. If a model
+needs materializing, use the supported `mise run transform:build` task from the
+repository root before generating its scaffold.
+
+Review and merge the printed scaffold into the existing properties files. Preserve
+the environment-driven source database configuration, curated descriptions, and
+existing tests rather than replacing an entire file with generated output.
+`upstream_descriptions` matches identical column names in direct upstream nodes;
+it does not trace SQL aliases or verify that a same-named column has the same
+meaning. For example, `average as vwap_price` needs an explicit description.
+
+Model and source YAML document column types, grain, units, derivations, and
+publication semantics. Raw types follow the ingestion table definitions in
+`../ingestion/eve_ingest/ducklake/raw_tables.py`; model types follow their SQL
+casts and output expressions. `data_type` is descriptive metadata here, not an
+enforced dbt model contract. For semantic context, see the
+[data dictionary](../docs/data_dictionary.md) and
+[data lifecycle](../docs/data_lifecycle.md).
+
+Validate edited properties with:
+
+```bash
+uv run dbt parse --profiles-dir . --no-partial-parse
 ```
 
 ## DuckDB Inspection

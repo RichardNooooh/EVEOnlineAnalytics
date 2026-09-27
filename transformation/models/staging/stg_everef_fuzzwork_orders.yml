@@ -2,67 +2,86 @@ version: 2
 
 models:
   - name: stg_everef_fuzzwork_orders
-    description: Typed Everef fuzzwork orders staging model for snapshot-oriented order-set data.
+    description: >-
+      Typed Fuzzwork order-set snapshots archived by Everef, at (source_ref_id,
+      order_id) grain. Preserves observations across snapshots and renames range
+      to order_range. Built as a scratch view over idempotently appended raw objects.
     columns:
       - name: order_id
-        description: Unique order identifier.
+        data_type: bigint
+        description: Market order identifier; repeats across source snapshots.
         tests:
           - not_null
       - name: type_id
+        data_type: bigint
         description: Item type identifier.
         tests:
           - not_null
       - name: region_id
+        data_type: bigint
         description: Market region identifier.
         tests:
           - not_null
       - name: price
+        data_type: double
         description: Order unit price in ISK.
         tests:
           - not_null
       - name: is_buy_order
+        data_type: boolean
         description: True for buy orders, false for sell orders.
         tests:
           - not_null
       - name: source_market_date
+        data_type: date
         description: Source file market date captured during ingestion.
         tests:
           - not_null
       - name: source_ref_id
-        description: Deterministic object ID for source-file lineage.
+        data_type: varchar
+        description: Deterministic source-object hash linking to raw_fuzzwork_orders_objects; excludes file content.
         tests:
           - not_null
       - name: snapshot_ts
-        description: Snapshot timestamp of this order batch.
+        data_type: timestamp with time zone
+        description: UTC snapshot instant derived from the archive identity, not the order issue time.
         tests:
           - not_null
       - name: order_set_id
+        data_type: bigint
         description: Fuzzwork order-set identifier.
         tests:
           - not_null
       - name: issued
+        data_type: timestamp
         description: Timestamp when the order was issued.
         tests:
           - not_null
       - name: volume_remain
-        description: Remaining volume.
+        data_type: bigint
+        description: Number of item units remaining on the order at snapshot time.
         tests:
           - not_null
       - name: volume_total
-        description: Total initial volume.
+        data_type: bigint
+        description: Number of item units initially placed on the order.
         tests:
           - not_null
       - name: min_volume
-        description: Minimum volume for the order.
+        data_type: bigint
+        description: Minimum item-unit quantity specified for fulfillment of the order.
         tests:
           - not_null
       - name: location_id
-        description: Location identifier.
+        data_type: bigint
+        description: Station or structure location identifier for the order.
       - name: order_range
-        description: Order range.
+        data_type: varchar
+        description: Source range renamed to order_range and preserved as text from the Fuzzwork snapshot.
         tests:
           - not_null
       - name: duration
+        data_type: bigint
         description: Order duration in days.
         tests:
           - not_null

@@ -2,53 +2,72 @@ version: 2
 
 models:
   - name: stg_everef_market_history_provenance
-    description: Typed Everef market-history provenance staging model for lineage and debugging.
+    description: >-
+      Scratch lineage view at (market_date, region_id, type_id) grain. Left-joins
+      published history rows to raw_market_history_objects by source_ref_id;
+      object metadata can be null when the support row is missing. Exposes both
+      row and object source dates for comparison.
     columns:
       - name: market_date
+        data_type: date
         description: Source market date stored on the published row.
         tests:
           - not_null
       - name: region_id
+        data_type: bigint
         description: Market region identifier.
         tests:
           - not_null
       - name: type_id
+        data_type: bigint
         description: Item type identifier.
         tests:
           - not_null
       - name: source_market_date
+        data_type: date
         description: Source file date from the source-object provenance row.
         tests:
           - not_null
       - name: row_source_market_date
+        data_type: date
         description: Source file date stored on the published market-history row.
         tests:
           - not_null
       - name: source_ref_id
-        description: Deterministic object ID for source-file lineage.
+        data_type: varchar
+        description: Deterministic hash of source system, endpoint, and URL linking to raw_market_history_objects.
         tests:
           - not_null
       - name: source_url
+        data_type: varchar
         description: Source URL used to identify the published file.
         tests:
           - not_null
       - name: storage_uri
+        data_type: varchar
         description: Raw-object storage URI when available.
       - name: source_sha256
+        data_type: varchar
         description: SHA-256 of the cached source file when available.
       - name: source_content_length
+        data_type: bigint
         description: Source content length in bytes when available.
       - name: source_last_modified
-        description: Source last-modified timestamp string when available.
+        data_type: timestamp
+        description: Source-object last_modified timestamp, renamed and cast to timestamp.
       - name: source_downloaded_at
+        data_type: timestamp
         description: Download timestamp for cached source files when available.
       - name: ingested_at
+        data_type: timestamp
         description: Ingestion timestamp recorded when the file was loaded.
         tests:
           - not_null
       - name: parsed_at
+        data_type: timestamp
         description: Parse timestamp recorded when the file was parsed.
       - name: status
+        data_type: varchar
         description: Source-object ingestion status.
         tests:
           - not_null

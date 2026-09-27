@@ -1,0 +1,93 @@
+version: 2
+
+models:
+  - name: int_forge_market_history
+    description: >-
+      Daily market history restricted to The Forge (region_id 10000002), at
+      (market_date, region_id, type_id) grain. Retains all item types present in
+      staged history and derives traded value from daily VWAP and unit volume.
+      Built in local scratch rather than published to curated DuckLake.
+    columns:
+      - name: market_date
+        data_type: date
+        description: Market observation date.
+      - name: region_id
+        data_type: bigint
+        description: Market region identifier, fixed to 10000002 (The Forge).
+      - name: type_id
+        data_type: bigint
+        description: Item type identifier.
+      - name: average
+        data_type: double
+        description: Daily volume-weighted average price (VWAP) in ISK per unit, not median price.
+      - name: highest
+        data_type: double
+        description: Highest observed unit price in ISK for this item and date in The Forge.
+      - name: lowest
+        data_type: double
+        description: Lowest observed unit price in ISK for this item and date in The Forge.
+      - name: order_count
+        data_type: bigint
+        description: Daily market order count reported by the source for this item in The Forge.
+      - name: volume
+        data_type: bigint
+        description: Number of item units traded in The Forge on the observation date.
+      - name: estimated_traded_isk
+        data_type: double
+        description: Daily traded value in ISK calculated as average * volume, using the source-reported VWAP.
+
+  - name: int_published_types
+    description: >-
+      Scratch projection of the latest item-type reference extract restricted to
+      types whose own published flag is true, one row per type_id. This model
+      does not filter on inventory-group or category publication state.
+    columns:
+      - name: type_id
+        data_type: bigint
+        description: Stable item type identifier.
+      - name: group_id
+        data_type: bigint
+        description: Inventory group identifier; the referenced group may be unpublished.
+      - name: category_id
+        data_type: bigint
+        description: Inventory category identifier carried on the type record.
+      - name: market_group_id
+        data_type: bigint
+        description: Market-browser group assignment, when present; distinct from inventory group_id.
+      - name: name_en
+        data_type: varchar
+        description: English item type name.
+      - name: description_en
+        data_type: varchar
+        description: English item description from the latest reference extract.
+      - name: volume
+        data_type: double
+        description: Item volume in cubic meters, not traded unit volume.
+
+  - name: int_published_groups
+    description: >-
+      Scratch projection of the latest inventory-group reference extract restricted
+      to groups whose own published flag is true, one row per group_id. Does not
+      filter on category publication state.
+    columns:
+      - name: group_id
+        data_type: bigint
+        description: Stable inventory group identifier.
+      - name: name_en
+        data_type: varchar
+        description: English inventory group name.
+      - name: category_id
+        data_type: bigint
+        description: Parent inventory category identifier.
+
+  - name: int_published_categories
+    description: >-
+      Scratch projection of the latest inventory-category reference extract
+      restricted to categories whose published flag is true, one row per category_id.
+    columns:
+      - name: category_id
+        data_type: bigint
+        description: Stable inventory category identifier.
+      - name: name_en
+        data_type: varchar
+        description: English inventory category name.

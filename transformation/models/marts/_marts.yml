@@ -2,40 +2,158 @@ version: 2
 
 models:
   - name: mart_curated_daily_prices
-    description: BI-facing daily price mart derived from canonical market-history facts.
+    description: >-
+      BI-facing daily prices at (market_date, region_id, type_id) grain, materialized
+      as curated_daily_prices in curated DuckLake. Carries VWAP and derives intraday
+      range measures from daily high/low prices. dbt tests run after materialization,
+      so publication has no pre-visibility validation barrier.
     columns:
       - name: market_date
+        data_type: date
         description: Market observation date.
         tests:
           - not_null
       - name: region_id
+        data_type: bigint
         description: Market region identifier.
         tests:
           - not_null
       - name: type_id
+        data_type: bigint
         description: Item type identifier.
         tests:
           - not_null
       - name: vwap_price
-        description: Daily volume-weighted average price from ESI market history.
+        data_type: double
+        description: Daily volume-weighted average price in ISK per unit, renamed from ESI average; not median price.
         tests:
           - not_null
+      - name: lowest
+        data_type: double
+        description: Lowest observed unit price in ISK for this region, item, and date.
+      - name: highest
+        data_type: double
+        description: Highest observed unit price in ISK for this region, item, and date.
+      - name: total_isk_traded
+        data_type: double
+        description: Daily traded value in ISK calculated upstream as volume * average, using source-reported VWAP.
+      - name: intraday_price_spread
+        data_type: double
+        description: Daily high-minus-low unit price range in ISK, calculated as highest - lowest; not a bid-ask spread.
+      - name: intraday_volatility_ratio
+        data_type: double
+        description: Dimensionless daily price range divided by VWAP, (highest - lowest) / average; null unless average > 0.
   - name: mart_curated_trade_volume
-    description: BI-facing daily trade volume mart derived from canonical market-history facts.
+    description: >-
+      BI-facing daily trade volume at (market_date, region_id, type_id) grain,
+      materialized as curated_trade_volume in curated DuckLake. Carries traded
+      units, source order counts, and derived ISK measures. dbt tests run after
+      materialization, so publication has no pre-visibility validation barrier.
     columns:
       - name: market_date
+        data_type: date
         description: Market observation date.
         tests:
           - not_null
       - name: region_id
+        data_type: bigint
         description: Market region identifier.
         tests:
           - not_null
       - name: type_id
+        data_type: bigint
         description: Item type identifier.
         tests:
           - not_null
       - name: traded_units
-        description: Daily traded unit volume.
+        data_type: bigint
+        description: Number of item units traded in this region on the observation date, renamed from volume.
         tests:
           - not_null
+      - name: order_count
+        data_type: bigint
+        description: Daily market order count reported by the source for this region and item.
+      - name: total_isk_traded
+        data_type: double
+        description: Daily traded value in ISK calculated upstream as volume * average, using source-reported VWAP.
+      - name: average_isk_per_order
+        data_type: double
+        description: Total traded ISK divided by order_count when order_count > 0; otherwise zero.
+
+  - name: fact_market_history
+    description: >-
+      Daily regional market facts at (market_date, region_id, type_id) grain.
+      Retains all staged history columns and derives daily traded value and ISK
+      per order. Materialized in local scratch; curated marts publish selected
+      outputs to DuckLake.
+    columns:
+      - name: market_date
+        data_type: date
+        description: Market observation date.
+      - name: region_id
+        data_type: bigint
+        description: Market region identifier.
+      - name: type_id
+        data_type: bigint
+        description: Item type identifier.
+      - name: average
+        data_type: double
+        description: Daily volume-weighted average price (VWAP) in ISK per unit, not median price.
+      - name: highest
+        data_type: double
+        description: Highest observed unit price in ISK for this region, item, and date.
+      - name: lowest
+        data_type: double
+        description: Lowest observed unit price in ISK for this region, item, and date.
+      - name: order_count
+        data_type: bigint
+        description: Daily market order count reported by the source for this region and item.
+      - name: volume
+        data_type: bigint
+        description: Number of item units traded in this region on the observation date.
+      - name: total_isk_traded
+        data_type: double
+        description: Daily traded value in ISK calculated as volume * average, using source-reported VWAP.
+      - name: average_isk_per_order
+        data_type: double
+        description: Total traded ISK divided by order_count when order_count > 0; otherwise zero.
+
+  - name: dim_types
+    description: >-
+      Current item-type dimension at type_id grain, materialized in local scratch.
+      Inner-joins the latest type extract to inventory groups and to categories
+      using the type record's category_id, then left-joins market-browser groups.
+      Types without matching inventory groups or categories are excluded;
+      unmatched market-group attributes are null. Attributes reflect the latest
+      reference extract rather than historical values at a market observation date.
+    columns:
+      - name: type_id
+        data_type: bigint
+        description: Stable item type identifier.
+      - name: type_name
+        data_type: varchar
+        description: English item type name, renamed from the type reference name_en.
+      - name: type_description
+        data_type: varchar
+        description: English item description, renamed from the type reference description_en.
+      - name: group_id
+        data_type: bigint
+        description: Matched inventory group identifier; distinct from market_group_id.
+      - name: group_name
+        data_type: varchar
+        description: English name of the matched inventory group.
+      - name: category_id
+        data_type: bigint
+        description: Matched inventory category identifier, joined using the type record's category_id.
+      - name: category_name
+        data_type: varchar
+        description: English name of the matched inventory category.
+      - name: market_group_id
+        data_type: bigint
+        description: Matched market-browser group identifier; null when the left join finds no group.
+      - name: market_group_name
+        data_type: varchar
+        description: English name of the matched market-browser group, when present.
+      - name: market_group_description
+        data_type: varchar
+        description: English description of the matched market-browser group, when present.

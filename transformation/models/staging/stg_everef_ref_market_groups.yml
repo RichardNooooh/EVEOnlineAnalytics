@@ -2,27 +2,36 @@ version: 2
 
 models:
   - name: stg_everef_ref_market_groups
-    description: Typed Everef market-group reference staging model.
+    description: >-
+      Typed scratch view of the latest full market-browser hierarchy, one row per
+      market_group_id. Parent identifiers form a recursive tree distinct from
+      inventory groups and categories.
     columns:
       - name: market_group_id
+        data_type: bigint
         description: Unique market group identifier.
         tests:
           - not_null
           - unique
       - name: name_en
+        data_type: varchar
         description: English market group name.
         tests:
           - not_null
       - name: description_en
+        data_type: varchar
         description: English market group description.
       - name: parent_group_id
-        description: Parent market group identifier.
+        data_type: bigint
+        description: Parent market_group_id in the recursive market-browser hierarchy, when present.
         tests:
           - relationships:
               arguments:
                 to: ref('stg_everef_ref_market_groups')
                 field: market_group_id
       - name: has_types
+        data_type: boolean
         description: Whether the market group contains types directly.
       - name: icon_id
+        data_type: bigint
         description: Icon identifier.

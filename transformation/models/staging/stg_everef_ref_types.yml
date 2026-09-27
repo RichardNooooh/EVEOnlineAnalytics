@@ -2,47 +2,62 @@ version: 2
 
 models:
   - name: stg_everef_ref_types
-    description: Typed Everef item-type reference staging model.
+    description: >-
+      Typed scratch view of the latest full item-type extract, one row per type_id.
+      Includes published and unpublished types. Reference attributes describe the
+      current extract rather than their historical values on a market observation date.
     columns:
       - name: type_id
+        data_type: bigint
         description: Unique item type identifier.
         tests:
           - not_null
           - unique
       - name: name_en
+        data_type: varchar
         description: English item name.
         tests:
           - not_null
       - name: published
-        description: Whether the type is published in-game.
+        data_type: boolean
+        description: Source publication flag for the type; does not by itself establish active trading or group publication.
         tests:
           - not_null
       - name: group_id
-        description: Item group identifier.
+        data_type: bigint
+        description: Inventory group identifier linking to stg_everef_ref_groups; distinct from market_group_id.
         tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('stg_everef_ref_groups')
                 field: group_id
       - name: category_id
-        description: Item category identifier.
+        data_type: bigint
+        description: Inventory category identifier carried on the type record, linking to stg_everef_ref_categories.
         tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('stg_everef_ref_categories')
                 field: category_id
       - name: market_group_id
-        description: Market group identifier.
+        data_type: bigint
+        description: Market-browser group assignment, when present; links to stg_everef_ref_market_groups.
         tests:
           - relationships:
               arguments:
                 to: ref('stg_everef_ref_market_groups')
                 field: market_group_id
       - name: description_en
+        data_type: varchar
         description: English item description.
       - name: volume
-        description: Item volume in cubic meters.
+        data_type: double
+        description: Item volume in cubic meters, not traded unit volume.
       - name: icon_id
+        data_type: bigint
         description: Icon identifier.
       - name: meta_group_id
-        description: Meta group identifier.
+        data_type: bigint
+        description: Item meta-group classification identifier from the reference extract.
