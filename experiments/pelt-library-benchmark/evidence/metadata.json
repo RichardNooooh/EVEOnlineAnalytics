@@ -1,0 +1,61 @@
+{
+  "python": "3.13.15",
+  "packages": {
+    "sktime": "1.2.0",
+    "skchange": "0.18.0",
+    "numpy": "2.4.4",
+    "pandas": "3.0.2",
+    "numba": "0.67.0",
+    "llvmlite": "0.49.0",
+    "scikit-learn": "1.9.1",
+    "duckdb": "1.5.2"
+  },
+  "notebook_path": "experiments/02_detection_method_exploration.ipynb",
+  "notebook_sha256": "6614dcabc39ffa0379f78bdb8aaddec30d0339217655d00b59161855e271a03f",
+  "panel_rows": 160062,
+  "panel_items": 103,
+  "minimum_segment_length": 14,
+  "step_size": 1,
+  "ddof": 1,
+  "penalty_formula": "multiplier * 2 * log(n)",
+  "prune": true,
+  "inputs_sha256": "c8a3abe671b9112191bb047e7be0129fe68d18bc9f071bc56d40e391417dd747",
+  "cases": [
+    {
+      "name": "tritanium_activity_700",
+      "feature": "log_volume",
+      "mean": 22.090924186453552,
+      "std": 1.2195820690798653,
+      "n": 700,
+      "start": "2022-06-01",
+      "end": "2024-04-30"
+    },
+    {
+      "name": "tritanium_activity_full",
+      "feature": "log_volume",
+      "mean": 22.25046235607045,
+      "std": 0.8548431047451296,
+      "n": 1554,
+      "start": "2022-06-01",
+      "end": "2026-09-01"
+    },
+    {
+      "name": "tritanium_price_first",
+      "feature": "log_vwap",
+      "mean": 1.3994148296745608,
+      "std": 0.06885334142537441,
+      "n": 457,
+      "start": "2022-06-01",
+      "end": "2023-08-31"
+    },
+    {
+      "name": "tritanium_price_long",
+      "feature": "log_vwap",
+      "mean": 1.4604914283464874,
+      "std": 0.09233931509242387,
+      "n": 1095,
+      "start": "2023-09-03",
+      "end": "2026-09-01"
+    }
+  ]
+}
