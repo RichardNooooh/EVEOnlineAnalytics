@@ -142,7 +142,7 @@ Inventory groups and market groups remain separate classification namespaces:
 inventory groups classify what an item is, while the recursive market-group tree
 classifies where it appears in the market browser. Supporting relationship and
 namespace evidence is recorded in
-[`experiments/everef-endpoint-exploration.ipynb`](../experiments/everef-endpoint-exploration.ipynb).
+[`experiments/everef/endpoint-exploration.ipynb`](../experiments/everef/endpoint-exploration.ipynb).
 
 ## Curated Dataset Contracts
 

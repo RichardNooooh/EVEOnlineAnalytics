@@ -1,0 +1,3018 @@
+{
+  "records": [
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "cold",
+      "repeat": 0,
+      "seconds": 5.654024796996964,
+      "positions": [
+        161
+      ],
+      "dates": [
+        "2022-11-09"
+      ],
+      "objective": 160.68608696003065
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "cold",
+      "repeat": 0,
+      "seconds": 5.981925116007915,
+      "positions": [
+        161
+      ],
+      "dates": [
+        "2022-11-09"
+      ],
+      "objective": 160.68608696003065
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "cold",
+      "repeat": 0,
+      "seconds": 3.071058671019273,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 608.2320321223591
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "cold",
+      "repeat": 0,
+      "seconds": 1.0646729250147473,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 608.2320321223591
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.5867821919964626,
+      "positions": [
+        161
+      ],
+      "dates": [
+        "2022-11-09"
+      ],
+      "objective": 160.68608696003065
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 5.665593268000521,
+      "positions": [
+        161
+      ],
+      "dates": [
+        "2022-11-09"
+      ],
+      "objective": 160.68608696003065
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.5928044250176754,
+      "positions": [
+        161
+      ],
+      "dates": [
+        "2022-11-09"
+      ],
+      "objective": 160.68608696003065
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 5.337106380000478,
+      "positions": [
+        161
+      ],
+      "dates": [
+        "2022-11-09"
+      ],
+      "objective": 160.68608696003065
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 13.102160670086809,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 5.77192151901545,
+      "positions": [],
+      "dates": [],
+      "objective": 164.83001688573853
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 13.102160670086809,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.6668882360099815,
+      "positions": [],
+      "dates": [],
+      "objective": 164.83001688573853
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 13.102160670086809,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.6812854910094757,
+      "positions": [],
+      "dates": [],
+      "objective": 164.83001688573853
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 13.102160670086809,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 5.681781988998409,
+      "positions": [],
+      "dates": [],
+      "objective": 164.83001688573853
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 26.204321340173617,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.6589070100162644,
+      "positions": [],
+      "dates": [],
+      "objective": 164.83001688573853
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 26.204321340173617,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 6.223904141021194,
+      "positions": [],
+      "dates": [],
+      "objective": 164.83001688573853
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 26.204321340173617,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.6908779139921535,
+      "positions": [],
+      "dates": [],
+      "objective": 164.83001688573853
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 26.204321340173617,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 6.167753083980642,
+      "positions": [],
+      "dates": [],
+      "objective": 164.83001688573853
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.02497221398516558,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 608.2320321223591
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.07765069999732077,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 608.2320321223591
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.024449840013403445,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 608.2320321223591
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.551080335043404,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.0718755759880878,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 608.2320321223591
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 13.102160670086809,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.06640772399259731,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 621.3341927924458
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 13.102160670086809,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.0196290549938567,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 621.3341927924458
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 13.102160670086809,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.018527785025071353,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 621.3341927924458
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 13.102160670086809,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.06431196400080808,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 621.3341927924458
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 26.204321340173617,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.01945264302776195,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 647.5385141326195
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 26.204321340173617,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.0691086100123357,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 647.5385141326195
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 26.204321340173617,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.021109139022883028,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 647.5385141326195
+    },
+    {
+      "case": "tritanium_activity_700",
+      "feature": "log_volume",
+      "n": 700,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 26.204321340173617,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.06745420399238355,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 647.5385141326195
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 7.348587530927593,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 3.6240080569987185,
+      "positions": [
+        161,
+        525,
+        1256
+      ],
+      "dates": [
+        "2022-11-09",
+        "2023-11-08",
+        "2025-11-08"
+      ],
+      "objective": 441.03733394598
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 7.348587530927593,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 24.76816456299275,
+      "positions": [
+        161,
+        525,
+        1256
+      ],
+      "dates": [
+        "2022-11-09",
+        "2023-11-08",
+        "2025-11-08"
+      ],
+      "objective": 441.03733394598
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 7.348587530927593,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 3.6321234260103665,
+      "positions": [
+        161,
+        525,
+        1256
+      ],
+      "dates": [
+        "2022-11-09",
+        "2023-11-08",
+        "2025-11-08"
+      ],
+      "objective": 441.03733394598
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 7.348587530927593,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 24.18498521199217,
+      "positions": [
+        161,
+        525,
+        1256
+      ],
+      "dates": [
+        "2022-11-09",
+        "2023-11-08",
+        "2025-11-08"
+      ],
+      "objective": 441.03733394598
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 14.697175061855186,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 6.546127195993904,
+      "positions": [
+        161,
+        850
+      ],
+      "dates": [
+        "2022-11-09",
+        "2024-09-28"
+      ],
+      "objective": 456.0850497682018
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 14.697175061855186,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 35.34651797200786,
+      "positions": [
+        161,
+        850
+      ],
+      "dates": [
+        "2022-11-09",
+        "2024-09-28"
+      ],
+      "objective": 456.0850497682018
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 14.697175061855186,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 6.699101643986069,
+      "positions": [
+        161,
+        850
+      ],
+      "dates": [
+        "2022-11-09",
+        "2024-09-28"
+      ],
+      "objective": 456.0850497682018
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 14.697175061855186,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 34.32766840499244,
+      "positions": [
+        161,
+        850
+      ],
+      "dates": [
+        "2022-11-09",
+        "2024-09-28"
+      ],
+      "objective": 456.0850497682018
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 29.39435012371037,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 34.89117619101307,
+      "positions": [
+        487
+      ],
+      "dates": [
+        "2023-10-01"
+      ],
+      "objective": 472.04073673573356
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 29.39435012371037,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 6.7999956799903885,
+      "positions": [
+        487
+      ],
+      "dates": [
+        "2023-10-01"
+      ],
+      "objective": 472.04073673573356
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 29.39435012371037,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 6.813822736003203,
+      "positions": [
+        487
+      ],
+      "dates": [
+        "2023-10-01"
+      ],
+      "objective": 472.04073673573356
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 29.39435012371037,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 34.981575824989704,
+      "positions": [
+        487
+      ],
+      "dates": [
+        "2023-10-01"
+      ],
+      "objective": 472.04073673573356
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 7.348587530927593,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.17105415600235574,
+      "positions": [
+        161,
+        457,
+        471,
+        1256
+      ],
+      "dates": [
+        "2022-11-09",
+        "2023-09-01",
+        "2023-09-15",
+        "2025-11-08"
+      ],
+      "objective": 1310.7958615488026
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 7.348587530927593,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.053684104001149535,
+      "positions": [
+        161,
+        457,
+        471,
+        1256
+      ],
+      "dates": [
+        "2022-11-09",
+        "2023-09-01",
+        "2023-09-15",
+        "2025-11-08"
+      ],
+      "objective": 1310.7958615488026
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 7.348587530927593,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.1638256470032502,
+      "positions": [
+        161,
+        457,
+        471,
+        1256
+      ],
+      "dates": [
+        "2022-11-09",
+        "2023-09-01",
+        "2023-09-15",
+        "2025-11-08"
+      ],
+      "objective": 1310.7958615488026
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 7.348587530927593,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.05308755999431014,
+      "positions": [
+        161,
+        457,
+        471,
+        1256
+      ],
+      "dates": [
+        "2022-11-09",
+        "2023-09-01",
+        "2023-09-15",
+        "2025-11-08"
+      ],
+      "objective": 1310.7958615488026
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 14.697175061855186,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.05027006598538719,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 1330.7648347547527
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 14.697175061855186,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.1620984619949013,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 1330.7648347547527
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 14.697175061855186,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.050446277018636465,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 1330.7648347547527
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 14.697175061855186,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.1821499180223327,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 1330.7648347547527
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 29.39435012371037,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.1761298880155664,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 1360.159184878463
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 29.39435012371037,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.05201015999773517,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 1360.159184878463
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 29.39435012371037,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.1656031709862873,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 1360.159184878463
+    },
+    {
+      "case": "tritanium_activity_full",
+      "feature": "log_volume",
+      "n": 1554,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 29.39435012371037,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.05374327499885112,
+      "positions": [
+        457,
+        471
+      ],
+      "dates": [
+        "2023-09-01",
+        "2023-09-15"
+      ],
+      "objective": 1360.159184878463
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.124683390894205,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.746715158020379,
+      "positions": [
+        112,
+        164,
+        240,
+        313,
+        376,
+        399,
+        437
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-27",
+        "2023-04-10",
+        "2023-06-12",
+        "2023-07-05",
+        "2023-08-12"
+      ],
+      "objective": 156.18758158723256
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.124683390894205,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.03895488299895078,
+      "positions": [
+        112,
+        164,
+        240,
+        313,
+        376,
+        399,
+        437
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-27",
+        "2023-04-10",
+        "2023-06-12",
+        "2023-07-05",
+        "2023-08-12"
+      ],
+      "objective": 156.18758158723256
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.124683390894205,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.039175274985609576,
+      "positions": [
+        112,
+        164,
+        240,
+        313,
+        376,
+        399,
+        437
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-27",
+        "2023-04-10",
+        "2023-06-12",
+        "2023-07-05",
+        "2023-08-12"
+      ],
+      "objective": 156.18758158723256
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.124683390894205,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.7437503119872417,
+      "positions": [
+        112,
+        164,
+        240,
+        313,
+        376,
+        399,
+        437
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-27",
+        "2023-04-10",
+        "2023-06-12",
+        "2023-07-05",
+        "2023-08-12"
+      ],
+      "objective": 156.18758158723256
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 12.24936678178841,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.04841268100426532,
+      "positions": [
+        112,
+        164,
+        242,
+        376
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-29",
+        "2023-06-12"
+      ],
+      "objective": 193.1819761208823
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 12.24936678178841,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.9840552950045094,
+      "positions": [
+        112,
+        164,
+        242,
+        376
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-29",
+        "2023-06-12"
+      ],
+      "objective": 193.1819761208823
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 12.24936678178841,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.9222686409775633,
+      "positions": [
+        112,
+        164,
+        242,
+        376
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-29",
+        "2023-06-12"
+      ],
+      "objective": 193.1819761208823
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 12.24936678178841,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.04774105499382131,
+      "positions": [
+        112,
+        164,
+        242,
+        376
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-29",
+        "2023-06-12"
+      ],
+      "objective": 193.1819761208823
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 24.49873356357682,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.06725958499009721,
+      "positions": [
+        164,
+        240
+      ],
+      "dates": [
+        "2022-11-12",
+        "2023-01-27"
+      ],
+      "objective": 223.22731755351847
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 24.49873356357682,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 1.4032401690201368,
+      "positions": [
+        164,
+        240
+      ],
+      "dates": [
+        "2022-11-12",
+        "2023-01-27"
+      ],
+      "objective": 223.22731755351847
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 24.49873356357682,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.06518714802223258,
+      "positions": [
+        164,
+        240
+      ],
+      "dates": [
+        "2022-11-12",
+        "2023-01-27"
+      ],
+      "objective": 223.22731755351847
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 24.49873356357682,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 1.4041058770089876,
+      "positions": [
+        164,
+        240
+      ],
+      "dates": [
+        "2022-11-12",
+        "2023-01-27"
+      ],
+      "objective": 223.22731755351847
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.124683390894205,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.04274493199773133,
+      "positions": [
+        112,
+        164,
+        230,
+        311,
+        376,
+        396,
+        437
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-17",
+        "2023-04-08",
+        "2023-06-12",
+        "2023-07-02",
+        "2023-08-12"
+      ],
+      "objective": 97.5199058192346
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.124683390894205,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.017272822005907074,
+      "positions": [
+        112,
+        164,
+        230,
+        311,
+        376,
+        396,
+        437
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-17",
+        "2023-04-08",
+        "2023-06-12",
+        "2023-07-02",
+        "2023-08-12"
+      ],
+      "objective": 97.5199058192346
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.124683390894205,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.018151730007957667,
+      "positions": [
+        112,
+        164,
+        230,
+        311,
+        376,
+        396,
+        437
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-17",
+        "2023-04-08",
+        "2023-06-12",
+        "2023-07-02",
+        "2023-08-12"
+      ],
+      "objective": 97.5199058192346
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.124683390894205,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.0479125150013715,
+      "positions": [
+        112,
+        164,
+        230,
+        311,
+        376,
+        396,
+        437
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-17",
+        "2023-04-08",
+        "2023-06-12",
+        "2023-07-02",
+        "2023-08-12"
+      ],
+      "objective": 97.5199058192346
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 12.24936678178841,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.04641247302060947,
+      "positions": [
+        112,
+        164,
+        242,
+        376,
+        395
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-29",
+        "2023-06-12",
+        "2023-07-01"
+      ],
+      "objective": 132.17592457784707
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 12.24936678178841,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.017600244987988845,
+      "positions": [
+        112,
+        164,
+        242,
+        376,
+        395
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-29",
+        "2023-06-12",
+        "2023-07-01"
+      ],
+      "objective": 132.17592457784707
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 12.24936678178841,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.04555132598034106,
+      "positions": [
+        112,
+        164,
+        242,
+        376,
+        395
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-29",
+        "2023-06-12",
+        "2023-07-01"
+      ],
+      "objective": 132.17592457784707
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 12.24936678178841,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.01677845898666419,
+      "positions": [
+        112,
+        164,
+        242,
+        376,
+        395
+      ],
+      "dates": [
+        "2022-09-21",
+        "2022-11-12",
+        "2023-01-29",
+        "2023-06-12",
+        "2023-07-01"
+      ],
+      "objective": 132.17592457784707
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 24.49873356357682,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.044724869017954916,
+      "positions": [
+        164,
+        230
+      ],
+      "dates": [
+        "2022-11-12",
+        "2023-01-17"
+      ],
+      "objective": 168.849766010228
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 24.49873356357682,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.017154921020846814,
+      "positions": [
+        164,
+        230
+      ],
+      "dates": [
+        "2022-11-12",
+        "2023-01-17"
+      ],
+      "objective": 168.849766010228
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 24.49873356357682,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.015142905001994222,
+      "positions": [
+        164,
+        230
+      ],
+      "dates": [
+        "2022-11-12",
+        "2023-01-17"
+      ],
+      "objective": 168.849766010228
+    },
+    {
+      "case": "tritanium_price_first",
+      "feature": "log_vwap",
+      "n": 457,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 24.49873356357682,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.04702384799020365,
+      "positions": [
+        164,
+        230
+      ],
+      "dates": [
+        "2022-11-12",
+        "2023-01-17"
+      ],
+      "objective": 168.849766010228
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.9985096422506015,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 2.8687027669802774,
+      "positions": [
+        196,
+        241,
+        272,
+        295,
+        325,
+        362,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905,
+        1006,
+        1043
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-06-01",
+        "2024-06-24",
+        "2024-07-24",
+        "2024-08-30",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24",
+        "2026-06-05",
+        "2026-07-12"
+      ],
+      "objective": 306.89741341618577
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.9985096422506015,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.12494559900369495,
+      "positions": [
+        196,
+        241,
+        272,
+        295,
+        325,
+        362,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905,
+        1006,
+        1043
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-06-01",
+        "2024-06-24",
+        "2024-07-24",
+        "2024-08-30",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24",
+        "2026-06-05",
+        "2026-07-12"
+      ],
+      "objective": 306.89741341618577
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.9985096422506015,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.1282895769982133,
+      "positions": [
+        196,
+        241,
+        272,
+        295,
+        325,
+        362,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905,
+        1006,
+        1043
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-06-01",
+        "2024-06-24",
+        "2024-07-24",
+        "2024-08-30",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24",
+        "2026-06-05",
+        "2026-07-12"
+      ],
+      "objective": 306.89741341618577
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 0.5,
+      "penalty": 6.9985096422506015,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 2.6410838390002027,
+      "positions": [
+        196,
+        241,
+        272,
+        295,
+        325,
+        362,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905,
+        1006,
+        1043
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-06-01",
+        "2024-06-24",
+        "2024-07-24",
+        "2024-08-30",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24",
+        "2026-06-05",
+        "2026-07-12"
+      ],
+      "objective": 306.89741341618577
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 13.997019284501203,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 3.468974522984354,
+      "positions": [
+        196,
+        241,
+        321,
+        361,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-07-20",
+        "2024-08-29",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24"
+      ],
+      "objective": 383.28823625752716
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 13.997019284501203,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.17190660201595165,
+      "positions": [
+        196,
+        241,
+        321,
+        361,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-07-20",
+        "2024-08-29",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24"
+      ],
+      "objective": 383.28823625752716
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 13.997019284501203,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.16401798601145856,
+      "positions": [
+        196,
+        241,
+        321,
+        361,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-07-20",
+        "2024-08-29",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24"
+      ],
+      "objective": 383.28823625752716
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 1.0,
+      "penalty": 13.997019284501203,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 3.426175690983655,
+      "positions": [
+        196,
+        241,
+        321,
+        361,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-07-20",
+        "2024-08-29",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24"
+      ],
+      "objective": 383.28823625752716
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 27.994038569002406,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 7.437486618000548,
+      "positions": [
+        197,
+        326,
+        515,
+        905
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-07-25",
+        "2025-01-30",
+        "2026-02-24"
+      ],
+      "objective": 486.05920260322546
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 27.994038569002406,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.5099987559951842,
+      "positions": [
+        197,
+        326,
+        515,
+        905
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-07-25",
+        "2025-01-30",
+        "2026-02-24"
+      ],
+      "objective": 486.05920260322546
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 27.994038569002406,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 7.688688347989228,
+      "positions": [
+        197,
+        326,
+        515,
+        905
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-07-25",
+        "2025-01-30",
+        "2026-02-24"
+      ],
+      "objective": 486.05920260322546
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L1",
+      "multiplier": 2.0,
+      "penalty": 27.994038569002406,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.48446591300307773,
+      "positions": [
+        197,
+        326,
+        515,
+        905
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-07-25",
+        "2025-01-30",
+        "2026-02-24"
+      ],
+      "objective": 486.05920260322546
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.9985096422506015,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.04381536701112054,
+      "positions": [
+        196,
+        241,
+        272,
+        295,
+        326,
+        362,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905,
+        994
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-06-01",
+        "2024-06-24",
+        "2024-07-25",
+        "2024-08-30",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24",
+        "2026-05-24"
+      ],
+      "objective": 169.0808878351774
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.9985096422506015,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.11503967599128373,
+      "positions": [
+        196,
+        241,
+        272,
+        295,
+        326,
+        362,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905,
+        994
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-06-01",
+        "2024-06-24",
+        "2024-07-25",
+        "2024-08-30",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24",
+        "2026-05-24"
+      ],
+      "objective": 169.0808878351774
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.9985096422506015,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.043824046006193385,
+      "positions": [
+        196,
+        241,
+        272,
+        295,
+        326,
+        362,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905,
+        994
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-06-01",
+        "2024-06-24",
+        "2024-07-25",
+        "2024-08-30",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24",
+        "2026-05-24"
+      ],
+      "objective": 169.0808878351774
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 0.5,
+      "penalty": 6.9985096422506015,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.11524615701637231,
+      "positions": [
+        196,
+        241,
+        272,
+        295,
+        326,
+        362,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905,
+        994
+      ],
+      "dates": [
+        "2024-03-17",
+        "2024-05-01",
+        "2024-06-01",
+        "2024-06-24",
+        "2024-07-25",
+        "2024-08-30",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24",
+        "2026-05-24"
+      ],
+      "objective": 169.0808878351774
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 13.997019284501203,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.0436031749995891,
+      "positions": [
+        197,
+        243,
+        302,
+        360,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-05-03",
+        "2024-07-01",
+        "2024-08-28",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24"
+      ],
+      "objective": 243.52104020352385
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 13.997019284501203,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.1193295209959615,
+      "positions": [
+        197,
+        243,
+        302,
+        360,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-05-03",
+        "2024-07-01",
+        "2024-08-28",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24"
+      ],
+      "objective": 243.52104020352385
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 13.997019284501203,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.04435769098927267,
+      "positions": [
+        197,
+        243,
+        302,
+        360,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-05-03",
+        "2024-07-01",
+        "2024-08-28",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24"
+      ],
+      "objective": 243.52104020352385
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 1.0,
+      "penalty": 13.997019284501203,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.12246728598256595,
+      "positions": [
+        197,
+        243,
+        302,
+        360,
+        401,
+        438,
+        515,
+        671,
+        763,
+        905
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-05-03",
+        "2024-07-01",
+        "2024-08-28",
+        "2024-10-08",
+        "2024-11-14",
+        "2025-01-30",
+        "2025-07-05",
+        "2025-10-05",
+        "2026-02-24"
+      ],
+      "objective": 243.52104020352385
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 27.994038569002406,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.12410164001630619,
+      "positions": [
+        197,
+        326,
+        515,
+        990
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-07-25",
+        "2025-01-30",
+        "2026-05-20"
+      ],
+      "objective": 333.082494478546
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 27.994038569002406,
+      "phase": "warm",
+      "repeat": 1,
+      "seconds": 0.042670616996474564,
+      "positions": [
+        197,
+        326,
+        515,
+        990
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-07-25",
+        "2025-01-30",
+        "2026-05-20"
+      ],
+      "objective": 333.082494478546
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "skchange",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 27.994038569002406,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.045634481008164585,
+      "positions": [
+        197,
+        326,
+        515,
+        990
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-07-25",
+        "2025-01-30",
+        "2026-05-20"
+      ],
+      "objective": 333.082494478546
+    },
+    {
+      "case": "tritanium_price_long",
+      "feature": "log_vwap",
+      "n": 1095,
+      "backend": "sktime",
+      "cost": "L2",
+      "multiplier": 2.0,
+      "penalty": 27.994038569002406,
+      "phase": "warm",
+      "repeat": 2,
+      "seconds": 0.11108980298740789,
+      "positions": [
+        197,
+        326,
+        515,
+        990
+      ],
+      "dates": [
+        "2024-03-18",
+        "2024-07-25",
+        "2025-01-30",
+        "2026-05-20"
+      ],
+      "objective": 333.082494478546
+    }
+  ],
+  "checks": [
+    {
+      "scope": "cold/L1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "cold/L2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "interval costs/tritanium_activity_700/L1",
+      "intervals": 81,
+      "reference_parity": true,
+      "max_backend_difference": 1.1368683772161603e-13
+    },
+    {
+      "scope": "interval costs/tritanium_activity_700/L2",
+      "intervals": 81,
+      "reference_parity": true,
+      "max_backend_difference": 0.0
+    },
+    {
+      "scope": "interval costs/tritanium_activity_full/L1",
+      "intervals": 81,
+      "reference_parity": true,
+      "max_backend_difference": 2.5579538487363607e-13
+    },
+    {
+      "scope": "interval costs/tritanium_activity_full/L2",
+      "intervals": 81,
+      "reference_parity": true,
+      "max_backend_difference": 0.0
+    },
+    {
+      "scope": "interval costs/tritanium_price_first/L1",
+      "intervals": 81,
+      "reference_parity": true,
+      "max_backend_difference": 6.252776074688882e-13
+    },
+    {
+      "scope": "interval costs/tritanium_price_first/L2",
+      "intervals": 81,
+      "reference_parity": true,
+      "max_backend_difference": 0.0
+    },
+    {
+      "scope": "interval costs/tritanium_price_long/L1",
+      "intervals": 81,
+      "reference_parity": true,
+      "max_backend_difference": 2.5011104298755527e-12
+    },
+    {
+      "scope": "interval costs/tritanium_price_long/L2",
+      "intervals": 81,
+      "reference_parity": true,
+      "max_backend_difference": 0.0
+    },
+    {
+      "scope": "oracle/minimum_two_segments/L1/x0.5",
+      "optimal_objective": 3.332204510175204,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/minimum_two_segments/L1/x1.0",
+      "optimal_objective": 6.664409020350408,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/minimum_two_segments/L1/x2.0",
+      "optimal_objective": 13.328818040700815,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/minimum_two_segments/L2/x0.5",
+      "optimal_objective": 3.332204510175204,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/minimum_two_segments/L2/x1.0",
+      "optimal_objective": 6.664409020350408,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/minimum_two_segments/L2/x2.0",
+      "optimal_objective": 13.328818040700815,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/level_step/L1/x0.5",
+      "optimal_objective": 5.962928861352742,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/level_step/L1/x1.0",
+      "optimal_objective": 10.462738531683007,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/level_step/L1/x2.0",
+      "optimal_objective": 19.46235787234354,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/level_step/L2/x0.5",
+      "optimal_objective": 4.536653311006744,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/level_step/L2/x1.0",
+      "optimal_objective": 9.03646298133701,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/level_step/L2/x2.0",
+      "optimal_objective": 18.03608232199754,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/flat_ties/L1/x0.5",
+      "optimal_objective": 0.0,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/flat_ties/L1/x1.0",
+      "optimal_objective": 0.0,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/flat_ties/L1/x2.0",
+      "optimal_objective": 0.0,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/flat_ties/L2/x0.5",
+      "optimal_objective": 0.0,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/flat_ties/L2/x1.0",
+      "optimal_objective": 0.0,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/flat_ties/L2/x2.0",
+      "optimal_objective": 0.0,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/spike_and_reversal/L1/x0.5",
+      "optimal_objective": 5.4770110355938915,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/spike_and_reversal/L1/x1.0",
+      "optimal_objective": 5.4770110355938915,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/spike_and_reversal/L1/x2.0",
+      "optimal_objective": 5.4770110355938915,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/spike_and_reversal/L2/x0.5",
+      "optimal_objective": 15.970716418627399,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/spike_and_reversal/L2/x1.0",
+      "optimal_objective": 15.970716418627399,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "oracle/spike_and_reversal/L2/x2.0",
+      "optimal_objective": 15.970716418627399,
+      "oracle_parity": true,
+      "same_positions": true
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L1/x0.5/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L1/x0.5/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L1/x1.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L1/x1.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L1/x2.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L1/x2.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L2/x0.5/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L2/x0.5/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L2/x1.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L2/x1.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L2/x2.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_700/L2/x2.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L1/x0.5/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L1/x0.5/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L1/x1.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L1/x1.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L1/x2.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L1/x2.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L2/x0.5/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L2/x0.5/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L2/x1.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L2/x1.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L2/x2.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_activity_full/L2/x2.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L1/x0.5/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L1/x0.5/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L1/x1.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L1/x1.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L1/x2.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L1/x2.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L2/x0.5/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L2/x0.5/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L2/x1.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L2/x1.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L2/x2.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_first/L2/x2.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L1/x0.5/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L1/x0.5/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L1/x1.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L1/x1.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L1/x2.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L1/x2.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L2/x0.5/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L2/x0.5/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L2/x1.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L2/x1.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L2/x2.0/repeat1",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    },
+    {
+      "scope": "warm/tritanium_price_long/L2/x2.0/repeat2",
+      "same_positions": true,
+      "same_objective": true,
+      "objective_difference": 0.0
+    }
+  ]
+}
