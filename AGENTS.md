@@ -86,8 +86,8 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, PowerBI, and Tableau.
 - Git uses conventional commits. Feature branches are off `master`; PRs are required.
 - Commit titles and bodies use prefixes such as `docs:`, `cleanup:`, `feat:`,
   `refactor:`, or `fix:` followed by a capitalized action verb.
-- Commit bodies should use one `{prefix}: {Verb}...` line per change and append
-  `Co-Authored-By: GPT-5.4 via OpenCode` (replacing model name with your model name).
+- Commit bodies should use one `{prefix}: {Verb}...` line per change, without
+  `Co-Authored-By:` trailers.
 - When faced with **any** architectural/design/coding decision, ask before proceeding instead
   of coming up with some half-baked solution.
 
