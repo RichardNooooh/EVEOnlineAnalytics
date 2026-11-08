@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
-NOTEBOOK = HERE.parent / "02_detection_method_exploration.ipynb"
+NOTEBOOK = HERE.parent / "market_analysis" / "02_detection_method_exploration.ipynb"
 RUNTIME_ROOT = HERE.parent / ".local" / "pelt-library-benchmark"
 OUTPUT_DIR = RUNTIME_ROOT / "runs" / datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
 np: Any
