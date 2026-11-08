@@ -3,6 +3,34 @@
 Exploratory notebooks provide supporting evidence for analytical decisions. Durable
 transformations belong in dbt after an experiment establishes a stable rule.
 
+## Detection Performance Evidence
+
+[`pelt-library-benchmark/`](pelt-library-benchmark/README.md) contains the
+sktime/skchange L1/L2 benchmark runner and retained timing/parity evidence.
+It can replay the frozen sample without a database or use the detection
+notebook's current read-only inputs. New runs use dependencies declared in the
+shared experiments environment; the original isolated overlay is retained only
+as historical provenance. New outputs and caches live under `experiments/.local/`.
+
+## EVE Ref Studies
+
+Source exploration, ingestion prototypes, and archive-behavior studies live in
+`everef/`. Notebook names describe their subject; they are not a chronological
+sequence.
+
+| Notebook | Purpose |
+|---|---|
+| [Endpoint exploration](everef/endpoint-exploration.ipynb) | Explore source datasets, schemas, and reference-data relationships. |
+| [Market-history dlt prototype](everef/market-history-dlt.ipynb) | Explore source extraction and local DuckLake destination configuration. |
+| [In-place archive updates](everef/market-history-inplace-update-exploration.ipynb) | Inspect archive metadata and publication behavior. |
+| [Market-history revisions](everef/market_history_revisions/analysis.ipynb) | Compare retained archive snapshots and totals; see the [study files and watcher instructions](everef/market_history_revisions/README.md). |
+
+Use the shared experiments environment for these notebooks. Run them from the
+repository root or any directory under `experiments/`; local paths are resolved
+from the repository root. Cached source files and revision evidence remain under
+`experiments/.local/`. The dlt prototype's filesystem destination remains under
+the repository-root `.local/notebook/data/bronze/`.
+
 ## VS Code Notebooks
 
 Sync the experiments environment from this directory:
@@ -23,8 +51,58 @@ with open_analysis_connection() as connection:
         select *
         from main.int_forge_market_history
         limit 10
-    """).df()
+    """).pl()
 ```
+
+Use Polars DataFrames (`pl.DataFrame`) for notebook data preparation and analysis;
+the `.pl()` relation method keeps query results in that representation. Select
+`experiments/.venv/bin/python` and restart the kernel after syncing the migrated
+dependencies.
+
+### Interactive Study Notebooks
+
+- `market_analysis/01_eda_and_study_panel_selection.ipynb` has Plotly ranking and source-row
+  presence charts. Its PyGWalker dataset selector includes the full pre-selection
+  activity rankings, reference/product tables, selected panel, and history summaries.
+- `market_analysis/02_detection_method_exploration.ipynb` has a Plotly signal
+  explorer with method, feature, category, date, and item controls. Heatmap rows
+  are ordered by category and type ID. Hover shows original scores and baseline
+  diagnostics; color clipping does not change scores. Unscored observations
+  remain distinct. The individual review plots can include retrospective PELT context.
+- PyGWalker in both notebooks launches only when **Launch PyGWalker** is pressed.
+  Datasets are selectable, filters are optional, and there is no automatic
+  sampling. Both notebooks explicitly use offline privacy mode and disable cloud
+  computation. In `market_analysis/02_`, full-history MAD/Z-score tables and the
+  comparison are separate from PELT boundaries, segments, and diagnostics;
+  interval tables use overlapping-date filters.
+- **Build ProfileReport** in `market_analysis/02_` generates a report for the
+  selected item, dates, and features on demand. Reports display inline rather
+  than being generated automatically for the whole panel.
+
+The production graph's preparation, layout, and HTML rendering live in
+`market_analysis/helpers/production_graph.py`; browser interactions live in the
+adjacent `production_graph.js`. The study-panel notebook imports these helpers
+using repository-root discovery, so its kernel can start at the repository root,
+`experiments/`, or `experiments/market_analysis/`. The Python helper reads JavaScript
+relative to its own file and embeds it alongside Plotly in the saved output.
+Viewing that output does not require a running kernel, external script files, or a
+server. Actual VS Code save/close/reopen behavior still requires a manual check.
+
+Notebook-specific regression tests remain directly under `experiments/`:
+
+```bash
+uv run --project experiments python -m unittest discover -s experiments -p 'test_*.py'
+```
+
+Filtering, joins, and detector tables remain Polars. The installed PyGWalker
+release needs a pandas conversion at its input boundary for compatibility with
+Polars 2; profiling also needs pandas. Retain `pandas>=2.3,<3` for the accepted
+profiler. `statsmodels` is installed for later agreed diagnostics.
+
+Kernel-side figure construction, controls, local explorer HTML, and profiling
+rendering have been checked. Actual hover and button interaction in the VS Code
+notebook frontend still require a manual check. Run cells in order to populate
+the explorer datasets; the PELT grid is a separate, comparatively expensive cell.
 
 Run the dbt transformation build before querying its local relations. Close notebook
 connections before rebuilding; the context manager closes the connection after each
