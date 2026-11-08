@@ -8,6 +8,7 @@ from pathlib import Path
 import networkx as nx
 import plotly.graph_objects as go
 import plotly.io as pio
+from IPython.display import HTML
 
 INTERACTION_SCRIPT_PATH = Path(__file__).with_name("production_graph.js")
 
@@ -404,5 +405,47 @@ def production_graph_html(figure, model):
         full_html=False,
         include_plotlyjs=True,
         post_script=post_script,
-        config={"doubleClick": False, "responsive": True},
+        config={"doubleClick": False, "responsive": figure.layout.width is None},
     )
+
+
+def plot_production_graph(
+    links,
+    panel_items,
+    reference_types,
+    meta_groups,
+    mineral_ids,
+    *,
+    category_palette,
+    layout_seed=17,
+    title="Study-panel manufacturing relationships",
+    direction_key="Material → product",
+    legend_title="Item category",
+    width=None,
+):
+    """Return a self-contained interactive production graph as IPython HTML.
+
+    ``links`` requires ``input_type_id`` and ``output_type_id`` columns;
+    ``panel_items`` requires ``type_id``, ``type_name``, and ``study_category``.
+    Supply reference type and meta-group metadata in ``reference_types`` and
+    ``meta_groups``, and the curated panel mineral IDs in ``mineral_ids``.
+
+    Plotting options are keyword-only: ``category_palette``, ``layout_seed``,
+    ``title``, ``direction_key``, ``legend_title``, and pixel ``width``. Inputs
+    are not mutated, and the returned HTML is not displayed by this function.
+    """
+    figure, model = build_production_graph(
+        links,
+        panel_items,
+        reference_types,
+        meta_groups,
+        mineral_ids,
+        category_palette,
+        layout_seed=layout_seed,
+        title=title,
+        direction_key=direction_key,
+        legend_title=legend_title,
+    )
+    if width is not None:
+        figure.update_layout(width=width, autosize=False)
+    return HTML(production_graph_html(figure, model))

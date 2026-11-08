@@ -79,14 +79,13 @@ dependencies.
   selected item, dates, and features on demand. Reports display inline rather
   than being generated automatically for the whole panel.
 
-The production graph's preparation, layout, and HTML rendering live in
-`market_analysis/helpers/production_graph.py`; browser interactions live in the
-adjacent `production_graph.js`. The study-panel notebook imports these helpers
-using repository-root discovery, so its kernel can start at the repository root,
-`experiments/`, or `experiments/market_analysis/`. The Python helper reads JavaScript
-relative to its own file and embeds it alongside Plotly in the saved output.
-Viewing that output does not require a running kernel, external script files, or a
-server. Actual VS Code save/close/reopen behavior still requires a manual check.
+The study-panel notebook uses `market_analysis/reference_data.py` for retained
+archive loading and manufacturing records, `market_analysis/plotting/eda.py` for
+figures, and `market_analysis/plotting/production_graph.py` for the interactive
+production graph. The plotting functions accept analytical data and return figures
+or self-contained HTML; the graph embeds its adjacent `production_graph.js`.
+Repository-root discovery supports kernels started at the repository root,
+`experiments/`, or `experiments/market_analysis/`.
 
 Notebook-specific regression tests remain directly under `experiments/`:
 
