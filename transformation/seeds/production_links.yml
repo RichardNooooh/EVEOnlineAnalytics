@@ -1,0 +1,56 @@
+version: 2
+
+seeds:
+  - name: production_links
+    description: >-
+      Manufacturing input/output relationships generated from published manufacturing
+      blueprints. Each row represents one input/output type pair, with base quantities
+      per blueprint run. The reference spans all technology classes and is not limited
+      to the Forge study panel.
+    config:
+      column_types:
+        input_type_id: bigint
+        output_type_id: bigint
+        input_quantity: bigint
+        output_quantity: bigint
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [input_type_id, output_type_id]
+    columns:
+      - name: input_type_id
+        description: Item type consumed by the manufacturing blueprint.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_everef_ref_types')
+                field: type_id
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: output_type_id
+        description: Item type produced by the manufacturing blueprint.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_everef_ref_types')
+                field: type_id
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: input_quantity
+        description: Positive base quantity of the input type consumed per run.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: output_quantity
+        description: Positive base quantity of the output type produced per run.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
