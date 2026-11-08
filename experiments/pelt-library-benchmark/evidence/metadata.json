@@ -10,7 +10,7 @@
     "scikit-learn": "1.9.1",
     "duckdb": "1.5.2"
   },
-  "notebook_path": "experiments/02_detection_method_exploration.ipynb",
+  "notebook_path": "experiments/market_analysis/02_detection_method_exploration.ipynb",
   "notebook_sha256": "6614dcabc39ffa0379f78bdb8aaddec30d0339217655d00b59161855e271a03f",
   "panel_rows": 160062,
   "panel_items": 103,
