@@ -22,11 +22,18 @@ research artifacts.
 ## Notebook Presentation
 
 - Target VSCode notebooks and JupyterLab as the execution environments.
+- Separate analytical calculation cells, plotting-function definitions, and rendering
+  invocation cells. Keep plotting code notebook-local while iterating; extract finalized
+  code into Python modules only after iteration is complete.
+- Plotting functions receive actual analysis data and return exactly one figure. Put
+  graph-specific filtering, reshaping, aggregation, and annotation or hover preparation
+  inside the plotting function, not analytical cells.
 - Produce at most one table or visual per code cell. Calculation-only cells need
   not produce output.
-- Render tables and visuals using the cell's final expression, normally a single
-  variable. Do not use `display()` or routine `fig.show()` calls. Configure notebook
-  rendering in setup only if necessary.
+- Render tables and visuals using the cell's final expression. A visual's rendering
+  cell normally consists solely of a direct plotting-function call, without an
+  unnecessary figure variable. Do not use `display()` or routine `fig.show()` calls.
+  Configure notebook rendering in setup only if necessary.
 - Prefer graphs and other visuals over tables. Include a table only when its exact
   values or records serve a specific analytical purpose.
 - Each rendered table must contain at most 20 rows. Summarize or select relevant

@@ -3,6 +3,9 @@
 Reference file for agents working in this repo. Read this first, then read the
 nearest scoped `AGENTS.md` for the area you are touching.
 
+Before using any Jupyter MCP tool, read `experiments/AGENTS.md`, including for
+notebook inspection, editing, or execution.
+
 ## Project Contract
 
 **Name:** `eve-market-analytics`

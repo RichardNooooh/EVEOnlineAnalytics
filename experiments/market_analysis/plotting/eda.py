@@ -59,6 +59,85 @@ HISTOGRAM_GROUP_ORDER = [
 ]
 
 
+def plot_selection_price_changes(changes):
+    """Plot selection-period daily price-change magnitudes."""
+    fig = go.Figure()
+    counts = []
+    for name, subset, color, opacity, size in [
+        ("Other retained items", changes.filter(pl.col("type_id") != 21857), "#999999", 0.32, 3),
+        ("1MN Civilian Afterburner", changes.filter(pl.col("type_id") == 21857), "#e6862e", 0.9, 6),
+    ]:
+        counts.append(f"{name}: {subset.filter(pl.col('change_factor') > 10).height}")
+        visible = subset.filter(pl.col("change_factor") <= 20)
+        overflow = subset.filter(pl.col("change_factor") > 20)
+        fig.add_trace(
+            go.Scattergl(
+                x=visible.get_column("market_date").to_list(),
+                y=visible.get_column("change_factor").to_list(),
+                text=visible.get_column("type_name").to_list(),
+                mode="markers",
+                name=name,
+                legendgroup=name,
+                marker={"color": color, "size": size, "opacity": opacity},
+                hovertemplate="%{text}<br>%{x}<br>%{y:.2f}\u00d7<extra></extra>",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=overflow.get_column("market_date").to_list(),
+                y=[20] * overflow.height,
+                text=overflow.get_column("type_name").to_list(),
+                customdata=overflow.get_column("change_factor").to_list(),
+                mode="markers",
+                name=name,
+                legendgroup=name,
+                showlegend=False,
+                cliponaxis=False,
+                marker={"color": color, "size": max(size, 7), "opacity": opacity, "symbol": "triangle-up"},
+                hovertemplate="%{text}<br>%{x}<br>%{customdata:.2f}\u00d7<extra></extra>",
+            )
+        )
+    fig.add_hline(y=10, line_dash="dash", line_color="#555555", annotation_text="10\u00d7")
+    fig.add_annotation(
+        x=1,
+        y=1,
+        xref="paper",
+        yref="paper",
+        xanchor="right",
+        yanchor="top",
+        text="Observations > 10\u00d7<br>" + "<br>".join(counts),
+        showarrow=False,
+        align="right",
+    )
+    fig.add_annotation(
+        x=0,
+        y=-0.23,
+        xref="paper",
+        yref="paper",
+        xanchor="left",
+        yanchor="top",
+        text="1\u00d7 means unchanged; 2\u00d7 means the daily VWAP doubled or halved.",
+        showarrow=False,
+    )
+    fig.update_layout(
+        width=1200,
+        height=400,
+        title="Daily price-change magnitude in the selection window",
+        xaxis_title="Date",
+        yaxis_title="Price-change factor (log scale)",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0},
+        margin={"l": 70, "r": 35, "t": 95, "b": 95},
+    )
+    fig.update_yaxes(
+        type="log",
+        range=[0, 1.3010299956639813],
+        tickmode="array",
+        tickvals=[1, 2, 5, 10, 20],
+        ticktext=["1\u00d7", "2\u00d7", "5\u00d7", "10\u00d7", "20\u00d7"],
+    )
+    return fig
+
+
 def plot_candidate_relationships(
     activity,
     *,
