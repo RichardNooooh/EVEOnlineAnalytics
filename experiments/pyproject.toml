@@ -32,8 +32,17 @@ dependencies = [
     "skchange[numba]==0.18.0",
     "sktime>=1.2.0",
     "statsmodels>=0.15.0",
+    "torch>=2.15.0",
     "tqdm>=4.67.3",
+    "tslearn>=0.10.0",
+    "umap-learn>=0.6.0",
 ]
 
 [tool.uv.sources]
 eve-market-transformation = { path = "../transformation", editable = true }
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

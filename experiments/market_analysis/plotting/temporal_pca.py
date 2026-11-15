@@ -24,6 +24,32 @@ def prepare_temporal_pca(prepared):
     if not np.isfinite(coordinates).all() or np.isnat(dates).any():
         raise ValueError("PCA coordinates and dates must be finite.")
 
+    step = prepared.get("expected_step_days", 1)
+    if isinstance(step, bool) or not isinstance(step, (int, np.integer)) or step < 1:
+        raise ValueError("expected_step_days must be a positive integer.")
+    categories = prepared.get("study_categories")
+    palette = prepared.get("category_colors")
+    if (categories is None) != (palette is None):
+        raise ValueError("study_categories and category_colors must be supplied together.")
+    if categories is not None:
+        categories = np.asarray(categories, dtype=object)
+        if categories.shape != (len(dates),) or any(not isinstance(c, str) or not c for c in categories):
+            raise ValueError("study_categories must contain an aligned nonempty name for each observation.")
+        if (
+            not isinstance(palette, dict)
+            or any(not isinstance(k, str) or not k or not isinstance(v, str) or not v for k, v in palette.items())
+            or any(c not in palette for c in categories)
+        ):
+            raise ValueError("category_colors must map every study category to a CSS color string.")
+        categories = categories.tolist()
+        palette = dict(palette)
+    week_starts = prepared.get("week_starts")
+    if week_starts is not None:
+        week_starts = np.asarray(week_starts, dtype="datetime64[D]")
+        if week_starts.shape != dates.shape or np.isnat(week_starts).any() or np.any(week_starts > dates):
+            raise ValueError("week_starts must contain aligned valid dates no later than dates.")
+        week_starts = np.datetime_as_string(week_starts, unit="D").tolist()
+
     first = dates.min()
     days = (dates - first).astype(np.int64)
     groups = []
@@ -50,7 +76,7 @@ def prepare_temporal_pca(prepared):
                 "name": str(name),
                 "rows": rows.tolist(),
                 "days": days[rows].tolist(),
-                "adjacent": np.concatenate(([False], np.diff(days[rows]) == 1)).tolist() if len(rows) else [],
+                "adjacent": np.concatenate(([False], np.diff(days[rows]) == step)).tolist() if len(rows) else [],
             }
         )
     if np.any(row_item == -1):
@@ -77,6 +103,10 @@ def prepare_temporal_pca(prepared):
         "central_ranges": central.tolist(),
         "central_clipped": clipped,
         "date_labels": np.datetime_as_string(dates, unit="D").tolist(),
+        "week_starts": week_starts,
+        "study_categories": categories,
+        "category_colors": palette,
+        "expected_step_days": int(step),
     }
 
 
@@ -157,7 +187,18 @@ def build_temporal_pca_figure(model, *, title="PCA over time"):
 def temporal_pca_html(figure, model):
     """Return a self-contained fragment with per-instance controls and state."""
     browser = {
-        key: model[key] for key in ("items", "first_date", "last_day", "date_labels", "full_ranges", "central_ranges")
+        key: model[key]
+        for key in (
+            "items",
+            "first_date",
+            "last_day",
+            "date_labels",
+            "full_ranges",
+            "central_ranges",
+            "week_starts",
+            "study_categories",
+            "category_colors",
+        )
     }
     script = Path(__file__).with_name("temporal_pca.js").read_text(encoding="utf-8")
     script = script.replace("__TEMPORAL_PCA_MODEL__", json.dumps(browser, separators=(",", ":")).replace("</", "<\\/"))
