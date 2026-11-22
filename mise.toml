@@ -94,6 +94,11 @@ exec "${HOME}/.config/mise/jupyter-mcp/launch-lab" \
   --kernel-display-name 'EVE Market — experiments'
 '''
 
+[tasks."marimo:edit"]
+description = "Edit a marimo notebook in the experiments environment"
+raw = true
+run = 'uv run --project experiments marimo edit --no-token --watch'
+
 [tasks."duckdb:cleanup"]
 description = "Preview and optionally remove untracked dbt scratch and curated relations"
 env = { _.file = ["infra/local/.env", "infra/local/versions.txt"] }

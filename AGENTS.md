@@ -3,8 +3,9 @@
 Reference file for agents working in this repo. Read this first, then read the
 nearest scoped `AGENTS.md` for the area you are touching.
 
-Before using any Jupyter MCP tool, read `experiments/AGENTS.md`, including for
-notebook inspection, editing, or execution.
+For any notebook work, including planning, inspection, documentation research,
+authoring, or execution, read `experiments/AGENTS.md` first, including before
+using Jupyter MCP tools.
 
 ## Project Contract
 

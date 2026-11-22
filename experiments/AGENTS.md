@@ -19,27 +19,67 @@ research artifacts.
   contracts.
 - Do not introduce durable shared `.duckdb` files here.
 
+## Notebook Workflow
+
+- Default to marimo for new notebooks.
+- Before any Marimo notebook work, including inspection, planning, documentation
+  research, editing, or execution, load `marimo-notebook` and `marimo-pair` unless
+  already loaded in the current context. Follow their applicable workflows.
+- The active runtime is the source of truth: make notebook changes through the
+  `marimo-pair` runtime workflow rather than editing the `.py` file directly.
+- For user edits in Neovim, launch marimo with `--watch` so external saves reach
+  the session. Dependent cells become stale under the default manual execution
+  behavior; run them as needed without changing autorun configuration.
+- JupyterLab and VS Code support existing `.ipynb` notebooks.
+
 ## Notebook Presentation
 
-- Target VSCode notebooks and JupyterLab as the execution environments.
-- Separate analytical calculation cells, plotting-function definitions, and rendering
-  invocation cells. Keep plotting code notebook-local while iterating; extract finalized
-  code into Python modules only after iteration is complete.
-- Plotting functions receive actual analysis data and return exactly one figure. Put
-  graph-specific filtering, reshaping, aggregation, and annotation or hover preparation
-  inside the plotting function, not analytical cells.
-- Produce at most one table or visual per code cell. Calculation-only cells need
-  not produce output.
-- Render tables and visuals using the cell's final expression. A visual's rendering
-  cell normally consists solely of a direct plotting-function call, without an
-  unnecessary figure variable. Do not use `display()` or routine `fig.show()` calls.
-  Configure notebook rendering in setup only if necessary.
-- Prefer graphs and other visuals over tables. Include a table only when its exact
-  values or records serve a specific analytical purpose.
-- Each rendered table must contain at most 20 rows. Summarize or select relevant
-  records before rendering; do not rely on display truncation.
-- Keep each notebook to a few small tables. Do not add routine dataframe previews
-  after intermediate calculations.
+- Write notebooks as analysis, not embedded helper libraries or dashboards. Calculate
+  directly in cells by default; use helpers for actual reuse or substantial algorithm
+  boundaries that are genuinely clearer, not merely to make unit testing convenient.
+  Separate meaningful analytical stages rather than using grab-bag functions or one
+  giant inlined loop.
+- Use `_temporary` names for cell-private intermediates and public names only for
+  useful cross-cell dependencies. Every dataframe variable name contains `df`,
+  preferably as a suffix:
+
+  ```python
+  _valid_prices_df = history_df.filter(pl.col("vwap").is_finite() & (pl.col("vwap") > 0))
+  valid_price_days_df = _valid_prices_df.group_by("type_name").len()
+  ```
+
+- Prefer conventional statistical displays for the analytical question: histograms
+  for distributions, scatterplot matrices for joint exploration, and correlation
+  heatmaps for pairwise relationships. Deviate for a demonstrated analytical or
+  usability need. Use Plotly for curated charts and native Marimo tables, controls,
+  layouts, and reactive dependencies; use `mo.ui.data_explorer` for open-ended
+  exploration when useful. Do not add Altair.
+- Prefer one purposeful output per cell and avoid redundant explorers or tables;
+  use exact-record tables for a concrete analytical question. Deliberately compose
+  related outputs when meaningful. Keep calculations upstream so browsing does not
+  reload or reconstruct data.
+- Native interactive components may contain full datasets with bounded visible
+  pages. Static summaries are limited to 20 records; select or summarize them
+  before rendering. Avoid routine previews of intermediate dataframes.
+- Render outputs as the cell's final expression; avoid `display()` and routine
+  `fig.show()` calls. Name a widget only when downstream cells consume its value or
+  other state:
+
+  ```python
+  item_picker = mo.ui.dropdown(options=item_names, label="Item")
+  item_picker
+  ```
+
+  In a downstream cell:
+
+  ```python
+  item_rows_df = history_df.filter(pl.col("type_name") == item_picker.value)
+  ```
+
+- Build justified Plotly charts directly in a cell; use a private `_figure` when
+  construction needs a variable. A plain `px.scatter(...)` can be the final
+  expression without a wrapper unless Python-side selection is used. Plot factories
+  and separate plotting-function cells are not required.
 
 ## Current Evidence
 
