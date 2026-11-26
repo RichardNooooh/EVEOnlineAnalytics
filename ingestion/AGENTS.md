@@ -16,12 +16,17 @@ or ingestion tests.
 ### everef.net
 
 - Market history lives at `data.everef.net/market-history/`.
+- **Everef market history is append-only by `(date, region_id, type_id)`.** A
+  republished daily archive adds previously missing keys; it does not change
+  market values for existing keys or remove them. Archive metadata or row-count
+  changes do not establish row corrections. See the
+  [saved-archive comparison](../experiments/everef/market_history_revisions/analysis.ipynb).
 - Market order snapshots live at `data.everef.net/market-orders/`.
 - Market history archives are daily CSVs with ESI market history schema.
 - Market order snapshots are full order book compressed CSVs with headers, roughly
   twice per hour.
-- Archives may be updated in place; ingestion should use source metadata such as
-  `totals.json` to detect changes and republish affected partitions.
+- Use source metadata such as `totals.json` to detect daily archives that
+  gained records and republish the affected partitions.
 
 ### EVE ESI API
 

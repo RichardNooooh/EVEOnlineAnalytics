@@ -3,6 +3,10 @@
 Reference file for agents working in this repo. Read this first, then read the
 nearest scoped `AGENTS.md` for the area you are touching.
 
+For any notebook work, including planning, inspection, documentation research,
+authoring, or execution, read `experiments/AGENTS.md` first, including before
+using Jupyter MCP tools.
+
 ## Project Contract
 
 **Name:** `eve-market-analytics`
@@ -86,8 +90,8 @@ Explicit non-goals: Airbyte, Great Expectations, DVC, PowerBI, and Tableau.
 - Git uses conventional commits. Feature branches are off `master`; PRs are required.
 - Commit titles and bodies use prefixes such as `docs:`, `cleanup:`, `feat:`,
   `refactor:`, or `fix:` followed by a capitalized action verb.
-- Commit bodies should use one `{prefix}: {Verb}...` line per change and append
-  `Co-Authored-By: GPT-5.4 via OpenCode` (replacing model name with your model name).
+- Commit bodies should use one `{prefix}: {Verb}...` line per change, without
+  `Co-Authored-By:` trailers.
 - When faced with **any** architectural/design/coding decision, ask before proceeding instead
   of coming up with some half-baked solution.
 

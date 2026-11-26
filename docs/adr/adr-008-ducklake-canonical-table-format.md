@@ -19,17 +19,23 @@ ADR-007 established a Parquet dataset contract on shared storage and rejected a
 cluster-shared writable DuckDB database file. That decision made the durable analytical
 state file-oriented and kept DuckDB in its proper role as local or transient compute.
 
-The ingestion design now needs stronger table semantics than plain filesystem Parquet
-can provide on its own. Everef market-history files are daily historical source files,
-and those files may be revised after initial publication as additional source data is
-discovered. The project needs to reload one or more affected market dates without
-appending duplicate rows and without replacing the entire historical table.
+Everef market history is append-only by `(date, region_id, type_id)`. Everef can
+republish a daily archive to add previously missing keys; it does not change
+market values for existing keys or remove them. The
+[saved-archive comparison](../../experiments/everef/market_history_revisions/analysis.ipynb)
+for market date 2026-10-11 found 55,881 added keys, zero changed market rows,
+and zero removals across 27 snapshots. A changed archive timestamp, checksum, or
+row count is not evidence of a row correction.
+
+The project needs to publish more complete versions of individual market dates
+without duplicating their previously published rows or rebuilding the entire
+history.
 
 Plain Parquet files remain a good physical storage format, but plain filesystem Parquet
 alone lacks table-level update, delete, merge, and transaction semantics. dlt's
 filesystem destination does not provide true merge semantics for plain Parquet; merge
-effectively falls back to append. That is a poor fit for revised daily files where the
-correct replacement scope is one or more market dates.
+effectively falls back to append. Appending a complete daily archive again would
+duplicate every key already published for that date.
 
 dlt's DuckLake destination supports lakehouse-style table storage over files with SQL
 catalog metadata and supports merge strategies including delete-insert. DuckLake also
@@ -47,8 +53,8 @@ The refined storage contract is:
 - DuckLake tables are the canonical analytical table storage contract.
 - Parquet remains the physical data file format underneath the table format.
 - Plain filesystem Parquet alone is not the long-term canonical table storage format.
-- dlt loads Everef market-history data into DuckLake using atomic source-date partition
-  replacement.
+- The Everef market-history publisher loads DuckLake using atomic source-date
+  partition replacement.
 - Existing CSV `date`, `region_id`, and `type_id` are validated as the unique row key
   before partition replacement.
 - Market-history loads use a composite primary key of `date`, `region_id`, and
@@ -77,36 +83,23 @@ and transaction semantics over data files.
 
 ## Amendment (2026-05-27)
 
-This ADR originally described delete-insert merge semantics for handling revised
-Everef daily files. Experience with the actual ESI and Everef data sources showed
-this was unnecessary:
-
-- ESI endpoints *likely* do not remove or modify historical market data after
-  initial publication.
-- Everef's in-place updates are *mostly* for low-traffic region-type pairs where
-  transactions were discovered in less-commonly-scraped regions.
-- The current implementation uses insert-new-by-key semantics instead of
-  delete-insert, which avoids unnecessary table churn while correctly handling the
-  rare case where Everef publishes a revised file for the same key.
+The publisher switched to insert-new-by-key, so reprocessing a daily archive
+added newly available rows without rewriting existing keys.
 
 ## Amendment (2026-09-05)
 
-A production backfill encountered an in-place Everef archive revision where existing
-`(date, region_id, type_id)` keys had changed non-key values. This disproved the earlier
-assumption that archive revisions only add previously undiscovered keys.
-
-Market-history publication now validates that every candidate row belongs to the
-requested source date and that row keys are unique, then atomically deletes and inserts
-that date partition. This handles added, changed, and removed rows while preserving the
-explicit source-date replacement boundary. The 2026-05-27 insert-new-by-key amendment is
-superseded for market history.
+The publisher switched from insert-new-by-key to replacing the source-date
+partition. It validates that every candidate row belongs to the requested date
+and that keys are unique, then atomically replaces that date's rows. Partition
+replacement is our publication strategy, not a claim that Everef changes
+existing market rows.
 
 ## Consequences
 
 ### Positive
 
-- Revised Everef daily files can be represented as replacement operations for affected
-  market dates instead of append-only duplicate rows.
+- Republished Everef daily files can refresh the affected dates atomically
+  without duplicating keys.
 - Table-level merge/delete semantics are explicit and testable.
 - The analytical storage layer remains file-backed and compatible with the existing
   local DuckDB orientation.
@@ -127,16 +120,14 @@ superseded for market history.
 ## Alternatives Considered
 
 - *Plain Parquet:* Rejected as the long-term canonical table storage format. It remains
-  the physical file format, but plain filesystem Parquet alone does not provide the
-  update, delete, merge, and transaction semantics needed for revised Everef daily
-  files.
+  the physical file format, but plain filesystem Parquet alone does not provide
+  the table-level transactions used to publish a consistent source-date partition.
 - *Delta Lake:* Rejected for now because it is most compelling in a Databricks/Spark
   architecture. The project is DuckDB/dbt-oriented and does not currently need to adopt
   Spark to solve this problem.
 - *Apache Iceberg:* Deferred. Iceberg is a strong general lakehouse format and remains a
   possible future cloud or resume extension, but it is more infrastructure than the
   initial homelab implementation needs.
-- *Append-only bronze plus manual reconciliation:* Rejected because it pushes source
-  correction semantics into later query or transform logic. The ingestion layer should
-  make the replacement unit explicit and prevent stale duplicate rows in the canonical
-  table state.
+- *Append complete archive versions and deduplicate downstream:* Rejected
+  because it pushes key reconciliation into every reader. The ingestion layer
+  should publish one row per market-history key.

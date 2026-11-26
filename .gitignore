@@ -78,6 +78,9 @@ mlruns/
 data/
 docker-compose.override.yml
 transformation/.duckdbrc
+.jupyter/
+**/.ipynb_checkpoints/
+__marimo__/
 
 # Editor and OS files
 .DS_Store

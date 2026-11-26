@@ -20,60 +20,58 @@ type_id,study_category
 221,Ammunition and probes
 222,Ammunition and probes
 230,Ammunition and probes
-434,Modules
-439,Modules
-578,Modules
-605,Ships
-621,Ships
-622,Ships
-626,Ships
-627,Ships
-638,Ships
-639,Ships
-640,Ships
-641,Ships
-642,Ships
-643,Ships
-644,Ships
-645,Ships
-672,Ships
-2046,Modules
+434,Mobility and concealment
+439,Mobility and concealment
+578,Defense and repair
+605,Light ships
+621,Cruisers and battlecruisers
+622,Cruisers and battlecruisers
+626,Cruisers and battlecruisers
+627,Cruisers and battlecruisers
+638,Battleships
+639,Battleships
+640,Battleships
+641,Battleships
+642,Battleships
+643,Battleships
+644,Battleships
+645,Battleships
+672,Light ships
+2046,Defense and repair
 2183,Drones
 2203,Drones
 2454,Drones
 2464,Drones
 2486,Drones
-2998,Ships
-3829,Modules
-4403,Modules
-11370,Modules
-11399,Minerals
-11563,Modules
+2998,Mining and industrial ships
+3829,Defense and repair
+4403,Defense and repair
+11370,Mobility and concealment
+11563,Miscellaneous modules
 15508,Drones
-16227,Ships
-16229,Ships
-16231,Ships
-17476,Ships
-17478,Ships
-17480,Ships
-17482,Modules
-17938,Modules
-20183,Ships
-20185,Ships
-20187,Ships
-20189,Ships
-21857,Modules
-22175,Modules
-22177,Modules
+16227,Cruisers and battlecruisers
+16229,Cruisers and battlecruisers
+16231,Cruisers and battlecruisers
+17476,Mining and industrial ships
+17478,Mining and industrial ships
+17480,Mining and industrial ships
+17482,Exploration and resource recovery
+17938,Exploration and resource recovery
+20183,Freighters
+20185,Freighters
+20187,Freighters
+20189,Freighters
+22175,Exploration and resource recovery
+22177,Exploration and resource recovery
 22778,Ammunition and probes
-23527,Modules
-24283,Modules
-24696,Ships
-24698,Ships
-24700,Ships
-24702,Ships
-25266,Modules
-25861,Modules
+23527,Miscellaneous modules
+24283,Miscellaneous modules
+24696,Cruisers and battlecruisers
+24698,Cruisers and battlecruisers
+24700,Cruisers and battlecruisers
+24702,Cruisers and battlecruisers
+25266,Exploration and resource recovery
+25861,Exploration and resource recovery
 25894,Rigs
 26929,Rigs
 30013,Ammunition and probes
@@ -86,19 +84,17 @@ type_id,study_category
 31718,Rigs
 31788,Rigs
 31790,Rigs
-32880,Ships
-33180,Modules
+32880,Mining and industrial ships
+33180,Exploration and resource recovery
 33474,Deployables
 33475,Deployables
 33700,Deployables
 33702,Deployables
-33985,Modules
-34126,Modules
-35833,Structures
-40349,Modules
-41492,Modules
-41498,Modules
-47270,Ships
-49710,Ships
-54731,Ships
-54732,Ships
+33985,Mobility and concealment
+40349,Defense and repair
+41492,Miscellaneous modules
+41498,Defense and repair
+47270,Cruisers and battlecruisers
+49710,Light ships
+54731,Light ships
+54732,Cruisers and battlecruisers

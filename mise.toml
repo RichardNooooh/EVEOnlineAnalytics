@@ -16,6 +16,11 @@ duckdb = "latest"
 # Python linting/formatting
 pre-commit = "latest"
 
+[env]
+# Project-scoped headroom for the Jupyter MCP client launched through mise exec.
+REQUEST_TIMEOUT = "120"
+WEBSOCKETS_MAX_BODY_SIZE = "536870912" # 512 MiB
+
 [tasks."duckdb:connect"]
 description = "Open an in-memory DuckDB shell with local DuckLake publications attached read-only"
 env = { _.file = "infra/local/.env" }
@@ -71,6 +76,28 @@ trap 'rm -f "$init_file"' EXIT HUP INT TERM
 
 duckdb -bail -init "$init_file" :memory:
 '''
+
+[tasks."jupyter:lab"]
+description = "Start the local JupyterLab MCP server for the experiments environment"
+raw = true
+run = '''
+repo_root=$(git rev-parse --show-toplevel) || {
+  printf '%s\n' "Unable to locate the repository root." >&2
+  exit 1
+}
+
+exec "${HOME}/.config/mise/jupyter-mcp/launch-lab" \
+  --repo-root "$repo_root" \
+  --trust-repo-notebooks \
+  --kernel-python "$repo_root/experiments/.venv/bin/python" \
+  --kernel-name eve-market-experiments \
+  --kernel-display-name 'EVE Market — experiments'
+'''
+
+[tasks."marimo:edit"]
+description = "Edit a marimo notebook in the experiments environment"
+raw = true
+run = 'uv run --project experiments marimo edit --no-token --watch'
 
 [tasks."duckdb:cleanup"]
 description = "Preview and optionally remove untracked dbt scratch and curated relations"
