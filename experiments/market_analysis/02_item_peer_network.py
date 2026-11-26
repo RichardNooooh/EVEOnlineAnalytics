@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.25.1"
+__generated_with = "0.26.0"
 app = marimo.App(width="full")
 
 
@@ -40,7 +40,6 @@ def _(mo):
 
     At least 60% of the trailing weeks must have usable paired changes; ties are usable but do not agree. The first snapshot is inventory, not additions. Threshold reversals are displayed link changes, not market events.
     """)
-    return
 
 
 @app.cell(hide_code=True)
@@ -355,7 +354,6 @@ def network_payload(
 @app.cell
 def update_peer_network(network_payload, peer_network):
     peer_network.payload = network_payload
-    return
 
 
 @app.cell
@@ -375,7 +373,6 @@ def peer_network_output(
             peer_network_view,
         ]
     )
-    return
 
 
 @app.cell(hide_code=True)
@@ -392,7 +389,6 @@ def _(coverage_summary_df, mo):
             )
         }
     )
-    return
 
 
 if __name__ == "__main__":

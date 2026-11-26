@@ -23,8 +23,8 @@ research artifacts.
 
 - Default to marimo for new notebooks.
 - Before any Marimo notebook work, including inspection, planning, documentation
-  research, editing, or execution, load `marimo-notebook` and `marimo-pair` unless
-  already loaded in the current context. Follow their applicable workflows.
+  research, editing, or execution, load `marimo-pair` unless already loaded in the
+  current context. Follow its applicable workflow.
 - The active runtime is the source of truth: make notebook changes through the
   `marimo-pair` runtime workflow rather than editing the `.py` file directly.
 - For user edits in Neovim, launch marimo with `--watch` so external saves reach

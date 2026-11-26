@@ -900,7 +900,7 @@ requires-dist = [
     { name = "ipykernel", specifier = ">=7.2.0" },
     { name = "ipywidgets", specifier = ">=8.1.8" },
     { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "marimo", specifier = "==0.25.1" },
+    { name = "marimo", specifier = "==0.26.0" },
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "networkx", specifier = ">=3.6.1" },
     { name = "numba", specifier = ">=0.67,<0.68" },
@@ -1785,51 +1785,14 @@ wheels = [
 ]
 
 [[package]]
-name = "loro"
-version = "1.17.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f0/d6/34fd8dc11a3ade6278681236ce958fb88ce87e3511fc4e3a9053ded7bf5b/loro-1.17.1.tar.gz", hash = "sha256:6971727a12ef2d8c232e3ad54d9d00a3fbd04774d13b0ae0e744d0a60b651843", size = 71569, upload-time = "2026-10-22T16:39:12.908Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/90/9a/44195422d8eb85ea5783d902ca8ef6bf5e10b3f3c5b89ce38de100d1a99d/loro-1.17.1-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:96017be0767f8c1fb4c4cb3c2941cf6e8ff8e6f66773ebaa7f1f8c22fe7105d9", size = 3737137, upload-time = "2026-10-22T16:38:07.694Z" },
-    { url = "https://files.pythonhosted.org/packages/47/a2/8b8b971ad4b57a80560f8631b9c331238375475e96a24bbb3000b6d0f3a6/loro-1.17.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:3cdda454f8600c092e0662018d4c1912ba109997f3c03c89a53d8c62c5593e86", size = 3531260, upload-time = "2026-10-22T16:37:52.317Z" },
-    { url = "https://files.pythonhosted.org/packages/09/88/0bdbf132f10f27e27cc3e928c2170e926edb2d902cd52371e628b638ef34/loro-1.17.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f7608a2428e4e4d46249f6bf113d8dd55a6910786281736974e4d3c4d7ae570b", size = 3901669, upload-time = "2026-10-22T16:36:28.427Z" },
-    { url = "https://files.pythonhosted.org/packages/fa/1a/9dc1a708b3df6099825e58b0ddfd41aaae38ea53456bf29c429b5fc85af3/loro-1.17.1-cp313-cp313-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:ea2461af220461ed46a1a35b22cb00460cfa9c7a287200fd9379050296517d65", size = 3987324, upload-time = "2026-10-22T16:36:43.063Z" },
-    { url = "https://files.pythonhosted.org/packages/fa/8c/5db594ccc858ae8474c971efc2e75f1184d879522f845166bcf958efd2d2/loro-1.17.1-cp313-cp313-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:a494b9dcd6546572e70e2f74cce22f3b97d5de10ac08da0f7e0ff149f0597189", size = 4374417, upload-time = "2026-10-22T16:36:57.033Z" },
-    { url = "https://files.pythonhosted.org/packages/bc/d4/7f48d36e9d63c8894430d707a4690c1d1fc99f4cc755af2293b498badf63/loro-1.17.1-cp313-cp313-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:cc48dca5fc9ecbb11262deedc247bd61c448068a227af0aa3077482875f2a108", size = 4124032, upload-time = "2026-10-22T16:37:10.281Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/14/85874c27963f8738e3fbf169e56d49b78b014cf2dd7b9f0314e484936cd8/loro-1.17.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0ef3b9c8a668f42b4978f44f5a7a3fd5db9a0cb4b9ccc85e37973b683a79fbc9", size = 3919679, upload-time = "2026-10-22T16:37:37.565Z" },
-    { url = "https://files.pythonhosted.org/packages/00/22/3e581fa6daa4fedb32dbae8d36bb87d49ad6ca61aa6c3c5eb85e897ec718/loro-1.17.1-cp313-cp313-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:a161479c7666a94c8bbcec64fd5acb85f232ca022ff2abd0594b96506e240674", size = 4372916, upload-time = "2026-10-22T16:37:24.37Z" },
-    { url = "https://files.pythonhosted.org/packages/3d/cb/1596c40a225f673719e91856138b0268a2d456ac2f6ffc147bb7e9ccc5eb/loro-1.17.1-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:d971eb6e0121c5fd26615f92d56ca1d5deddde67f47c98118825b09f628f8d10", size = 4077567, upload-time = "2026-10-22T16:38:22.272Z" },
-    { url = "https://files.pythonhosted.org/packages/0c/79/2f2ca44c1f13653eb1b70b7772d9f1fd02deaac0704541e9ad24bd9f1465/loro-1.17.1-cp313-cp313-musllinux_1_2_armv7l.whl", hash = "sha256:c432253c2e88e956c265faf1ed5e8fe77d3b589e7dfde35c600660ea24fe0edc", size = 4260481, upload-time = "2026-10-22T16:38:36.334Z" },
-    { url = "https://files.pythonhosted.org/packages/dd/6a/5f63edc33cb6558e0bc79d5ff1ad01082ccdd28ca3d1eee54622d584978e/loro-1.17.1-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:ba46bfa4308a0dba8fcb3e40f4ba5bfc212769e0fd944ab493ac4b7b12bba7cf", size = 4362813, upload-time = "2026-10-22T16:38:50.876Z" },
-    { url = "https://files.pythonhosted.org/packages/e7/df/790763b523e90711d02c6f5f70202f32bcdd4be4fc3d7a76aafd228db699/loro-1.17.1-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:f188cf6545b1ba6c91c5c0f6add175d7a2fb5a90bb77606123b26cb31b7b712e", size = 4247188, upload-time = "2026-10-22T16:39:05.591Z" },
-    { url = "https://files.pythonhosted.org/packages/2b/75/579c4a1889b284c7d52768013d9f83b34d695666651598796993021ed9ff/loro-1.17.1-cp313-cp313-win32.whl", hash = "sha256:9767253a889eb02ed1d65805bb291e58f57b2c81c3d376a7486b906c437a3734", size = 3292520, upload-time = "2026-10-22T16:39:33.659Z" },
-    { url = "https://files.pythonhosted.org/packages/a0/b7/613bcb1e32bdbdc1b72384527582ddb278091b5970be2caf2ebfe9d3d867/loro-1.17.1-cp313-cp313-win_amd64.whl", hash = "sha256:1f7da4647d99e1290de5474c6a64054e8761d4d7a8ac6ecdc0a656485e013235", size = 3544308, upload-time = "2026-10-22T16:39:20.134Z" },
-    { url = "https://files.pythonhosted.org/packages/f8/64/2f76cf53972aceabeab90b351a99c60ee29c384bcdc5aa98ae4a65797cb3/loro-1.17.1-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:7052715d55de2f1eca58c46397d9a81b9d2cc6aaa6c209a22a4c4938e7c50a42", size = 3714300, upload-time = "2026-10-22T16:38:09.783Z" },
-    { url = "https://files.pythonhosted.org/packages/7d/4f/0907c2d4a214d9e4d5400760273da2590ec04ff3c3629994ed35efd3523e/loro-1.17.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:421c4095d6e7502a418b82d100051149b6264048922f3effa983460f159267ad", size = 3518643, upload-time = "2026-10-22T16:37:54.176Z" },
-    { url = "https://files.pythonhosted.org/packages/27/c7/cc35e3bf889e72c512f2b4d025c2f73ed2a9a98563c3441f1f5e62ec9361/loro-1.17.1-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:13819c4e2c20ff36dcd620f70aa6020d536af16deb02793284ecfd7ff25dc9df", size = 3896004, upload-time = "2026-10-22T16:36:30.531Z" },
-    { url = "https://files.pythonhosted.org/packages/62/14/3f435d516faf72849eb0d33b166f90dc0b22f1d097544c1e1bda3288147d/loro-1.17.1-cp314-cp314-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:8b3f8c3874989a61a755a040f3d73c31ea778120dfcc112d53901478b7355115", size = 3966873, upload-time = "2026-10-22T16:36:45.195Z" },
-    { url = "https://files.pythonhosted.org/packages/2f/89/6bc3bfbaa00759dce42adf44b86adee53b2b02baf144c39ec40df82812c2/loro-1.17.1-cp314-cp314-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:4eb7d3d32055fb0ab8e9b5cb312c27b55d8077428440ede3facbc99f62f7811d", size = 4377070, upload-time = "2026-10-22T16:36:58.827Z" },
-    { url = "https://files.pythonhosted.org/packages/77/bc/1a156aa5fe5575a97e5ebe5594db248303906fcdc6a3a9f9cf24d28cad28/loro-1.17.1-cp314-cp314-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:7840ddd838722c665c036039ad08f0256ecebc678a1599cf05a7c48b0c42dfee", size = 4108747, upload-time = "2026-10-22T16:37:12.481Z" },
-    { url = "https://files.pythonhosted.org/packages/31/ff/f56b5ab5e36c84f250e49e4e04bc11779e78cd98d70f86f4a2d14e627643/loro-1.17.1-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e41abe03d999fd312e7f7252a2b63143db33ae5bfe3e240c9d41ca4b8a65cacf", size = 3900479, upload-time = "2026-10-22T16:37:39.538Z" },
-    { url = "https://files.pythonhosted.org/packages/a8/9d/955a90544d76048fb92b8c25d8c4a9f9533668da621728c594ca40291249/loro-1.17.1-cp314-cp314-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:6190b991b69745b7ab757c238bc521fa7d03fe6ef4c32ec3e52e7d9cdf921369", size = 4358911, upload-time = "2026-10-22T16:37:26.245Z" },
-    { url = "https://files.pythonhosted.org/packages/e0/b5/c0957d7ba6d80bec1b8c978f10ea874cbe4ea2feef6b0b701d5f01a029a0/loro-1.17.1-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:628314dc694c20f0ef3812cc043811f648d1aecc94a4f7bf393829139e070905", size = 4068895, upload-time = "2026-10-22T16:38:24.293Z" },
-    { url = "https://files.pythonhosted.org/packages/33/05/e11f09d0f6b8074bd4885b25decddfc742cc69f3fe8311435ef68911f858/loro-1.17.1-cp314-cp314-musllinux_1_2_armv7l.whl", hash = "sha256:55cf19a33636fa9febc3a90abe410b85118d9294c23350d27cf01cb8e427e7ff", size = 4241135, upload-time = "2026-10-22T16:38:38.208Z" },
-    { url = "https://files.pythonhosted.org/packages/fe/a0/4f17f40a28b8b6505b86b08a7858233bb8a004be65d40828192b52e0b687/loro-1.17.1-cp314-cp314-musllinux_1_2_i686.whl", hash = "sha256:de37a54fcecaed8af2d95081c16cead5d2de08e8b869ac7f6eecd6ad8862d0e0", size = 4355190, upload-time = "2026-10-22T16:38:52.695Z" },
-    { url = "https://files.pythonhosted.org/packages/ae/88/528459e6e6bd1ca1fb3bb3b72c67c90547c97699322d18ea49c594687d18/loro-1.17.1-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:32cafdeab138a8d5575080326040bef6ce73c681e21edae7f1dbb6467b7c62eb", size = 4228709, upload-time = "2026-10-22T16:39:07.553Z" },
-    { url = "https://files.pythonhosted.org/packages/32/b3/9542dbb131b07b5587bd800d61fe4e5bb9c864194421d7c1212918e519cc/loro-1.17.1-cp314-cp314-win32.whl", hash = "sha256:161ed9f3d03cf4cf69d8da5710a5a56babfd33a24a960c7db68db2bd6f18d642", size = 3280899, upload-time = "2026-10-22T16:39:35.719Z" },
-    { url = "https://files.pythonhosted.org/packages/b4/88/002c4c2c886ede7b07eb8bea1f028955c299e88f97f55821d8ff3850ead4/loro-1.17.1-cp314-cp314-win_amd64.whl", hash = "sha256:62b27bfcbf049207825b7cf135c78ea749cfd01fa51b9247620153fd55b5a8fd", size = 3522762, upload-time = "2026-10-22T16:39:22.015Z" },
-]
-
-[[package]]
 name = "marimo"
-version = "0.25.1"
+version = "0.26.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click", marker = "sys_platform != 'emscripten'" },
     { name = "docutils" },
     { name = "itsdangerous" },
     { name = "jedi" },
-    { name = "loro", marker = "sys_platform != 'android' and sys_platform != 'emscripten'" },
     { name = "markdown" },
     { name = "msgspec" },
     { name = "narwhals" },
@@ -1839,15 +1802,15 @@ dependencies = [
     { name = "pymdown-extensions" },
     { name = "python-multipart" },
     { name = "pyyaml" },
-    { name = "pyzmq", marker = "python_full_version < '3.15' and sys_platform != 'emscripten'" },
+    { name = "pyzmq", marker = "sys_platform != 'emscripten'" },
     { name = "starlette", marker = "sys_platform != 'emscripten'" },
     { name = "tomlkit" },
     { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
     { name = "websockets", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f8/7b/29895b0d747758da46a051f57c594634ab02f3993d5eab2f2e49ce4f144f/marimo-0.25.1.tar.gz", hash = "sha256:934db2ceb6c2b8c9ae3514a7a22e6b22ecf54fabea0b6138aed1980f8f1536ff", size = 50186739, upload-time = "2026-10-01T21:01:28.262Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/30/92/2c76c36c966b1dd0a66f86186cb4190458944e2eda2c4bc9fe0bfbd3c7a5/marimo-0.26.0.tar.gz", hash = "sha256:5b84aadab56724c4da86ec21f88e6fc7b5f40507ef486a1cac71d6518fca2e3c", size = 37932349, upload-time = "2026-11-24T23:53:12.311Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/e6/695f462fd473981325146edde01c12390413ebaa33c1f0b49191d6b55f86/marimo-0.25.1-py3-none-any.whl", hash = "sha256:dec4a87bc5db16b85181ba4880e67bb55485912b7ef26748a0bbf052c59203fd", size = 50850300, upload-time = "2026-10-01T21:01:24.577Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/df/f54fb8ca074936141eb3f9684abc0ec8ba3f6bd2d63befefc935bc9ce166/marimo-0.26.0-py3-none-any.whl", hash = "sha256:ae87e8c7ba7dfb36148f94bdaf2febf3e22816723d3cca97c3aa0e28b75450e3", size = 38526235, upload-time = "2026-11-24T23:53:08.812Z" },
 ]
 
 [[package]]
